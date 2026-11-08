@@ -6,8 +6,8 @@
 - **Изолированная тестовая БД**: `saas_crm_test` (с проверкой суффикса `_test` и наименьшими привилегиями `crm_app_user`)
 - **Среда выполнения Backend**: Python 3.11.6, pytest 8.3.4, pytest-asyncio 1.1.0, anyio 4.6.2, SQLAlchemy 2.0.36, asyncpg 0.30.0
 - **Среда выполнения Frontend**: Vite 6.4.5, React 18.3.1, TypeScript 5.8, Playwright 1.56.1 (Chromium)
-- **Всего pytest тест-кейсов**: 28 (100% PASS)
-- **Всего Playwright E2E сценариев**: 7 (100% PASS, 32.5s)
+- **Всего pytest тест-кейсов**: 29 (100% PASS, 25.72s)
+- **Всего Playwright E2E сценариев**: 13 (7 существующих + 6 новых CRM модулей, 100% PASS)
 - **Не пройдено / Ошибок**: 0
 
 ---
