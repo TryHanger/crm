@@ -204,7 +204,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
               gap: '6px',
             }}
           >
-            + Клиент
+            + Новый клиент
           </button>
         )}
       </div>
@@ -454,14 +454,14 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
               gap: '16px',
             }}
           >
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Добавление клиента</h3>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Новый клиент</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '13px', fontWeight: 500 }}>ФИО клиента</label>
               <input
                 type="text"
                 value={newCustName}
                 onChange={e => setNewCustName(e.target.value)}
-                placeholder="Данияр Ахметов"
+                placeholder="Иван Петров"
                 required
                 style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
               />
@@ -472,7 +472,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 type="tel"
                 value={newCustPhone}
                 onChange={e => setNewCustPhone(e.target.value)}
-                placeholder="+77017778899"
+                placeholder="+7 (701) 000-00-00"
                 required
                 style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
               />

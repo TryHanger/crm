@@ -2,6 +2,46 @@ import React, { useState } from 'react';
 import { CalendarBooking, CalendarStaff, CalendarBlockItem } from '../../types';
 import { BusinessCrmApiClient } from '@crm/api-client';
 
+export function localToUtcIso(dateStr: string, timeStr: string, timeZone: string = 'Asia/Almaty'): string {
+  try {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const [hour, min] = timeStr.split(':').map(Number);
+    const guessUtc = Date.UTC(year, month - 1, day, hour, min, 0);
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+
+    const getParts = (d: Date): number => {
+      const parts = formatter.formatToParts(d);
+      const m: Record<string, string> = {};
+      for (const p of parts) m[p.type] = p.value;
+      let h = Number(m.hour);
+      if (h === 24) h = 0;
+      return Date.UTC(Number(m.year), Number(m.month) - 1, Number(m.day), h, Number(m.minute), Number(m.second));
+    };
+
+    const guessWall = getParts(new Date(guessUtc));
+    const diffMs = guessUtc - guessWall;
+    const targetUtcMs = guessUtc + diffMs;
+
+    const refinedWall = getParts(new Date(targetUtcMs));
+    const finalDiffMs = guessUtc - refinedWall;
+    return new Date(targetUtcMs + finalDiffMs).toISOString();
+  } catch (err) {
+    console.error('Timezone conversion error, falling back to UTC string', err);
+    return `${dateStr}T${timeStr}:00Z`;
+  }
+}
+
+
 interface CalendarModuleProps {
   api: BusinessCrmApiClient;
   token: string;
@@ -16,6 +56,7 @@ interface CalendarModuleProps {
   onRefresh: () => void;
   onShowToast: (msg: string) => void;
   userRole: string;
+  timezoneIana?: string;
 }
 
 export const CalendarModule: React.FC<CalendarModuleProps> = ({
@@ -32,6 +73,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   onRefresh,
   onShowToast,
   userRole,
+  timezoneIana = 'Asia/Almaty',
 }) => {
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'list'>('day');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('all');
@@ -108,7 +150,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
     }
 
     try {
-      const startsAtUtc = `${currentDate}T${newTime}:00Z`;
+      const startsAtUtc = localToUtcIso(currentDate, newTime, timezoneIana);
       await api.createBooking(
         {
           branch_id: branchId,
@@ -173,7 +215,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
     if (!selectedBooking) return;
     try {
       setIsUpdatingStatus(true);
-      const newStartsAt = `${rescheduleDate}T${rescheduleTime}:00Z`;
+      const newStartsAt = localToUtcIso(rescheduleDate, rescheduleTime, timezoneIana);
       await api.rescheduleBooking(selectedBooking.id, { starts_at_utc: newStartsAt }, token, tenantId);
       setShowRescheduleModal(false);
       setSelectedBooking(null);
@@ -195,8 +237,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         {
           branch_id: branchId,
           staff_id: blockStaffId,
-          starts_at_utc: `${currentDate}T${blockStart}:00Z`,
-          ends_at_utc: `${currentDate}T${blockEnd}:00Z`,
+          starts_at_utc: localToUtcIso(currentDate, blockStart, timezoneIana),
+          ends_at_utc: localToUtcIso(currentDate, blockEnd, timezoneIana),
           block_reason: blockReason,
         },
         token,
@@ -558,7 +600,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         fontWeight: 700,
                       }}
                     >
-                      {staff.name.slice(0, 2).toUpperCase()}
+                      {(staff.name || 'СП').slice(0, 2).toUpperCase()}
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div

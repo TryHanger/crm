@@ -365,3 +365,179 @@ async def test_full_crm_crud_and_management_endpoints():
         }, headers=bh_headers)
         assert inv_resp.status_code == 201
         assert "invite_url" in inv_resp.json()
+
+@pytest.mark.asyncio
+async def test_crm_invitation_creation_and_acceptance_lifecycle():
+    """
+    CRITICAL P0-03 REGRESSION TEST:
+    Verifies that CRM staff invites store a SHA-256 hash in the database,
+    return a working raw token, can be redeemed via /api/v1/auth/accept-invite,
+    and activate a tenant membership without password hijacking or replay vulnerability.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login as Barber House Owner
+        bh_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@barberhouse.kz",
+            "password": "Password123!"
+        })
+        assert bh_login.status_code == 200
+        owner_token = bh_login.json()["access_token"]
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+        # 2. Owner creates invite for a new barber
+        invitee_email = f"barber_{random.randint(10000, 99999)}@example.kz"
+        inv_resp = await client.post("/api/v1/business/invites", json={
+            "email": invitee_email,
+            "role": "master"
+        }, headers=owner_headers)
+        assert inv_resp.status_code == 201, f"Failed to create invite: {inv_resp.text}"
+        inv_data = inv_resp.json()
+        raw_token = inv_data["token"]
+        assert raw_token, "Raw token must be returned in response"
+
+        # 3. Invitee accepts invite via /api/v1/auth/accept-invite
+        accept_resp = await client.post("/api/v1/auth/accept-invite", json={
+            "token": raw_token,
+            "password": "NewBarberSecret123!",
+            "display_name": "Новый Барбер"
+        })
+        assert accept_resp.status_code == 200, f"Failed to accept invite: {accept_resp.text}"
+        acc_data = accept_resp.json()
+        assert acc_data["email"] == invitee_email
+        assert acc_data["role"] == "master" 
+
+        # 4. Replay attempt: Reusing the same invite token must FAIL (already consumed)
+        replay_resp = await client.post("/api/v1/auth/accept-invite", json={
+            "token": raw_token,
+            "password": "AnotherPassword123!"
+        })
+        assert replay_resp.status_code in (400, 422), "Consumed invite token must not be accepted again"
+
+        # 5. Login with new credentials
+        login_new = await client.post("/api/v1/auth/login", json={
+            "email": invitee_email,
+            "password": "NewBarberSecret123!"
+        })
+        assert login_new.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_crm_customer_privacy_and_cross_branch_schedule_isolation():
+    """
+    CRITICAL P0-02 & P1-01 REGRESSION TEST:
+    1. Master role privacy: Master cannot read details or add notes to an unrelated customer.
+    2. Master cannot call POST /customers directly (403 Forbidden).
+    3. Multi-branch schedule isolation: Updating staff schedule for Branch A preserves Branch B shifts.
+    4. Branch creation preserves phone_number and timezone aliases.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login as Barber House Owner
+        bh_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@barberhouse.kz",
+            "password": "Password123!"
+        })
+        assert bh_login.status_code == 200
+        owner_headers = {"Authorization": f"Bearer {bh_login.json()['access_token']}"}
+
+        # 2. Login as Master Damir
+        damir_login = await client.post("/api/v1/auth/login", json={
+            "email": "damir@barberhouse.kz",
+            "password": "Password123!"
+        })
+        assert damir_login.status_code == 200
+        master_headers = {"Authorization": f"Bearer {damir_login.json()['access_token']}"}
+
+        # 3. Create a customer as owner
+        unrelated_phone = f"+7702{random.randint(1000000, 9999999)}"
+        c_resp = await client.post("/api/v1/business/customers", json={
+            "full_name": "Клиент Не Для Дамира",
+            "phone_e164": unrelated_phone,
+            "notes_private": "Секретные данные владельца"
+        }, headers=owner_headers)
+        assert c_resp.status_code == 201
+        cust_id = c_resp.json()["id"]
+
+        # 4. Master attempts to create customer -> 403 Forbidden!
+        m_create_resp = await client.post("/api/v1/business/customers", json={
+            "full_name": "Хакер",
+            "phone_e164": f"+7709{random.randint(1000000, 9999999)}"
+        }, headers=master_headers)
+        assert m_create_resp.status_code == 403, "Master must not be allowed to call POST /customers"
+
+        # 5. Master attempts to view unrelated customer card -> 403 Forbidden!
+        m_card_resp = await client.get(f"/api/v1/business/customers/{cust_id}", headers=master_headers)
+        assert m_card_resp.status_code == 403, "Master must be denied access to unrelated customer card"
+
+        # 6. Master attempts to add note to unrelated customer -> 403 Forbidden!
+        m_note_resp = await client.post(f"/api/v1/business/customers/{cust_id}/notes", json={
+            "note": "Попытка добавить заметку"
+        }, headers=master_headers)
+        assert m_note_resp.status_code == 403, "Master must be denied adding note to unrelated customer"
+
+        # 7. Multi-branch staff schedule isolation on Modern Cut (Pro plan permits up to 3 branches):
+        mc_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@moderncut.kz",
+            "password": "Password123!"
+        })
+        assert mc_login.status_code == 200
+        mc_headers = {"Authorization": f"Bearer {mc_login.json()['access_token']}"}
+
+        branches = (await client.get("/api/v1/business/branches", headers=mc_headers)).json()
+        b1_id = branches[0]["id"]
+
+        # Create a second branch with phone_number & timezone alias
+        b2_resp = await client.post("/api/v1/business/branches", json={
+            "name": "Modern Cut Самал",
+            "address": "мкр. Самал-2, 14",
+            "city": "Алматы",
+            "phone_number": "+77015559988",
+            "timezone": "Asia/Almaty"
+        }, headers=mc_headers)
+        assert b2_resp.status_code == 201
+        b2_data = b2_resp.json()
+        b2_id = b2_data["id"]
+        assert b2_data.get("phone") == "+77015559988" or b2_data.get("phone_number") == "+77015559988"
+
+        # Get Modern Cut master profile
+        staff_all = (await client.get("/api/v1/business/staff", headers=mc_headers)).json()
+        mc_staff_id = staff_all[0]["id"]
+
+        # Set schedule for Branch 1 (Monday & Tuesday)
+        await client.put(f"/api/v1/business/staff/{mc_staff_id}/schedule?branch_id={b1_id}", json={
+            "shifts": [
+                {"weekday_iso": 1, "is_working": True, "local_start": "09:00", "local_end": "18:00", "breaks": []},
+                {"weekday_iso": 2, "is_working": True, "local_start": "09:00", "local_end": "18:00", "breaks": []}
+            ]
+        }, headers=mc_headers)
+
+        # Set schedule for Branch 2 (Wednesday & Thursday)
+        await client.put(f"/api/v1/business/staff/{mc_staff_id}/schedule?branch_id={b2_id}", json={
+            "shifts": [
+                {"weekday_iso": 3, "is_working": True, "local_start": "10:00", "local_end": "19:00", "breaks": []},
+                {"weekday_iso": 4, "is_working": True, "local_start": "10:00", "local_end": "19:00", "breaks": []}
+            ]
+        }, headers=mc_headers)
+
+        # Now update Branch 1 (change Monday to 10:00 - 17:00)
+        await client.put(f"/api/v1/business/staff/{mc_staff_id}/schedule?branch_id={b1_id}", json={
+            "shifts": [
+                {"weekday_iso": 1, "is_working": True, "local_start": "10:00", "local_end": "17:00", "breaks": []}
+            ]
+        }, headers=mc_headers)
+
+        # Verify Branch 2 schedule is INTACT and NOT deleted!
+        b2_sched = (await client.get(f"/api/v1/business/staff/{mc_staff_id}/schedule?branch_id={b2_id}", headers=mc_headers)).json()
+        b2_working = [s for s in b2_sched if s.get("is_working")]
+        assert len(b2_working) == 2, f"Branch 2 shifts must survive Branch 1 update! Found: {b2_working}"
+        assert any(s["weekday_iso"] == 3 for s in b2_working)
+        assert any(s["weekday_iso"] == 4 for s in b2_working)
+
+        # Restore shifts for weekdays 1..6 on Branch 1
+        await client.put(f"/api/v1/business/staff/{mc_staff_id}/schedule?branch_id={b1_id}", json={
+            "shifts": [
+                {"weekday_iso": d, "is_working": True, "local_start": "10:00", "local_end": "19:00", "breaks": []}
+                for d in range(1, 7)
+            ]
+        }, headers=mc_headers)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BusinessCrmApiClient } from '@crm/api-client';
+import QRCode from 'qrcode';
 
 interface OnlineBookingModuleProps {
   api: BusinessCrmApiClient;
@@ -35,6 +36,15 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
   // Publication state
   const [isPublished, setIsPublished] = useState(true);
   const [publicUrl, setPublicUrl] = useState('http://barberhouse.localhost:3000');
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (publicUrl) {
+      QRCode.toDataURL(publicUrl, { width: 180, margin: 2, errorCorrectionLevel: 'M' })
+        .then(url => setQrCodeDataUrl(url))
+        .catch(err => console.error('Failed to generate QR code', err));
+    }
+  }, [publicUrl]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -360,7 +370,7 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
                 }}
               >
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', textAlign: 'center' }}>
-                  Предпросмотр на мобильном
+                  Живой предпросмотр
                 </div>
                 <div
                   style={{
@@ -494,38 +504,72 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
                 </div>
               </div>
 
-              {/* QR Code Placeholder */}
+              {/* Real Scannable QR Code */}
               <div
                 style={{
                   padding: '20px',
-                  border: '1px dashed #CBD5E1',
+                  border: '1px solid #E2E8F0',
                   borderRadius: '12px',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '10px',
+                  gap: '12px',
                   textAlign: 'center',
+                  background: '#F8FAFC',
                 }}
               >
-                <div
-                  style={{
-                    width: '120px',
-                    height: '120px',
-                    background: '#0F172A',
-                    color: '#FFFFFF',
-                    borderRadius: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 700,
-                    fontSize: '14px',
-                  }}
-                >
-                  QR КОД
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A' }}>
+                  QR-код для онлайн-записи
                 </div>
+                {qrCodeDataUrl ? (
+                  <img
+                    src={qrCodeDataUrl}
+                    alt="QR-код онлайн-записи"
+                    style={{
+                      width: '180px',
+                      height: '180px',
+                      borderRadius: '8px',
+                      border: '1px solid #E2E8F0',
+                      background: '#FFFFFF',
+                      padding: '8px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '180px',
+                      height: '180px',
+                      background: '#FFFFFF',
+                      borderRadius: '8px',
+                      border: '1px dashed #CBD5E1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#64748B',
+                      fontSize: '13px',
+                    }}
+                  >
+                    Генерация QR-кода...
+                  </div>
+                )}
                 <div style={{ fontSize: '13px', color: '#64748B' }}>
-                  Распечатайте этот QR-код для стойки администратора или визиток
+                  Распечатайте этот QR-код для стойки администратора, зеркал или визиток клиентов
                 </div>
+                {qrCodeDataUrl && (
+                  <a
+                    href={qrCodeDataUrl}
+                    download="booking-qr.png"
+                    style={{
+                      fontSize: '12px',
+                      color: '#2563EB',
+                      textDecoration: 'none',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Скачать PNG
+                  </a>
+                )}
               </div>
             </div>
           )}

@@ -1,7 +1,7 @@
 import uuid
 import datetime
 from typing import Optional, List, Any, Dict
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, model_validator
 
 # Standard Error Envelope
 class ErrorDetail(BaseModel):
@@ -49,8 +49,29 @@ class BranchResponse(BaseModel):
     city: str
     address: str
     timezone_iana: str
+    timezone: Optional[str] = None
     phone: Optional[str] = None
+    phone_number: Optional[str] = None
     weekly_hours: Optional[Any] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_aliases(cls, data: Any) -> Any:
+        if hasattr(data, "__dict__"):
+            d = data.__dict__
+            d["timezone"] = getattr(data, "timezone_iana", None)
+            d["phone_number"] = getattr(data, "phone", None)
+            return data
+        elif isinstance(data, dict):
+            if "timezone" not in data and "timezone_iana" in data:
+                data["timezone"] = data["timezone_iana"]
+            if "phone_number" not in data and "phone" in data:
+                data["phone_number"] = data["phone"]
+            if "timezone_iana" not in data and "timezone" in data:
+                data["timezone_iana"] = data["timezone"]
+            if "phone" not in data and "phone_number" in data:
+                data["phone"] = data["phone_number"]
+        return data
 
 class ServiceItemResponse(BaseModel):
     id: uuid.UUID
@@ -170,7 +191,16 @@ class CustomerCreateRequest(BaseModel):
     notes_private: Optional[str] = None
 
 class CustomerNoteCreateRequest(BaseModel):
-    note: str
+    note: Optional[str] = None
+    note_text: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_note(self):
+        if not self.note and self.note_text:
+            self.note = self.note_text
+        if not self.note:
+            raise ValueError("note is required")
+        return self
 
 class StaffCreateRequest(BaseModel):
     display_name: str
@@ -316,4 +346,6 @@ class BranchUpdateRequest(BaseModel):
     city: Optional[str] = None
     address: Optional[str] = None
     timezone_iana: Optional[str] = None
+    timezone: Optional[str] = None
     phone: Optional[str] = None
+    phone_number: Optional[str] = None

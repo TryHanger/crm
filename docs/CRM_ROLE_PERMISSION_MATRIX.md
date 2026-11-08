@@ -29,10 +29,11 @@
 | **Календарь: перенос визита** | `POST /api/v1/business/bookings/{id}/reschedule` | ✅ | ✅ | ❌ | Pytest `test_crm_api` |
 | **Календарь: отмена визита** | `POST /api/v1/business/bookings/{id}/cancel` | ✅ | ✅ | ❌ | Pytest `test_crm_api` |
 | **Календарь: личный перерыв мастера** | `POST /api/v1/business/calendar/block` | ✅ | ✅ | ✅ | Pytest `test_crm_api` |
-| **Клиенты: поиск и база** | `GET /api/v1/business/customers` | ✅ | ✅ | ❌ (read-only свои) | Playwright `crm_full.spec.ts` |
-| **Клиенты: создание клиента** | `POST /api/v1/business/customers` | ✅ | ✅ | ❌ | Playwright `crm_full.spec.ts` |
-| **Клиенты: редактирование профиля** | `PATCH /api/v1/business/customers/{id}` | ✅ | ✅ | ❌ | Pytest `test_crm_api` |
-| **Клиенты: добавление приватной заметки** | `POST /api/v1/business/customers/{id}/notes` | ✅ | ✅ | ✅ | Playwright `crm_full.spec.ts` |
+| **Клиенты: поиск и база** | `GET /api/v1/business/customers` | ✅ | ✅ | ❌ (read-only свои, маскированные) | Playwright `crm_full.spec.ts` |
+| **Клиенты: детальная карточка** | `GET /api/v1/business/customers/{id}` | ✅ | ✅ | ⚠️ Только свои клиенты (маскир. телефон, email=null, 403 чужие) | Pytest `test_crm_customer_privacy...` |
+| **Клиенты: создание клиента** | `POST /api/v1/business/customers` | ✅ | ✅ | ❌ (403 Forbidden) | Pytest `test_crm_customer_privacy...` |
+| **Клиенты: редактирование профиля** | `PATCH /api/v1/business/customers/{id}` | ✅ | ✅ | ❌ (403 Forbidden) | Pytest `test_crm_api` |
+| **Клиенты: добавление приватной заметки** | `POST /api/v1/business/customers/{id}/notes` | ✅ | ✅ | ⚠️ Только к своим клиентам (403 чужие) | Pytest `test_crm_customer_privacy...` |
 | **Команда: список сотрудников** | `GET /api/v1/business/staff` | ✅ | ✅ | ✅ | Playwright `crm_full.spec.ts` |
 | **Команда: создание профиля мастера** | `POST /api/v1/business/staff` | ✅ | ❌ | ❌ | Pytest `test_crm_api` |
 | **Команда: переопределение цен мастера** | `PUT /api/v1/business/staff/{id}/services` | ✅ | ✅ | ❌ | Playwright `crm_full.spec.ts` |

@@ -433,7 +433,7 @@ export class BusinessCrmApiClient {
         ...this.headers(token, tenantId),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ note_text: noteText }),
+      body: JSON.stringify({ note: noteText, note_text: noteText }),
     });
     return handleResponse<CustomerNoteResponse>(res);
   }
@@ -510,8 +510,9 @@ export class BusinessCrmApiClient {
     return handleResponse<any>(res);
   }
 
-  async getStaffSchedule(staffId: string, token: string, tenantId: string): Promise<WeeklyShiftResponse[]> {
-    const res = await fetch(`${this.baseUrl}/api/v1/business/staff/${staffId}/schedule`, {
+  async getStaffSchedule(staffId: string, token: string, tenantId: string, branchId?: string): Promise<WeeklyShiftResponse[]> {
+    const url = `${this.baseUrl}/api/v1/business/staff/${staffId}/schedule${branchId ? '?branch_id=' + branchId : ''}`;
+    const res = await fetch(url, {
       method: 'GET',
       headers: this.headers(token, tenantId),
     });
@@ -520,11 +521,13 @@ export class BusinessCrmApiClient {
 
   async updateStaffSchedule(
     staffId: string,
-    shifts: WeeklyShiftResponse[],
+    shifts: any,
     token: string,
-    tenantId: string
+    tenantId: string,
+    branchId?: string
   ): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/v1/business/staff/${staffId}/schedule`, {
+    const url = `${this.baseUrl}/api/v1/business/staff/${staffId}/schedule${branchId ? '?branch_id=' + branchId : ''}`;
+    const res = await fetch(url, {
       method: 'PUT',
       headers: {
         ...this.headers(token, tenantId),

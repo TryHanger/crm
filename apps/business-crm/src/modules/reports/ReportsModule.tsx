@@ -115,7 +115,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
       {/* Top Header & Range Selectors */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Отчёты и аналитика</h1>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Отчёты и аналитика</h2>
           <p className="text-sm text-neutral-400 mt-1">
             Сводные операционные показатели и разграничение плановой стоимости и факт-оплат
           </p>

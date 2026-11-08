@@ -176,8 +176,8 @@ async def create_branch(
         name=data["name"],
         city=data.get("city", "Астана"),
         address=data["address"],
-        timezone_iana=data.get("timezone_iana", "Asia/Almaty"),
-        phone=data.get("phone")
+        timezone_iana=data.get("timezone_iana") or data.get("timezone") or "Asia/Almaty",
+        phone=data.get("phone") or data.get("phone_number")
     )
     db.add(branch)
     await db.flush()
@@ -734,7 +734,7 @@ async def list_customers(
 @router.post("/customers", status_code=status.HTTP_201_CREATED)
 async def create_customer(
     req: CustomerCreateRequest,
-    crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
@@ -770,6 +770,25 @@ async def add_customer_note(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt_c = select(Customer).where(Customer.id == customer_id, Customer.tenant_id == crm_user.tenant_id)
+    cust = (await db.execute(stmt_c)).scalar_one_or_none()
+    if not cust:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    if crm_user.role == "master":
+        stmt_sp = select(StaffProfile).where(StaffProfile.tenant_id == crm_user.tenant_id, StaffProfile.user_id == crm_user.user.id)
+        master_staff = (await db.execute(stmt_sp)).scalars().first()
+        if not master_staff:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Master has no staff profile in this company")
+        stmt_mb = select(Booking.id).where(
+            Booking.tenant_id == crm_user.tenant_id,
+            Booking.customer_id == customer_id,
+            Booking.staff_id == master_staff.id
+        )
+        has_booking = (await db.execute(stmt_mb)).scalars().first()
+        if not has_booking:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Master cannot add notes to an unrelated customer")
+
     note = CustomerNote(
         tenant_id=crm_user.tenant_id,
         customer_id=customer_id,
@@ -1045,21 +1064,44 @@ async def get_reports_overview(
     occupancies = res_occ.scalars().all()
     occupied_minutes = sum((o.ends_at_utc - o.starts_at_utc).total_seconds() / 60 for o in occupancies)
 
-    # Staff breakdown
+    # Staff breakdown with real booked minutes and scheduled minutes
     staff_stmt = select(StaffProfile).where(StaffProfile.tenant_id == tenant_id)
     if branch_id:
-        staff_stmt = staff_stmt.where(StaffProfile.branch_id == branch_id)
+        staff_stmt = staff_stmt.join(StaffBranch, StaffBranch.staff_id == StaffProfile.id).where(StaffBranch.branch_id == branch_id)
     all_staff = (await db.execute(staff_stmt)).scalars().all()
     staff_stats = []
     for s in all_staff:
         st_bookings = [b for b in bookings if b.staff_id == s.id and b.status != "cancelled"]
         st_rev = sum(b.amount_minor_snapshot for b in bookings if b.staff_id == s.id and b.status == "completed")
+        st_booked_mins = sum((b.service_ends_at_utc - b.starts_at_utc).total_seconds() / 60 for b in st_bookings)
+
+        # Calculate scheduled shift minutes in the period
+        stmt_sh = select(WeeklyShift).where(WeeklyShift.staff_id == s.id, WeeklyShift.tenant_id == tenant_id)
+        if branch_id:
+            stmt_sh = stmt_sh.where(WeeklyShift.branch_id == branch_id)
+        sh_res = (await db.execute(stmt_sh)).scalars().all()
+
+        total_sched_mins = 0
+        curr_d = from_date
+        while curr_d <= to_date:
+            w_iso = curr_d.isoweekday()
+            for sh in sh_res:
+                if sh.weekday_iso == w_iso:
+                    shift_len = (sh.local_end.hour * 60 + sh.local_end.minute) - (sh.local_start.hour * 60 + sh.local_start.minute)
+                    total_sched_mins += max(0, shift_len)
+            curr_d += datetime.timedelta(days=1)
+
+        if total_sched_mins == 0:
+            total_sched_mins = max(int(st_booked_mins), 8 * 60)
+
+        workload_pct = min(100, int((st_booked_mins / total_sched_mins) * 100)) if total_sched_mins > 0 else 0
         staff_stats.append({
             "staff_id": str(s.id),
-            "staff_name": s.full_name,
+            "staff_name": s.display_name,
             "bookings_count": len(st_bookings),
+            "booked_minutes": int(st_booked_mins),
             "revenue_minor": st_rev,
-            "workload_pct": min(100, int((len(st_bookings) * 45) / (8 * 60) * 100)) if len(st_bookings) else 0
+            "workload_pct": workload_pct
         })
 
     # New customers count in period
@@ -1145,8 +1187,26 @@ async def get_customer_card(
     if not c:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    master_staff = None
+    if crm_user.role == "master":
+        stmt_sp = select(StaffProfile).where(StaffProfile.tenant_id == crm_user.tenant_id, StaffProfile.user_id == crm_user.user.id)
+        master_staff = (await db.execute(stmt_sp)).scalars().first()
+        if not master_staff:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Master has no staff profile in this company")
+        # Check if master has any booking with this customer
+        stmt_mb = select(Booking.id).where(
+            Booking.tenant_id == crm_user.tenant_id,
+            Booking.customer_id == customer_id,
+            Booking.staff_id == master_staff.id
+        )
+        has_booking = (await db.execute(stmt_mb)).scalars().first()
+        if not has_booking:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Master can only view customers with whom they have bookings")
+
     # Visits history
     stmt_b = select(Booking).where(Booking.customer_id == c.id, Booking.tenant_id == crm_user.tenant_id).order_by(Booking.starts_at_utc.desc())
+    if crm_user.role == "master" and master_staff:
+        stmt_b = stmt_b.where(Booking.staff_id == master_staff.id)
     res_b = await db.execute(stmt_b)
     bookings = res_b.scalars().all()
     visits = []
@@ -1164,15 +1224,21 @@ async def get_customer_card(
 
     # Notes
     stmt_n = select(CustomerNote).where(CustomerNote.customer_id == c.id).order_by(CustomerNote.created_at.desc())
+    if crm_user.role == "master":
+        stmt_n = stmt_n.where(CustomerNote.author_id == crm_user.user.id)
     notes_res = await db.execute(stmt_n)
     notes = [{"id": str(n.id), "note": n.note, "created_at": n.created_at.isoformat()} for n in notes_res.scalars().all()]
+
+    is_m = (crm_user.role == "master")
+    masked_phone = (f"{c.phone_e164[:7]}***{c.phone_e164[-2:]}" if len(c.phone_e164) >= 9 else "***") if is_m else c.phone_e164
 
     return {
         "id": str(c.id),
         "full_name": c.full_name,
-        "phone": c.phone_e164,
-        "email": c.email,
-        "notes_private": c.notes_private,
+        "phone": masked_phone,
+        "phone_e164": masked_phone,
+        "email": None if is_m else c.email,
+        "notes_private": None if is_m else c.notes_private,
         "completed_visits": sum(1 for b in bookings if b.status == "completed"),
         "total_bookings": len(bookings),
         "created_at": c.created_at.isoformat(),
@@ -1287,13 +1353,17 @@ async def update_staff_profile(
 @router.get("/staff/{staff_id}/schedule")
 async def get_staff_schedule(
     staff_id: uuid.UUID,
+    branch_id: Optional[uuid.UUID] = None,
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(WeeklyShift).where(
         WeeklyShift.staff_id == staff_id,
         WeeklyShift.tenant_id == crm_user.tenant_id
-    ).order_by(WeeklyShift.weekday_iso)
+    )
+    if branch_id:
+        stmt = stmt.where(WeeklyShift.branch_id == branch_id)
+    stmt = stmt.order_by(WeeklyShift.weekday_iso)
     shifts = (await db.execute(stmt)).scalars().all()
 
     results = []
@@ -1301,6 +1371,7 @@ async def get_staff_schedule(
         stmt_br = select(ShiftBreak).where(ShiftBreak.shift_id == s.id)
         breaks = (await db.execute(stmt_br)).scalars().all()
         results.append({
+            "branch_id": str(s.branch_id) if s.branch_id else None,
             "weekday_iso": s.weekday_iso,
             "local_start": s.local_start.strftime("%H:%M") if s.local_start else "10:00",
             "local_end": s.local_end.strftime("%H:%M") if s.local_end else "20:00",
@@ -1325,7 +1396,22 @@ async def update_staff_schedule(
     if not branch_id:
         raise HTTPException(status_code=400, detail="Staff is not assigned to any branch")
 
-    stmt_old = select(WeeklyShift).where(WeeklyShift.staff_id == staff_id, WeeklyShift.tenant_id == crm_user.tenant_id)
+    # Verify branch belongs to tenant
+    stmt_b_check = select(Branch.id).where(Branch.id == branch_id, Branch.tenant_id == crm_user.tenant_id)
+    if not (await db.execute(stmt_b_check)).scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Invalid branch for tenant")
+
+    # Verify staff belongs to tenant
+    stmt_s_check = select(StaffProfile.id).where(StaffProfile.id == staff_id, StaffProfile.tenant_id == crm_user.tenant_id)
+    if not (await db.execute(stmt_s_check)).scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Staff not found in tenant")
+
+    # Delete ONLY shifts for this specific branch
+    stmt_old = select(WeeklyShift).where(
+        WeeklyShift.staff_id == staff_id,
+        WeeklyShift.tenant_id == crm_user.tenant_id,
+        WeeklyShift.branch_id == branch_id
+    )
     old_shifts = (await db.execute(stmt_old)).scalars().all()
     for os in old_shifts:
         stmt_b = select(ShiftBreak).where(ShiftBreak.shift_id == os.id)
@@ -1334,30 +1420,41 @@ async def update_staff_schedule(
         await db.delete(os)
 
     for item in req.shifts:
+        if not (1 <= item.weekday_iso <= 7):
+            raise HTTPException(status_code=422, detail="weekday_iso must be between 1 and 7")
         if not item.is_working:
             continue
         st_parts = [int(p) for p in item.local_start.split(":")]
         end_parts = [int(p) for p in item.local_end.split(":")]
+        start_time = datetime.time(st_parts[0], st_parts[1])
+        end_time = datetime.time(end_parts[0], end_parts[1])
+        if start_time >= end_time:
+            raise HTTPException(status_code=422, detail="Shift start must be before end time")
+
         shift = WeeklyShift(
             tenant_id=crm_user.tenant_id,
             staff_id=staff_id,
             branch_id=branch_id,
             weekday_iso=item.weekday_iso,
-            local_start=datetime.time(st_parts[0], st_parts[1]),
-            local_end=datetime.time(end_parts[0], end_parts[1]),
+            local_start=start_time,
+            local_end=end_time,
             effective_from=datetime.datetime.now(datetime.timezone.utc)
         )
         db.add(shift)
         await db.flush()
 
-        for b_item in item.breaks:
+        for b_item in (item.breaks or []):
             b_st = [int(p) for p in b_item.local_start.split(":")]
             b_end = [int(p) for p in b_item.local_end.split(":")]
+            brk_start = datetime.time(b_st[0], b_st[1])
+            brk_end = datetime.time(b_end[0], b_end[1])
+            if brk_start >= brk_end or brk_start < start_time or brk_end > end_time:
+                raise HTTPException(status_code=422, detail="Break must be within shift hours")
             s_break = ShiftBreak(
                 tenant_id=crm_user.tenant_id,
                 shift_id=shift.id,
-                local_start=datetime.time(b_st[0], b_st[1]),
-                local_end=datetime.time(b_end[0], b_end[1])
+                local_start=brk_start,
+                local_end=brk_end
             )
             db.add(s_break)
 
@@ -1465,8 +1562,14 @@ async def update_branch(
     if req.name is not None: branch.name = req.name
     if req.city is not None: branch.city = req.city
     if req.address is not None: branch.address = req.address
-    if req.timezone_iana is not None: branch.timezone_iana = req.timezone_iana
-    if req.phone is not None: branch.phone = req.phone
+    if req.timezone_iana is not None:
+        branch.timezone_iana = req.timezone_iana
+    elif getattr(req, "timezone", None) is not None:
+        branch.timezone_iana = req.timezone
+    if req.phone is not None:
+        branch.phone = req.phone
+    elif getattr(req, "phone_number", None) is not None:
+        branch.phone = req.phone_number
 
     await db.commit()
     return branch
@@ -1502,7 +1605,9 @@ async def create_crm_invite(
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
     import secrets
+    import hashlib
     raw_token = secrets.token_urlsafe(32)
+    tok_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     inv = Invite(
         tenant_id=crm_user.tenant_id,
@@ -1510,7 +1615,7 @@ async def create_crm_invite(
         role=req.role,
         invite_type="staff",
         branch_scope="all",
-        token_hash=raw_token,
+        token_hash=tok_hash,
         expires_at=now_utc + datetime.timedelta(days=7),
     )
     db.add(inv)
@@ -1520,5 +1625,6 @@ async def create_crm_invite(
         "email": inv.email,
         "role": inv.role,
         "token": raw_token,
+        "invite_token": raw_token,
         "invite_url": f"/accept-invite?token={raw_token}"
     }

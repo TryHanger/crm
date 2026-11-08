@@ -161,7 +161,7 @@ export const App: React.FC = () => {
 
       const mappedStaff: CalendarStaff[] = (calData.staff || []).map((s: any) => ({
         id: s.id,
-        name: s.name,
+        name: s.display_name || s.name || s.full_name || 'Специалист',
         role_title: s.role_title,
         color: s.color || '#3B82F6',
       }));
@@ -231,7 +231,7 @@ export const App: React.FC = () => {
     services: { title: 'Услуги и цены', subtitle: 'Категории, прайс-лист и доступность для онлайн-записи' },
     'online-booking': { title: 'Настройки онлайн-записи', subtitle: 'Правила бронирования, дизайн виджета и публикация' },
     reports: { title: 'Отчёты и аналитика', subtitle: 'Операционная выручка, занятость мастеров и статистика' },
-    settings: { title: 'Настройки компании', subtitle: 'Филиалы, доступ пользователей и тарифная подписка' },
+    settings: { title: 'Настройки бизнеса', subtitle: 'Филиалы, доступ пользователей и тарифная подписка' },
   };
 
   const activeTitle = sectionTitles[currentSection] || sectionTitles.calendar;
@@ -252,22 +252,27 @@ export const App: React.FC = () => {
         title={activeTitle.title}
         subtitle={activeTitle.subtitle}
       >
-        {currentSection === 'calendar' && (
-          <CalendarModule
-            api={api}
-            token={token}
-            tenantId={activeMembership.tenant_id}
-            branchId={selectedBranchId || ''}
-            currentDate={currentDate}
-            onDateChange={handleDateChange}
-            staffList={staffList}
-            bookings={bookings}
-            isLoading={isLoading}
-            onRefresh={loadCalendarData}
-            onShowToast={showToast}
-            userRole={activeMembership.role}
-          />
-        )}
+        {currentSection === 'calendar' && (() => {
+          const activeBranch = branches.find(b => b.id === (selectedBranchId || branches[0]?.id)) || branches[0];
+          const activeTimezone = activeBranch?.timezone_iana || activeBranch?.timezone || 'Asia/Almaty';
+          return (
+            <CalendarModule
+              api={api}
+              token={token}
+              tenantId={activeMembership.tenant_id}
+              branchId={selectedBranchId || ''}
+              currentDate={currentDate}
+              onDateChange={handleDateChange}
+              staffList={staffList}
+              bookings={bookings}
+              isLoading={isLoading}
+              onRefresh={loadCalendarData}
+              onShowToast={showToast}
+              userRole={activeMembership.role}
+              timezoneIana={activeTimezone}
+            />
+          );
+        })()}
 
         {currentSection === 'customers' && (
           <CustomersModule

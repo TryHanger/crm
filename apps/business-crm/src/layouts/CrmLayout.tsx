@@ -87,7 +87,8 @@ export const CrmLayout: React.FC<CrmLayoutProps> = ({
         className="crm-desktop-sidebar"
       >
         {/* Brand / Logo */}
-        <header
+        <div
+          className="crm-brand-header"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -197,7 +198,7 @@ export const CrmLayout: React.FC<CrmLayoutProps> = ({
               ))}
             </div>
           )}
-        </header>
+        </div>
 
         {/* Branch Selector Pill */}
         {branches.length > 0 && (
@@ -420,7 +421,10 @@ export const CrmLayout: React.FC<CrmLayoutProps> = ({
 
           <div>
             <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, lineHeight: 1.2 }}>{title}</h1>
-            {subtitle && <div style={{ fontSize: '13px', color: '#64748B' }}>{subtitle}</div>}
+            <div style={{ fontSize: '13px', color: '#64748B' }}>
+              <span style={{ fontWeight: 600, color: '#334155' }}>{membership.tenant_name}</span>
+              {subtitle && ` • ${subtitle}`}
+            </div>
           </div>
 
           {topActions && <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{topActions}</div>}

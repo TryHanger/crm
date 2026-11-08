@@ -30,6 +30,7 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
   const [addTitle, setAddTitle] = useState('Барбер');
   const [addColor, setAddColor] = useState('#2563EB');
   const [addBranchId, setAddBranchId] = useState(branches[0]?.id || '');
+  const [modalBranchId, setModalBranchId] = useState<string>(branches[0]?.id || '');
 
   // Schedule state
   const [scheduleShifts, setScheduleShifts] = useState<any[]>([]);
@@ -129,7 +130,8 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
     if (!selectedStaffId) return;
     try {
       setIsSavingSchedule(true);
-      await api.updateStaffSchedule(selectedStaffId, scheduleShifts, token, tenantId);
+      const targetBranchId = modalBranchId || branches[0]?.id;
+      await api.updateStaffSchedule(selectedStaffId, scheduleShifts, token, tenantId, targetBranchId);
       onShowToast('График работы сохранен');
     } catch (err: any) {
       alert(`Ошибка сохранения графика: ${err.message || err}`);
@@ -143,8 +145,9 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
     if (!selectedStaffId || !staffDetail) return;
     try {
       setIsSavingOffers(true);
+      const targetBranchId = modalBranchId || branches[0]?.id;
       const payload = Object.entries(customOffers).map(([svcId, val]) => ({
-        branch_id: branches[0]?.id,
+        branch_id: targetBranchId,
         service_id: svcId,
         price_override_minor: val.price ? parseInt(val.price, 10) * 100 : undefined,
         duration_override_minutes: val.duration ? parseInt(val.duration, 10) : undefined,
@@ -329,7 +332,7 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
                   {staffDetail.display_name.slice(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>{staffDetail.display_name}</h3>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Сотрудник: {staffDetail.display_name}</h3>
                   <div style={{ fontSize: '13px', color: '#64748B' }}>{staffDetail.role_title}</div>
                 </div>
               </div>
@@ -404,6 +407,20 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
             {/* Tab: Services & Custom Pricing */}
             {profileTab === 'services' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {branches.length > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>Филиал:</span>
+                    <select
+                      value={modalBranchId}
+                      onChange={e => setModalBranchId(e.target.value)}
+                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                    >
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
                   Назначьте услуги и укажите индивидуальные цены или длительность мастера (например, топ-барбера):
                 </p>

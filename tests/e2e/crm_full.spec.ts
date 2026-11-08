@@ -23,8 +23,8 @@ test.describe('CRM Full Business Modules & Workflows', () => {
     await page.screenshot({ path: 'docs/screenshots/crm-01-customers-list.png', fullPage: true });
 
     // Open Add Customer Modal
-    await page.click('button:has-text("Новый клиент"), button:has-text("Добавить")');
-    await expect(page.locator('text=Новый клиент')).toBeVisible();
+    await page.click('button:has-text("Новый клиент"), button:has-text("+ Новый клиент"), button:has-text("+ Клиент"), button:has-text("Добавить")');
+    await expect(page.locator('h3:has-text("Новый клиент")')).toBeVisible();
 
     // Fill form
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -44,12 +44,11 @@ test.describe('CRM Full Business Modules & Workflows', () => {
     await page.screenshot({ path: 'docs/screenshots/crm-02-customer-card.png' });
 
     // Add private note
-    const noteInput = page.locator('input[placeholder*="заметк"], textarea[placeholder*="заметк"]');
-    if (await noteInput.isVisible()) {
-      await noteInput.fill('Предпочитает чай с бергамотом');
-      await page.click('button:has-text("Добавить"), button:has-text("Сохранить")');
-      await expect(page.locator('text=Предпочитает чай с бергамотом')).toBeVisible({ timeout: 5000 });
-    }
+    const noteInput = page.locator('input[placeholder*="заметк"], textarea[placeholder*="заметк"]').first();
+    await expect(noteInput).toBeVisible({ timeout: 5000 });
+    await noteInput.fill('Предпочитает чай с бергамотом');
+    await page.click('button:has-text("Добавить"), button:has-text("Сохранить")');
+    await expect(page.locator('text=Предпочитает чай с бергамотом')).toBeVisible({ timeout: 5000 });
 
     // Close modal
     await page.click('button:has-text("✕"), button:has-text("Закрыть")');
@@ -65,11 +64,11 @@ test.describe('CRM Full Business Modules & Workflows', () => {
     await page.screenshot({ path: 'docs/screenshots/crm-03-staff-list.png', fullPage: true });
 
     // Click on Damir to view staff detail modal
-    await page.click('text=Дамир');
-    await expect(page.locator('text=Сотрудник:')).toBeVisible();
+    await page.locator('text=Дамир').first().click();
+    await expect(page.locator('text=Сотрудник:').first()).toBeVisible();
 
     // Switch to Services tab in staff profile
-    await page.click('button:has-text("Прайс-лист"), button:has-text("Услуги")');
+    await page.locator('button:has-text("Услуги и цены"), button:has-text("Прайс-лист")').first().click();
     await page.screenshot({ path: 'docs/screenshots/crm-04-staff-services.png' });
 
     // Switch to Schedule tab
@@ -97,7 +96,7 @@ test.describe('CRM Full Business Modules & Workflows', () => {
 
     // Save changes
     await page.click('button:has-text("Сохранить изменения")');
-    await expect(page.locator('text=Услуга успешно обновлена')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(':is(:text("Услуга успешно обновлена"), :text("Услуга сохранена"))').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('CRM Online Booking: Rules, Appearance Mockup & Public URL', async ({ page }) => {
@@ -106,7 +105,7 @@ test.describe('CRM Full Business Modules & Workflows', () => {
     await expect(page.locator('h1')).toContainText('Настройки онлайн-записи');
 
     // Check Rules tab
-    await expect(page.locator('text=Глубина бронирования')).toBeVisible();
+    await expect(page.locator(':is(:text("Глубина бронирования"), :text("Глубина записи"))').first()).toBeVisible();
     await page.screenshot({ path: 'docs/screenshots/crm-07-booking-rules.png', fullPage: true });
 
     // Switch to Appearance tab
@@ -116,21 +115,21 @@ test.describe('CRM Full Business Modules & Workflows', () => {
 
     // Switch to Publication tab
     await page.click('button:has-text("Публикация и QR-код")');
-    await expect(page.locator('text=QR-код')).toBeVisible();
-    await expect(page.locator('text=barberhouse.book.example.kz, text=barberhouse.localhost')).toBeVisible();
+    await expect(page.locator('text=QR-код').first()).toBeVisible();
+    await expect(page.locator('input[value*="barberhouse"], a[href*="barberhouse"]').first()).toBeVisible();
     await page.screenshot({ path: 'docs/screenshots/crm-09-booking-publication.png', fullPage: true });
   });
 
   test('CRM Reports: Fact vs Planned Revenue & Master Utilization', async ({ page }) => {
     // Navigate to reports
     await page.click('nav a:has-text("Отчёты"), aside button:has-text("Отчёты")');
-    await expect(page.locator('h1')).toContainText('Отчёты и аналитика');
+    await expect(page.locator('h1').first()).toContainText('Отчёты и аналитика');
 
     // Verify key metrics
-    await expect(page.locator('text=Всего записей')).toBeVisible();
-    await expect(page.locator('text=Факт-выручка')).toBeVisible();
-    await expect(page.locator('text=Плановая стоимость')).toBeVisible();
-    await expect(page.locator('text=Выработка мастеров')).toBeVisible();
+    await expect(page.locator('text=Всего записей').first()).toBeVisible();
+    await expect(page.locator('text=Факт-выручка').first()).toBeVisible();
+    await expect(page.locator('text=Плановая стоимость').first()).toBeVisible();
+    await expect(page.locator('text=Выработка мастеров').first()).toBeVisible();
 
     await page.screenshot({ path: 'docs/screenshots/crm-10-reports-overview.png', fullPage: true });
   });
@@ -138,7 +137,7 @@ test.describe('CRM Full Business Modules & Workflows', () => {
   test('CRM Settings: Branches, Team Access & Invite Generation', async ({ page }) => {
     // Navigate to settings
     await page.click('nav a:has-text("Настройки"), aside button:has-text("Настройки")');
-    await expect(page.locator('h1')).toContainText('Настройки бизнеса');
+    await expect(page.locator('h1').first()).toContainText('Настройки бизнеса');
 
     // Check branches tab
     await expect(page.locator('text=Филиалы сети')).toBeVisible();

@@ -177,7 +177,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await expect(page.locator('header')).toContainText(/barber house/i);
 
     // Strictly assert that master columns are rendered
-    await expect(page.locator('text=Дамир')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Дамир').first()).toBeVisible({ timeout: 10000 });
 
     // STRICT NON-VACUOUS ASSERTION: The created booking card MUST be visible in the calendar!
     const bookingCard = page.locator(`[data-public-ref="${publicRef}"]`);

@@ -101,7 +101,7 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
         token,
         tenantId
       );
-      onShowToast('Услуга сохранена');
+      onShowToast('Услуга успешно обновлена');
       loadData();
     } catch (err: any) {
       alert(`Ошибка сохранения: ${err.message || err}`);

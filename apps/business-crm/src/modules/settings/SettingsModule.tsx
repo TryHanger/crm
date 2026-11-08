@@ -123,27 +123,25 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
     setBranchSaving(true);
     setError(null);
     try {
+      const branchPayload: any = {
+        name: branchName,
+        address: branchAddress,
+        phone: branchPhone,
+        phone_number: branchPhone,
+        timezone: branchTimezone,
+        timezone_iana: branchTimezone,
+      };
       if (editingBranch) {
         await api.updateBranch(
           editingBranch.id,
-          {
-            name: branchName,
-            address: branchAddress,
-            phone_number: branchPhone,
-            timezone: branchTimezone,
-          },
+          branchPayload,
           token,
           tenantId
         );
         if (onShowToast) onShowToast('Филиал обновлен');
       } else {
         await api.createBranch(
-          {
-            name: branchName,
-            address: branchAddress,
-            phone_number: branchPhone,
-            timezone: branchTimezone,
-          },
+          branchPayload,
           token,
           tenantId
         );
@@ -173,8 +171,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
     setEditingBranch(b);
     setBranchName(b.name);
     setBranchAddress(b.address || '');
-    setBranchPhone(b.phone_number || '');
-    setBranchTimezone(b.timezone || 'Asia/Almaty');
+    setBranchPhone(b.phone_number || (b as any).phone || '');
+    setBranchTimezone(b.timezone || (b as any).timezone_iana || 'Asia/Almaty');
     setShowBranchModal(true);
   };
 
@@ -189,7 +187,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
       {/* Header & Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Настройки бизнеса</h1>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Настройки бизнеса</h2>
           <p className="text-sm text-neutral-400 mt-1">
             Управление филиалами, командой с разграничением ролей и тарифной подпиской
           </p>
