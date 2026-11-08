@@ -114,13 +114,23 @@ jobs:
           ENABLE_DEMO_SEED: "true"
           JWT_SECRET_KEY: test-jwt-secret-key-32-chars-long-minimum-length!
         run: |
+          sudo sed -i 's/127.0.0.1 localhost/127.0.0.1 localhost barberhouse.localhost moderncut.localhost/' /etc/hosts
           python -c "from apps.api.app.infrastructure.db.init_db import init_database, seed_database; init_database(); seed_database()"
           uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 &
           npm run dev --workspace=@crm/booking-web -- --port 3000 --host 0.0.0.0 &
           npm run dev --workspace=@crm/business-crm -- --port 3001 --host 0.0.0.0 &
-          sleep 6
+          for port in 8000 3000 3001; do
+            for i in {1..30}; do
+              if curl -s "http://127.0.0.1:$port" > /dev/null 2>&1; then
+                echo "Port $port ready!"
+                break
+              fi
+              echo "Waiting for port $port ($i/30)..."
+              sleep 1
+            done
+          done
           curl -s http://127.0.0.1:8000/api/v1/public/site -H "Host: barberhouse.book.example.kz"
-          npx playwright test
+          npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results
         if: failure()
