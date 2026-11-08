@@ -268,3 +268,52 @@ class SupportTicketCreateRequest(BaseModel):
 class SupportMessageCreateRequest(BaseModel):
     message: str
     is_internal: bool = False
+
+# Full Business CRM Schemas
+class CustomerUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    phone_e164: Optional[str] = None
+    email: Optional[str] = None
+    notes_private: Optional[str] = None
+
+class StaffUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+    role_title: Optional[str] = None
+    color: Optional[str] = None
+    online_bookable: Optional[bool] = None
+    active: Optional[bool] = None
+    branch_ids: Optional[List[uuid.UUID]] = None
+
+class ShiftBreakDto(BaseModel):
+    local_start: str
+    local_end: str
+
+class WeeklyShiftDto(BaseModel):
+    weekday_iso: int
+    local_start: str = "10:00"
+    local_end: str = "20:00"
+    is_working: bool = True
+    breaks: List[ShiftBreakDto] = []
+
+class StaffScheduleUpdateRequest(BaseModel):
+    shifts: List[WeeklyShiftDto]
+
+class ServiceUpdateRequest(BaseModel):
+    category_id: Optional[uuid.UUID] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    base_price_minor: Optional[int] = None
+    base_duration_minutes: Optional[int] = None
+    active: Optional[bool] = None
+    online_visible: Optional[bool] = None
+
+class ServiceCategoryUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    sort_order: Optional[int] = None
+
+class BranchUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    timezone_iana: Optional[str] = None
+    phone: Optional[str] = None

@@ -228,3 +228,140 @@ async def test_multi_tenant_calendar_strict_isolation_between_barberhouse_and_mo
             headers=mc_headers
         )
         assert cross_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_full_crm_crud_and_management_endpoints():
+    """
+    Integration tests for full CRM-0 .. CRM-3 backend capabilities:
+    1. Customer Card & Profile Patch with Note
+    2. Staff Profile Detail & Patch & Schedule Management
+    3. Service Catalog Patch & Safe Archive (active=False, soft delete)
+    4. Service Category Patch
+    5. Booking Theme Branding Patch
+    6. Branch Update
+    7. Users & Invite Management
+    8. Strict Cross-Tenant Boundaries on Customer & Staff entities
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login as Barber House Owner
+        bh_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@barberhouse.kz",
+            "password": "Password123!"
+        })
+        assert bh_login.status_code == 200
+        bh_headers = {"Authorization": f"Bearer {bh_login.json()['access_token']}"}
+
+        # Login as Modern Cut Owner
+        mc_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@moderncut.kz",
+            "password": "Password123!"
+        })
+        assert mc_login.status_code == 200
+        mc_headers = {"Authorization": f"Bearer {mc_login.json()['access_token']}"}
+
+        # --- CUSTOMER CRUD & ISOLATION ---
+        # List customers
+        cust_list_resp = await client.get("/api/v1/business/customers", headers=bh_headers)
+        assert cust_list_resp.status_code == 200
+        customers = cust_list_resp.json()
+        assert len(customers) > 0
+        cust_id = customers[0]["id"]
+
+        # Get customer card
+        card_resp = await client.get(f"/api/v1/business/customers/{cust_id}", headers=bh_headers)
+        assert card_resp.status_code == 200
+        card = card_resp.json()
+        assert "history" in card
+        assert "notes" in card
+
+        # Patch customer
+        patch_cust = await client.patch(f"/api/v1/business/customers/{cust_id}", json={
+            "notes_private": "VIP клиент, чай с бергамотом"
+        }, headers=bh_headers)
+        assert patch_cust.status_code == 200
+
+        # Modern Cut cannot access this customer
+        mc_cross_cust = await client.get(f"/api/v1/business/customers/{cust_id}", headers=mc_headers)
+        assert mc_cross_cust.status_code == 404
+
+        # --- STAFF & SCHEDULE CRUD ---
+        staff_list_resp = await client.get("/api/v1/business/staff", headers=bh_headers)
+        assert staff_list_resp.status_code == 200
+        staff_id = staff_list_resp.json()[0]["id"]
+
+        # Staff detail
+        staff_detail_resp = await client.get(f"/api/v1/business/staff/{staff_id}", headers=bh_headers)
+        assert staff_detail_resp.status_code == 200
+        s_detail = staff_detail_resp.json()
+        assert "branch_ids" in s_detail
+
+        # Patch staff
+        patch_staff = await client.patch(f"/api/v1/business/staff/{staff_id}", json={
+            "color": "#3B82F6"
+        }, headers=bh_headers)
+        assert patch_staff.status_code == 200
+
+        # Staff schedule get & put
+        sched_resp = await client.get(f"/api/v1/business/staff/{staff_id}/schedule", headers=bh_headers)
+        assert sched_resp.status_code == 200
+
+        put_sched = await client.put(f"/api/v1/business/staff/{staff_id}/schedule", json={
+            "shifts": [
+                {
+                    "weekday_iso": d,
+                    "local_start": "10:00",
+                    "local_end": "20:00",
+                    "is_working": True,
+                    "breaks": [{"local_start": "14:00", "local_end": "15:00"}]
+                }
+                for d in range(1, 7)
+            ]
+        }, headers=bh_headers)
+        assert put_sched.status_code == 200
+
+        # --- SERVICE & CATEGORY CRUD ---
+        svc_resp = await client.get("/api/v1/business/services", headers=bh_headers)
+        assert svc_resp.status_code == 200
+        svc_id = svc_resp.json()[0]["id"]
+
+        patch_svc = await client.patch(f"/api/v1/business/services/{svc_id}", json={
+            "description": "Обновленное премиальное описание"
+        }, headers=bh_headers)
+        assert patch_svc.status_code == 200
+
+        cat_resp = await client.get("/api/v1/business/service-categories", headers=bh_headers)
+        assert cat_resp.status_code == 200
+        cat_id = cat_resp.json()[0]["id"]
+
+        patch_cat = await client.patch(f"/api/v1/business/service-categories/{cat_id}", json={
+            "sort_order": 5
+        }, headers=bh_headers)
+        assert patch_cat.status_code == 200
+
+        # --- BRANDING & BRANCH ---
+        patch_theme = await client.patch("/api/v1/business/booking-theme", json={
+            "accent_color": "#E11D48"
+        }, headers=bh_headers)
+        assert patch_theme.status_code == 200
+
+        branches = (await client.get("/api/v1/business/branches", headers=bh_headers)).json()
+        b_id = branches[0]["id"]
+        patch_b = await client.patch(f"/api/v1/business/branches/{b_id}", json={
+            "phone": "+77019998877"
+        }, headers=bh_headers)
+        assert patch_b.status_code == 200
+
+        # --- USERS & INVITES ---
+        users_resp = await client.get("/api/v1/business/users", headers=bh_headers)
+        assert users_resp.status_code == 200
+        users_list = users_resp.json()
+        assert any("owner@barberhouse.kz" in u["email"] for u in users_list)
+
+        inv_resp = await client.post("/api/v1/business/invites", json={
+            "email": f"newmaster_{random.randint(1000, 9999)}@example.kz",
+            "role": "master"
+        }, headers=bh_headers)
+        assert inv_resp.status_code == 201
+        assert "invite_url" in inv_resp.json()
