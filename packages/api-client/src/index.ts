@@ -93,12 +93,13 @@ export class PublicApiClient {
     return handleResponse<StaffPublicResponse[]>(res);
   }
 
-  async getStaffServices(staffId: string): Promise<any[]> {
-    const res = await fetch(`${this.baseUrl}/api/v1/public/staff/${staffId}/services`, {
+  async getStaffServices(staffId: string, branchId?: string): Promise<ServiceItemResponse[]> {
+    const qs = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
+    const res = await fetch(`${this.baseUrl}/api/v1/public/staff/${staffId}/services${qs}`, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
     });
-    return handleResponse<any[]>(res);
+    return handleResponse<ServiceItemResponse[]>(res);
   }
 
   async searchAvailability(payload: AvailabilitySearchRequest): Promise<AvailabilitySearchResponse> {
@@ -236,7 +237,7 @@ export class BusinessCrmApiClient {
     tenantId: string
   ): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/v1/business/bookings/${id}/status`, {
-      method: 'POST',
+      method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

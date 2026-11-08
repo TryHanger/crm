@@ -495,3 +495,126 @@ async def test_plans_catalog_api():
         }, headers=p_headers)
         assert create_p.status_code == 201
         assert create_p.json()["code"] == new_code
+
+
+@pytest.mark.asyncio
+async def test_invite_cannot_hijack_existing_user_password():
+    """Validates that invite acceptance cannot overwrite or hijack existing user passwords."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login as Platform Owner
+        login_p = await client.post("/api/v1/auth/login", json={
+            "email": "owner@platform.example.kz",
+            "password": "Password123!"
+        })
+        p_headers = {"Authorization": f"Bearer {login_p.json()['access_token']}"}
+
+        # 2. Create tenant with an existing email (e.g. owner@moderncut.kz)
+        slug = f"hijack_{uuid.uuid4().hex[:6]}"
+        create_resp = await client.post("/api/v1/platform/tenants", json={
+            "slug": slug,
+            "display_name": "Invite Hijack Test",
+            "owner_email": "owner@moderncut.kz",
+            "owner_name": "Modern Cut Owner",
+            "vertical": "barbershop",
+            "plan_code": "start"
+        }, headers=p_headers)
+        assert create_resp.status_code == 201
+        token = create_resp.json()["invite_token"]
+        assert token is not None
+
+        # 3. Attacker attempts to accept invite with a new password and no current_password
+        hack_resp = await client.post("/api/v1/auth/accept-invite", json={
+            "token": token,
+            "password": "AttackerNewPassword999!"
+        })
+        assert hack_resp.status_code == 401
+        assert "CURRENT_PASSWORD_REQUIRED" in hack_resp.text
+
+        # 4. Attacker attempts with wrong current_password
+        hack_wrong = await client.post("/api/v1/auth/accept-invite", json={
+            "token": token,
+            "current_password": "WrongPassword!",
+            "password": "AttackerNewPassword999!"
+        })
+        assert hack_wrong.status_code == 401
+        assert "INVALID_CURRENT_PASSWORD" in hack_wrong.text
+
+        # 5. Verify original user can still login with original password
+        login_orig = await client.post("/api/v1/auth/login", json={
+            "email": "owner@moderncut.kz",
+            "password": "Password123!"
+        })
+        assert login_orig.status_code == 200
+
+        # 6. Valid user accepts invite with correct current_password
+        valid_accept = await client.post("/api/v1/auth/accept-invite", json={
+            "token": token,
+            "current_password": "Password123!"
+        })
+        assert valid_accept.status_code == 200
+        assert "access_token" in valid_accept.json()
+
+        # 7. Original password remains valid and unchanged
+        login_verify = await client.post("/api/v1/auth/login", json={
+            "email": "owner@moderncut.kz",
+            "password": "Password123!"
+        })
+        assert login_verify.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_quote_strict_binding_and_search_limits():
+    """Validates quote mismatch rejection (409) and search range limit (422)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        headers = {"Host": "barberhouse.book.example.kz"}
+
+        # 1. Get valid branch and services
+        b_resp = await client.get("/api/v1/public/branches", headers=headers)
+        branch_id = b_resp.json()[0]["id"]
+        s_resp = await client.get("/api/v1/public/services", headers=headers)
+        services = s_resp.json()
+        s1_id = services[0]["id"]
+        s2_id = services[1]["id"] if len(services) > 1 else s1_id
+
+        # 2. Search range exceeded test (> 14 days) -> 422
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        date_from = today.isoformat()
+        date_to = (today + datetime.timedelta(days=16)).isoformat()
+        resp_range = await client.post("/api/v1/public/availability/search", json={
+            "branch_id": branch_id,
+            "service_ids": [s1_id],
+            "from_date": date_from,
+            "to_date": date_to
+        }, headers=headers)
+        assert resp_range.status_code == 422
+        assert "SEARCH_RANGE_EXCEEDED" in resp_range.text
+
+        # 3. Find valid slot
+        tomorrow = today + datetime.timedelta(days=1)
+        slots_resp = await client.post("/api/v1/public/availability/search", json={
+            "branch_id": branch_id,
+            "service_ids": [s1_id],
+            "from_date": tomorrow.isoformat(),
+            "to_date": (tomorrow + datetime.timedelta(days=5)).isoformat()
+        }, headers=headers)
+        assert slots_resp.status_code == 200
+        slots = slots_resp.json().get("slots", [])
+        assert len(slots) > 0
+        slot_iso = slots[0]["starts_at_utc"]
+        staff_id = slots[0]["staff_id"]
+        quote_id = slots[0]["quote_id"]
+
+        # 4. Attempt booking with modified service_ids [s2_id] -> 409 QUOTE_MISMATCH
+        mismatch_resp = await client.post("/api/v1/public/bookings", json={
+            "quote_id": quote_id,
+            "branch_id": branch_id,
+            "staff_id": staff_id,
+            "service_ids": [s2_id],
+            "starts_at_utc": slot_iso,
+            "customer_name": "Тест Несовпадения",
+            "customer_phone": "+77011112233"
+        }, headers=headers)
+        assert mismatch_resp.status_code == 409
+        assert "QUOTE_MISMATCH" in mismatch_resp.text

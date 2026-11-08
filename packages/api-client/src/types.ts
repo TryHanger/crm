@@ -146,6 +146,9 @@ export interface PublicManageBookingResponse {
   service_ends_at_utc: string;
   total_amount_minor: number;
   currency: string;
+  branch_id: string;
+  staff_id: string;
+  service_ids: string[];
   customer_name: string;
   customer_phone_masked: string;
   cancellation_cutoff_minutes: number;

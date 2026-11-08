@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { BranchResponse, PublicSiteResponse } from '@crm/api-client';
+import { BookingFlow, BookingStep } from '../types';
 
 interface HeaderProps {
   site: PublicSiteResponse | null;
@@ -7,6 +8,9 @@ interface HeaderProps {
   branches: BranchResponse[];
   onSelectBranch: (branch: BranchResponse) => void;
   accentColor?: string;
+  flow?: BookingFlow;
+  onChangeFlow?: (flow: BookingFlow) => void;
+  step?: BookingStep;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,6 +19,9 @@ export const Header: React.FC<HeaderProps> = ({
   branches,
   onSelectBranch,
   accentColor = '#2563EB',
+  flow = 'service-first',
+  onChangeFlow,
+  step = 'services',
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
@@ -104,29 +111,30 @@ export const Header: React.FC<HeaderProps> = ({
                   strokeLinejoin="round"
                   aria-hidden="true"
                 >
-                  <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0z" />
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                   <circle cx="12" cy="10" r="3" />
                 </svg>
                 <span>{branchName}</span>
                 {branches.length > 1 && (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
                 )}
               </button>
 
+              {/* Branch Selector Dropdown */}
               {branchOpen && branches.length > 1 && (
                 <div
                   style={{
                     position: 'absolute',
+                    top: 'calc(100% + 8px)',
                     left: 0,
-                    top: '24px',
-                    zIndex: 20,
-                    minWidth: '220px',
+                    zIndex: 50,
                     background: '#FFFFFF',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
                     border: '1px solid #E2E8F0',
-                    borderRadius: '10px',
-                    boxShadow: '0 8px 24px rgba(15,23,42,0.12)',
+                    minWidth: '240px',
                     padding: '6px',
                   }}
                 >
@@ -141,17 +149,20 @@ export const Header: React.FC<HeaderProps> = ({
                       style={{
                         width: '100%',
                         textAlign: 'left',
-                        padding: '8px 12px',
-                        borderRadius: '6px',
-                        background: b.id === branch?.id ? '#EFF6FF' : 'transparent',
-                        color: b.id === branch?.id ? accentColor : '#0F172A',
-                        fontWeight: b.id === branch?.id ? 600 : 400,
+                        padding: '10px 12px',
                         border: 'none',
-                        cursor: 'pointer',
+                        borderRadius: '8px',
+                        background: b.id === branch?.id ? '#F1F5F9' : 'transparent',
+                        fontWeight: b.id === branch?.id ? 600 : 400,
                         fontSize: '14px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px',
                       }}
                     >
-                      {b.name}
+                      <span style={{ color: '#0F172A' }}>{b.name}</span>
+                      <span style={{ fontSize: '12px', color: '#64748B' }}>{b.address}</span>
                     </button>
                   ))}
                 </div>
@@ -160,36 +171,34 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Contacts menu button */}
+        {/* Contacts Dropdown */}
         <div style={{ position: 'relative' }}>
           <button
             type="button"
             onClick={() => setMenuOpen(!menuOpen)}
-            aria-expanded={menuOpen}
             style={{
-              height: '48px',
-              padding: '0 18px',
-              boxSizing: 'border-box',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              border: '1px solid #CBD5E1',
+              height: '38px',
+              padding: '0 14px',
               borderRadius: '10px',
+              border: '1px solid #E2E8F0',
               background: '#FFFFFF',
-              color: '#0F172A',
-              fontSize: '16px',
+              color: '#334155',
+              fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
-            Контакты
+            <span>Контакты</span>
             <svg
-              width="16"
-              height="16"
+              width="14"
+              height="14"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2.5"
+              strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
               aria-hidden="true"
@@ -202,63 +211,43 @@ export const Header: React.FC<HeaderProps> = ({
             <div
               style={{
                 position: 'absolute',
+                top: 'calc(100% + 8px)',
                 right: 0,
-                top: '56px',
-                zIndex: 30,
-                width: '240px',
-                padding: '6px',
-                boxSizing: 'border-box',
+                zIndex: 50,
                 background: '#FFFFFF',
+                borderRadius: '14px',
+                boxShadow: '0 12px 28px rgba(0,0,0,0.12)',
                 border: '1px solid #E2E8F0',
-                borderRadius: '12px',
-                boxShadow: '0 8px 24px rgba(15,23,42,0.12)',
+                width: '280px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
               }}
             >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Адрес филиала</span>
+                <span style={{ fontSize: '14px', color: '#0F172A', fontWeight: 600 }}>{branchAddress}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Телефон для справок</span>
+                <span style={{ fontSize: '14px', color: '#0F172A', fontWeight: 600 }}>{phone}</span>
+              </div>
+              <hr style={{ border: 0, borderTop: '1px solid #F1F5F9', margin: '4px 0' }} />
               <a
-                href={`https://maps.google.com/?q=${encodeURIComponent(branchAddress || branchName)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setMenuOpen(false)}
+                href={`tel:${phone}`}
                 style={{
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: accentColor,
+                  color: '#FFFFFF',
+                  textDecoration: 'none',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '10px',
-                  minHeight: '48px',
-                  padding: '0 12px',
-                  borderRadius: '8px',
-                  color: '#0F172A',
-                  textDecoration: 'none',
-                  fontSize: '16px',
-                }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <polygon points="3 11 22 2 13 21 11 13 3 11" />
-                </svg>
-                Построить маршрут
-              </a>
-              <a
-                href={`tel:${phone.replace(/\s+/g, '')}`}
-                onClick={() => setMenuOpen(false)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  minHeight: '48px',
-                  padding: '0 12px',
-                  borderRadius: '8px',
-                  color: '#0F172A',
-                  textDecoration: 'none',
-                  fontSize: '16px',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
                 }}
               >
                 <svg
@@ -280,6 +269,52 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+
+      {/* Entry Flow Selector Tabs */}
+      {step !== 'manage' && step !== 'result' && onChangeFlow && (
+        <div
+          style={{
+            maxWidth: '1040px',
+            margin: '0 auto',
+            padding: '0 24px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500, marginRight: '4px' }}>
+            Способ записи:
+          </span>
+          {[
+            { id: 'service-first', label: 'По услуге' },
+            { id: 'master-first', label: 'По мастеру' },
+            { id: 'time-first', label: 'По времени' },
+          ].map(t => {
+            const isActive = flow === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onChangeFlow(t.id as BookingFlow)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '10px',
+                  border: `1px solid ${isActive ? accentColor : '#E2E8F0'}`,
+                  background: isActive ? `${accentColor}12` : '#FFFFFF',
+                  color: isActive ? accentColor : '#475569',
+                  fontSize: '13px',
+                  fontWeight: isActive ? 600 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </header>
   );
 };

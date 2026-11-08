@@ -20,7 +20,11 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
 
   // Reschedule state
   const [isRescheduling, setIsRescheduling] = useState(false);
-  const [rescheduleDate, setRescheduleDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [rescheduleDate, setRescheduleDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  });
   const [availableSlots, setAvailableSlots] = useState<SlotResponse[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<SlotResponse | null>(null);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
@@ -37,7 +41,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
       const res = await api.getBookingManage(token);
       setBooking(res);
     } catch (err: any) {
-      setError(err.message || 'Не удалось загрузить данные записи');
+      setError(err.message || 'Не удалось загрузить данные записи. Возможно, ссылка устарела.');
     } finally {
       setIsLoading(false);
     }
@@ -51,16 +55,16 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
   useEffect(() => {
     if (!isRescheduling || !booking) return;
 
+    let isCancelled = false;
     const fetchSlots = async () => {
       try {
         setIsLoadingSlots(true);
-        // Extract service ids from items if available
-        const serviceIds = (booking.items || []).map((it: any) => it.service_id).filter(Boolean);
-        const staffId = (booking.items || [])[0]?.staff_id;
+        const serviceIds = booking.service_ids && booking.service_ids.length > 0
+          ? booking.service_ids
+          : (booking.items || []).map((it: any) => it.service_id).filter(Boolean);
 
-        // Fetch branches to get default branch
-        const branches = await api.getBranches();
-        const branchId = branches[0]?.id;
+        const branchId = booking.branch_id;
+        const staffId = booking.staff_id;
 
         if (branchId && serviceIds.length > 0) {
           const res = await api.searchAvailability({
@@ -70,29 +74,38 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
             to_date: rescheduleDate,
             staff_id: staffId,
           });
-          setAvailableSlots(res.slots || []);
+          if (!isCancelled) {
+            setAvailableSlots(res.slots || []);
+          }
         }
       } catch (e: any) {
-        console.error(e);
+        if (!isCancelled) console.error('Failed to load reschedule slots', e);
       } finally {
-        setIsLoadingSlots(false);
+        if (!isCancelled) setIsLoadingSlots(false);
       }
     };
     fetchSlots();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [isRescheduling, rescheduleDate, booking, api]);
 
   const handleConfirmReschedule = async () => {
     if (!selectedSlot) return;
     try {
       setIsLoading(true);
+      setError(null);
       await api.rescheduleBooking(token, {
         new_starts_at_utc: selectedSlot.starts_at_utc,
+        new_staff_id: selectedSlot.staff_id,
       });
       setIsRescheduling(false);
+      setSelectedSlot(null);
       setActionMessage('Запись успешно перенесена на новое время!');
       await loadBooking();
     } catch (err: any) {
-      setError(err.message || 'Ошибка переноса записи');
+      setError(err.message || 'Ошибка при переносе записи');
     } finally {
       setIsLoading(false);
     }
@@ -101,102 +114,183 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
   const handleConfirmCancel = async () => {
     try {
       setIsLoading(true);
-      await api.cancelBooking(token, {
-        reason: cancelReason || 'Отмена клиентом',
-      });
+      setError(null);
+      await api.cancelBooking(token, { reason: cancelReason || 'Отмена клиентом' });
       setIsCancelling(false);
       setActionMessage('Запись успешно отменена.');
       await loadBooking();
     } catch (err: any) {
-      setError(err.message || 'Ошибка отмены записи');
+      setError(err.message || 'Не удалось отменить запись');
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (isLoading) {
+  const formatCutoffMinutes = (minutes?: number) => {
+    if (!minutes) return 'за 2 часа';
+    if (minutes < 60) return `за ${minutes} минут`;
+    const hours = Math.round(minutes / 60);
+    if (hours === 1) return 'за 1 час';
+    if (hours >= 2 && hours <= 4) return `за ${hours} часа`;
+    return `за ${hours} часов`;
+  };
+
+  const formatDateTime = (isoString: string) => {
+    const d = new Date(isoString);
+    const dateFormatted = d.toLocaleDateString('ru-RU', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Asia/Almaty',
+    });
+    const timeFormatted = d.toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Almaty',
+    });
+    return `${dateFormatted} в ${timeFormatted}`;
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'confirmed':
+        return { label: 'Подтверждена', bg: '#DCFCE7', text: '#15803D' };
+      case 'cancelled':
+        return { label: 'Отменена', bg: '#FEE2E2', text: '#B91C1C' };
+      case 'completed':
+        return { label: 'Завершена', bg: '#F1F5F9', text: '#475569' };
+      case 'in_progress':
+        return { label: 'В процессе', bg: '#DBEAFE', text: '#1D4ED8' };
+      case 'arrived':
+        return { label: 'Клиент прибыл', bg: '#FEF3C7', text: '#B45309' };
+      default:
+        return { label: status, bg: '#F1F5F9', text: '#475569' };
+    }
+  };
+
+  if (isLoading && !booking) {
     return (
-      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '40px 24px' }}>
-        <p style={{ color: '#64748B' }}>Загружаем данные записи…</p>
-      </main>
+      <div style={{ maxWidth: '560px', margin: '60px auto', textAlign: 'center', padding: '24px' }}>
+        <p style={{ color: '#64748B', fontSize: '16px' }}>Загружаем данные бронирования…</p>
+      </div>
     );
   }
 
-  if (error || !booking) {
+  if (error && !booking) {
     return (
-      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '40px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ padding: '20px', borderRadius: '14px', background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B' }}>
-          <h2 style={{ margin: '0 0 8px', fontSize: '18px' }}>Ошибка</h2>
-          <p style={{ margin: 0 }}>{error || 'Запись не найдена'}</p>
-        </div>
-        <button
-          type="button"
-          onClick={onBackToBooking}
+      <div style={{ maxWidth: '560px', margin: '40px auto', padding: '24px' }}>
+        <div
+          role="alert"
           style={{
-            alignSelf: 'flex-start',
-            height: '44px',
-            padding: '0 16px',
-            borderRadius: '10px',
-            background: accentColor,
-            color: '#FFFFFF',
-            border: 0,
-            cursor: 'pointer',
-            fontWeight: 600,
+            padding: '20px',
+            borderRadius: '16px',
+            background: '#FEF2F2',
+            border: '1px solid #FCA5A5',
+            color: '#991B1B',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
           }}
         >
-          Вернуться на главную
-        </button>
-      </main>
+          <div style={{ fontWeight: 700, fontSize: '18px' }}>Ошибка загрузки записи</div>
+          <div style={{ fontSize: '14px', lineHeight: 1.5 }}>{error}</div>
+          <button
+            type="button"
+            onClick={onBackToBooking}
+            style={{
+              marginTop: '8px',
+              padding: '10px 16px',
+              borderRadius: '10px',
+              background: '#991B1B',
+              color: '#FFFFFF',
+              border: 0,
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              alignSelf: 'flex-start',
+            }}
+          >
+            Вернуться на главную
+          </button>
+        </div>
+      </div>
     );
   }
 
-  const isCancelled = booking.status === 'cancelled';
-  const startD = new Date(booking.starts_at_utc);
-  const dateFormatted = startD.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-  const timeFormatted = startD.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Almaty' });
+  if (!booking) return null;
+
+  const statusBadge = getStatusBadge(booking.status);
+  const totalAmountFormatted = `${(booking.total_amount_minor / 100).toLocaleString('ru-RU')} ₸`;
 
   return (
     <main
       style={{
-        width: '100%',
-        maxWidth: '720px',
-        margin: '0 auto',
-        padding: '32px 24px 56px',
+        maxWidth: '560px',
+        margin: '32px auto',
+        padding: '0 16px',
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
         gap: '20px',
       }}
     >
+      {/* Back button */}
       <button
         type="button"
         onClick={onBackToBooking}
         style={{
-          alignSelf: 'flex-start',
-          display: 'inline-flex',
+          display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          color: '#475569',
+          gap: '8px',
           background: 'none',
           border: 'none',
-          cursor: 'pointer',
           padding: 0,
+          color: '#64748B',
           fontSize: '15px',
           fontWeight: 500,
+          cursor: 'pointer',
+          alignSelf: 'flex-start',
         }}
       >
-        ← Вернуться к записи
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+        <span>Новая запись</span>
       </button>
+
+      {/* Title & Status */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '26px', fontWeight: 800, color: '#0F172A' }}>
+            Управление записью
+          </h1>
+          <span style={{ fontSize: '14px', color: '#64748B' }}>Код визита: #{booking.public_ref}</span>
+        </div>
+        <span
+          style={{
+            padding: '6px 14px',
+            borderRadius: '12px',
+            background: statusBadge.bg,
+            color: statusBadge.text,
+            fontSize: '14px',
+            fontWeight: 700,
+          }}
+        >
+          {statusBadge.label}
+        </span>
+      </div>
 
       {actionMessage && (
         <div
           role="status"
           style={{
-            padding: '16px 20px',
-            borderRadius: '14px',
+            padding: '14px 18px',
+            borderRadius: '12px',
             background: '#F0FDF4',
-            border: '1px solid #BBF7D0',
-            color: '#166534',
+            border: '1px solid #86EFAC',
+            color: '#15803D',
+            fontSize: '15px',
             fontWeight: 600,
           }}
         >
@@ -204,147 +298,108 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
         </div>
       )}
 
-      {/* Booking Header Card */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            padding: '14px 18px',
+            borderRadius: '12px',
+            background: '#FEF2F2',
+            border: '1px solid #FCA5A5',
+            color: '#991B1B',
+            fontSize: '14px',
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Main Info Card */}
       <div
         style={{
           background: '#FFFFFF',
-          borderRadius: '16px',
+          borderRadius: '18px',
           border: '1px solid #E2E8F0',
-          padding: '24px',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.04)',
+          padding: '22px',
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700 }}>
-              Запись #{booking.public_ref}
-            </h1>
-          </div>
-          <span
-            style={{
-              padding: '6px 14px',
-              borderRadius: '999px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: isCancelled ? '#FEE2E2' : '#DCFCE7',
-              color: isCancelled ? '#B91C1C' : '#15803D',
-            }}
-          >
-            {isCancelled ? 'Отменена' : 'Подтверждена'}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Дата и время</span>
+          <span style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', textTransform: 'capitalize' }}>
+            {formatDateTime(booking.starts_at_utc)}
           </span>
         </div>
 
-        <div style={{ height: '1px', background: '#E2E8F0' }} />
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', fontSize: '15px' }}>
-          <div>
-            <div style={{ fontSize: '13px', color: '#64748B', textTransform: 'uppercase', fontWeight: 600 }}>
-              Дата и время
-            </div>
-            <div style={{ fontWeight: 600, marginTop: '2px' }}>{dateFormatted} в {timeFormatted}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '13px', color: '#64748B', textTransform: 'uppercase', fontWeight: 600 }}>
-              Клиент
-            </div>
-            <div style={{ fontWeight: 600, marginTop: '2px' }}>{booking.customer_name}</div>
-            <div style={{ color: '#64748B', fontSize: '14px' }}>{booking.customer_phone_masked}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '13px', color: '#64748B', textTransform: 'uppercase', fontWeight: 600 }}>
-              Стоимость
-            </div>
-            <div style={{ fontSize: '18px', fontWeight: 700, marginTop: '2px' }}>
-              {(booking.total_amount_minor / 100).toLocaleString('ru-RU')} ₸
-            </div>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Клиент</span>
+          <span style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+            {booking.customer_name} ({booking.customer_phone_masked})
+          </span>
         </div>
 
-        {booking.items && booking.items.length > 0 && (
-          <div>
-            <div style={{ fontSize: '13px', color: '#64748B', textTransform: 'uppercase', fontWeight: 600, marginBottom: '6px' }}>
-              Услуги и мастер
+        <hr style={{ border: 0, borderTop: '1px solid #E2E8F0', margin: '2px 0' }} />
+
+        {/* Services List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Услуги в заказе</span>
+          {(booking.items || []).map((it: any, idx: number) => (
+            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+              <span style={{ color: '#0F172A', fontWeight: 500 }}>
+                {it.service_name} ({it.duration_minutes} мин)
+              </span>
+              <span style={{ color: '#64748B' }}>
+                {(it.price_minor / 100).toLocaleString('ru-RU')} ₸
+              </span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {booking.items.map((it: any, idx: number) => (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                  <span>• {it.service_name || 'Услуга'} ({it.staff_name || 'Мастер'})</span>
-                  <span style={{ fontWeight: 600 }}>{((it.price_minor || 0) / 100).toLocaleString('ru-RU')} ₸</span>
-                </div>
-              ))}
-            </div>
+          ))}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '17px',
+              fontWeight: 700,
+              color: '#0F172A',
+              marginTop: '6px',
+              paddingTop: '8px',
+              borderTop: '1px dashed #E2E8F0',
+            }}
+          >
+            <span>Итого</span>
+            <span style={{ color: accentColor }}>{totalAmountFormatted}</span>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Action buttons (only if not cancelled and allowed by policy) */}
-      {!isCancelled && (
-        <div style={{ display: 'flex', gap: '12px' }}>
-          {booking.can_reschedule && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsRescheduling(true);
-                setIsCancelling(false);
-              }}
-              style={{
-                flex: 1,
-                height: '48px',
-                borderRadius: '12px',
-                border: `1px solid ${accentColor}`,
-                background: '#FFFFFF',
-                color: accentColor,
-                fontSize: '16px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Перенести запись
-            </button>
-          )}
-          {booking.can_cancel && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsCancelling(true);
-                setIsRescheduling(false);
-              }}
-              style={{
-                flex: 1,
-                height: '48px',
-                borderRadius: '12px',
-                border: '1px solid #FCA5A5',
-                background: '#FFFFFF',
-                color: '#B91C1C',
-                fontSize: '16px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Отменить запись
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Reschedule View */}
-      {isRescheduling && (
+      {/* Reschedule Block */}
+      {isRescheduling ? (
         <div
           style={{
             background: '#FFFFFF',
-            borderRadius: '16px',
-            border: `2px solid ${accentColor}`,
-            padding: '24px',
+            borderRadius: '18px',
+            border: '1px solid #E2E8F0',
+            padding: '22px',
             display: 'flex',
             flexDirection: 'column',
             gap: '16px',
           }}
         >
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700 }}>Перенос на другое время</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Выберите новое время</h2>
+            <button
+              type="button"
+              onClick={() => setIsRescheduling(false)}
+              style={{ background: 'none', border: 0, color: '#64748B', cursor: 'pointer', fontSize: '14px' }}
+            >
+              Отмена
+            </button>
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '14px', fontWeight: 600 }}>Выберите новую дату:</label>
+            <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>Дата переноса</label>
             <input
               type="date"
               value={rescheduleDate}
@@ -355,156 +410,179 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
                 borderRadius: '10px',
                 border: '1px solid #CBD5E1',
                 fontSize: '15px',
-                width: '200px',
               }}
             />
           </div>
 
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
-              Выберите слот:
+          {isLoadingSlots ? (
+            <p style={{ color: '#64748B', fontSize: '14px' }}>Поиск свободных слотов…</p>
+          ) : availableSlots.length === 0 ? (
+            <p style={{ color: '#64748B', fontSize: '14px' }}>На выбранную дату нет свободных окон.</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '8px' }}>
+              {availableSlots.map(s => {
+                const isSelected = selectedSlot?.starts_at_utc === s.starts_at_utc;
+                const d = new Date(s.starts_at_utc);
+                const timeLabel = d.toLocaleTimeString('ru-RU', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  timeZone: 'Asia/Almaty',
+                });
+                return (
+                  <button
+                    key={s.quote_id}
+                    type="button"
+                    onClick={() => setSelectedSlot(s)}
+                    style={{
+                      height: '42px',
+                      borderRadius: '8px',
+                      border: `1px solid ${isSelected ? accentColor : '#CBD5E1'}`,
+                      background: isSelected ? accentColor : '#FFFFFF',
+                      color: isSelected ? '#FFFFFF' : '#0F172A',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {timeLabel}
+                  </button>
+                );
+              })}
             </div>
-            {isLoadingSlots ? (
-              <p style={{ color: '#64748B' }}>Ищем слоты…</p>
-            ) : availableSlots.length === 0 ? (
-              <p style={{ color: '#64748B' }}>На эту дату нет свободных мест у мастера.</p>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(85px, 1fr))', gap: '8px' }}>
-                {availableSlots.map(s => {
-                  const isSel = selectedSlot?.starts_at_utc === s.starts_at_utc;
-                  const tStr = new Date(s.starts_at_utc).toLocaleTimeString('ru-RU', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    timeZone: 'Asia/Almaty',
-                  });
-                  return (
-                    <button
-                      key={s.quote_id}
-                      type="button"
-                      onClick={() => setSelectedSlot(s)}
-                      style={{
-                        height: '42px',
-                        borderRadius: '8px',
-                        border: `1px solid ${isSel ? accentColor : '#CBD5E1'}`,
-                        background: isSel ? accentColor : '#FFFFFF',
-                        color: isSel ? '#FFFFFF' : '#0F172A',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {tStr}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          )}
 
-          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-            <button
-              type="button"
-              disabled={!selectedSlot}
-              onClick={handleConfirmReschedule}
-              style={{
-                height: '46px',
-                padding: '0 20px',
-                borderRadius: '10px',
-                background: selectedSlot ? accentColor : '#CBD5E1',
-                color: '#FFFFFF',
-                border: 0,
-                fontWeight: 600,
-                cursor: selectedSlot ? 'pointer' : 'not-allowed',
-              }}
-            >
-              Подтвердить перенос
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsRescheduling(false)}
-              style={{
-                height: '46px',
-                padding: '0 16px',
-                borderRadius: '10px',
-                background: 'transparent',
-                border: '1px solid #CBD5E1',
-                cursor: 'pointer',
-              }}
-            >
-              Отмена
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleConfirmReschedule}
+            disabled={!selectedSlot || isLoading}
+            style={{
+              height: '48px',
+              borderRadius: '12px',
+              border: 0,
+              background: selectedSlot && !isLoading ? accentColor : '#CBD5E1',
+              color: '#FFFFFF',
+              fontSize: '16px',
+              fontWeight: 600,
+              cursor: selectedSlot && !isLoading ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {isLoading ? 'Сохраняем…' : 'Подтвердить перенос'}
+          </button>
         </div>
-      )}
-
-      {/* Cancel View */}
-      {isCancelling && (
+      ) : isCancelling ? (
         <div
           style={{
             background: '#FFFFFF',
-            borderRadius: '16px',
-            border: '2px solid #FCA5A5',
-            padding: '24px',
+            borderRadius: '18px',
+            border: '1px solid #FCA5A5',
+            padding: '22px',
             display: 'flex',
             flexDirection: 'column',
             gap: '16px',
           }}
         >
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#B91C1C' }}>
-            Подтверждение отмены
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#991B1B' }}>
+            Подтвердите отмену записи
           </h2>
-          <p style={{ margin: 0, color: '#475569' }}>
-            Вы действительно хотите отменить запись? Освободившееся время станет доступно другим клиентам.
+          <p style={{ margin: 0, fontSize: '14px', color: '#64748B' }}>
+            Вы уверены, что хотите отменить эту запись? Освобожденное время сразу станет доступно другим клиентам.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '14px', fontWeight: 600 }}>Причина отмены (необязательно):</label>
-            <input
-              type="text"
-              value={cancelReason}
-              onChange={e => setCancelReason(e.target.value)}
-              placeholder="Изменились планы"
-              style={{
-                height: '44px',
-                padding: '0 12px',
-                borderRadius: '10px',
-                border: '1px solid #CBD5E1',
-                fontSize: '15px',
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+          <input
+            type="text"
+            placeholder="Причина отмены (необязательно)"
+            value={cancelReason}
+            onChange={e => setCancelReason(e.target.value)}
+            style={{
+              height: '44px',
+              padding: '0 12px',
+              borderRadius: '10px',
+              border: '1px solid #CBD5E1',
+              fontSize: '14px',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '10px' }}>
             <button
               type="button"
               onClick={handleConfirmCancel}
+              disabled={isLoading}
               style={{
-                height: '46px',
-                padding: '0 20px',
-                borderRadius: '10px',
-                background: '#B91C1C',
-                color: '#FFFFFF',
+                flex: 1,
+                height: '48px',
+                borderRadius: '12px',
                 border: 0,
+                background: '#DC2626',
+                color: '#FFFFFF',
+                fontSize: '15px',
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
             >
-              Да, отменить запись
+              {isLoading ? 'Отменяем…' : 'Да, отменить запись'}
             </button>
             <button
               type="button"
               onClick={() => setIsCancelling(false)}
               style={{
-                height: '46px',
-                padding: '0 16px',
-                borderRadius: '10px',
-                background: 'transparent',
+                flex: 1,
+                height: '48px',
+                borderRadius: '12px',
                 border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#0F172A',
+                fontSize: '15px',
+                fontWeight: 600,
                 cursor: 'pointer',
               }}
             >
-              Не отменять
+              Назад
             </button>
           </div>
         </div>
+      ) : (
+        booking.status === 'confirmed' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {booking.can_reschedule && (
+              <button
+                type="button"
+                onClick={() => setIsRescheduling(true)}
+                style={{
+                  height: '50px',
+                  borderRadius: '12px',
+                  border: `1px solid ${accentColor}`,
+                  background: '#FFFFFF',
+                  color: accentColor,
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Перенести запись
+              </button>
+            )}
+
+            {booking.can_cancel && (
+              <button
+                type="button"
+                onClick={() => setIsCancelling(true)}
+                style={{
+                  height: '50px',
+                  borderRadius: '12px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#DC2626',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Отменить запись
+              </button>
+            )}
+
+            <div style={{ fontSize: '13px', color: '#64748B', textAlign: 'center' }}>
+              Бесплатная отмена возможна не позднее чем {formatCutoffMinutes(booking.cancellation_cutoff_minutes)} до визита.
+            </div>
+          </div>
+        )
       )}
     </main>
   );

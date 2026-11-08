@@ -4,7 +4,7 @@ import secrets
 import datetime
 import zoneinfo
 from typing import List, Optional, Tuple, Dict, Any
-from sqlalchemy import select, and_, or_, func, text
+from sqlalchemy import select, and_, or_, func, text, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from fastapi import HTTPException, status
@@ -315,11 +315,23 @@ class BookingEngine:
         min_start_utc = now_utc + datetime.timedelta(minutes=policy.min_advance_minutes)
         max_start_utc = now_utc + datetime.timedelta(days=policy.book_ahead_days)
 
+        if (to_utc - from_utc).days > 14:
+            raise BookingEngineError("SEARCH_RANGE_EXCEEDED", "Availability search range cannot exceed 14 days", 422)
+
         search_from = max(from_utc, min_start_utc)
         search_to = min(to_utc, max_start_utc)
 
         if search_from >= search_to:
             return {"slots": [], "total_count": 0}
+
+        try:
+            stmt_cleanup = delete(BookingQuote).where(
+                BookingQuote.tenant_id == tenant_id,
+                BookingQuote.expires_at < now_utc - datetime.timedelta(hours=1)
+            )
+            await db.execute(stmt_cleanup)
+        except Exception:
+            pass
 
         # 1. Candidate staff
         if staff_id:
@@ -591,6 +603,25 @@ class BookingEngine:
                     "Selected booking quote has expired or was already used. Please select slot again.",
                     status_code=409
                 )
+
+            # Strict Quote Binding: verify branch, staff, slot start time, and services
+            req_service_ids = [str(s) for s in service_ids]
+            quote_service_ids = quote.selected_service_ids_ordered or []
+            q_start = quote.starts_at_utc.replace(microsecond=0)
+            r_start = starts_at_utc.replace(microsecond=0)
+
+            if (
+                quote.branch_id != branch_id
+                or quote.staff_id != staff_id
+                or q_start != r_start
+                or quote_service_ids != req_service_ids
+            ):
+                raise BookingEngineError(
+                    "QUOTE_MISMATCH",
+                    "Booking parameters (branch, staff, time, or services) do not match the selected quote",
+                    status_code=409
+                )
+
             if quote.amount_minor != actual_price_minor or quote.duration_minutes != duration_mins:
                 raise BookingEngineError(
                     "QUOTE_CHANGED",

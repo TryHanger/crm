@@ -124,6 +124,9 @@ class PublicManageBookingResponse(BaseModel):
     service_ends_at_utc: datetime.datetime
     total_amount_minor: int
     currency: str
+    branch_id: uuid.UUID
+    staff_id: uuid.UUID
+    service_ids: List[uuid.UUID]
     customer_name: str
     customer_phone_masked: str
     cancellation_cutoff_minutes: int

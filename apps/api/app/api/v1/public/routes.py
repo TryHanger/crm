@@ -374,6 +374,9 @@ async def get_manage_booking(
         service_ends_at_utc=booking.service_ends_at_utc,
         total_amount_minor=booking.amount_minor_snapshot,
         currency=booking.currency,
+        branch_id=booking.branch_id,
+        staff_id=booking.staff_id,
+        service_ids=[it.service_id for it in items],
         customer_name=booking.customer.full_name if booking.customer else "Клиент",
         customer_phone_masked=masked_phone,
         cancellation_cutoff_minutes=policy.cancellation_cutoff_minutes,
@@ -381,6 +384,7 @@ async def get_manage_booking(
         can_reschedule=can_reschedule,
         items=[
             {
+                "service_id": str(it.service_id),
                 "service_name": it.service_name_snapshot,
                 "duration_minutes": it.duration_minutes_snapshot,
                 "price_minor": it.price_minor_snapshot

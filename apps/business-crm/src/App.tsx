@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BusinessCrmApiClient } from '@crm/api-client';
+
+interface CrmMembership {
+  membership_id: string;
+  tenant_id: string;
+  tenant_slug: string;
+  tenant_name: string;
+  role: string;
+}
 
 interface CalendarStaff {
   id: string;
@@ -24,474 +32,834 @@ interface CalendarBooking {
 export const App: React.FC = () => {
   const [api] = useState(() => new BusinessCrmApiClient());
 
-  // Demo tenant credentials
-  const demoAccounts = [
-    {
-      label: 'Barber House (Owner)',
-      email: 'owner@barberhouse.kz',
-      password: 'Password123!',
-      brandName: 'BARBER HOUSE',
-      slug: 'barberhouse',
-    },
-    {
-      label: 'Modern Cut (Owner)',
-      email: 'owner@moderncut.kz',
-      password: 'Password123!',
-      brandName: 'MODERN CUT',
-      slug: 'moderncut',
-    },
-  ];
+  // Authentication State
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('crm_token') || null);
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [memberships, setMemberships] = useState<CrmMembership[]>([]);
+  const [activeMembership, setActiveMembership] = useState<CrmMembership | null>(null);
 
-  const [selectedAccount, setSelectedAccount] = useState(demoAccounts[0]);
-  const [token, setToken] = useState<string | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Business CRM Workspace State
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
-
-  // Calendar state
   const [currentDate, setCurrentDate] = useState<string>(() => {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
+    return new Date().toISOString().split('T')[0];
   });
   const [staffList, setStaffList] = useState<CalendarStaff[]>([]);
   const [bookings, setBookings] = useState<CalendarBooking[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<CalendarBooking | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Login handler
-  const login = async (account = selectedAccount) => {
+  // Load Current User and Active Memberships
+  const loadUserContext = useCallback(async (authToken: string) => {
     try {
       setIsLoading(true);
-      const res = await api.login({
-        email: account.email,
-        password: account.password,
-      });
-      setToken(res.access_token);
+      const me = await api.getMe(authToken);
+      setCurrentUser(me);
 
-      const me = await api.getMe(res.access_token);
-      const activeTenantId = me.tenant_id;
-      setTenantId(activeTenantId);
+      const mems: CrmMembership[] = me.crm_memberships || [];
+      setMemberships(mems);
 
-      // Fetch branches for this tenant
-      const branchRes = await fetch('/api/v1/business/branches', {
-        headers: {
-          Authorization: `Bearer ${res.access_token}`,
-          'X-Tenant-ID': activeTenantId,
-        },
-      });
-      if (branchRes.ok) {
-        const brs = await branchRes.json();
-        setBranches(brs);
-        if (brs.length > 0) {
-          setSelectedBranchId(brs[0].id);
-        }
+      if (mems.length > 0) {
+        // Retain current tenant or pick first
+        setActiveMembership(prev => {
+          if (prev && mems.some(m => m.tenant_id === prev.tenant_id)) {
+            return prev;
+          }
+          return mems[0];
+        });
+      } else {
+        setActiveMembership(null);
       }
     } catch (err: any) {
-      console.error('Login error', err);
+      console.error('Failed to load user context', err);
+      // If token expired, clear
+      setToken(null);
+      localStorage.removeItem('crm_token');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [api]);
 
   useEffect(() => {
-    login(selectedAccount);
-  }, [selectedAccount]);
+    if (token) {
+      loadUserContext(token);
+    }
+  }, [token, loadUserContext]);
 
-  // Fetch calendar data
-  const loadCalendar = async () => {
-    if (!token || !tenantId || !selectedBranchId) return;
+  // Fetch branches when activeMembership changes
+  useEffect(() => {
+    if (!token || !activeMembership) return;
+
+    const fetchBranches = async () => {
+      try {
+        const branchRes = await fetch('/api/v1/business/branches', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Tenant-ID': activeMembership.tenant_id,
+          },
+        });
+        if (branchRes.ok) {
+          const brs = await branchRes.json();
+          setBranches(brs);
+          if (brs.length > 0) {
+            setSelectedBranchId(brs[0].id);
+          } else {
+            setSelectedBranchId(null);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch branches', err);
+      }
+    };
+
+    fetchBranches();
+  }, [token, activeMembership]);
+
+  // Fetch Calendar Data
+  const fetchCalendar = useCallback(async () => {
+    if (!token || !activeMembership || !selectedBranchId) return;
 
     try {
       setIsLoading(true);
-      const calData = await api.getCalendar(
-        { date: currentDate, branch_id: selectedBranchId },
+      const data = await api.getCalendar(
+        {
+          date: currentDate,
+          branch_id: selectedBranchId,
+        },
         token,
-        tenantId
+        activeMembership.tenant_id
       );
-      setStaffList(calData.staff || []);
-      setBookings(calData.bookings || []);
+
+      const mappedStaff: CalendarStaff[] = (data.masters || []).map((m: any) => ({
+        id: m.staff_id,
+        name: m.name,
+        role_title: m.role_title,
+        color: m.color || '#3B82F6',
+      }));
+      setStaffList(mappedStaff);
+
+      const mappedBookings: CalendarBooking[] = (data.appointments || []).map((a: any) => ({
+        id: a.booking_id,
+        public_ref: a.public_ref,
+        staff_id: a.staff_id,
+        customer_name: a.customer_name,
+        customer_phone: a.customer_phone,
+        status: a.status,
+        starts_at_utc: a.starts_at_utc,
+        service_ends_at_utc: a.service_ends_at_utc,
+        amount_minor: a.amount_minor,
+        services: a.services || [],
+      }));
+      setBookings(mappedBookings);
     } catch (err: any) {
       console.error('Failed to load calendar', err);
+      setBookings([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [api, token, activeMembership, selectedBranchId, currentDate]);
 
   useEffect(() => {
-    loadCalendar();
-  }, [token, tenantId, selectedBranchId, currentDate]);
+    fetchCalendar();
+  }, [fetchCalendar]);
 
-  const handleUpdateStatus = async (newStatus: string) => {
-    if (!selectedBooking || !token || !tenantId) return;
+  // Handle Login Submit
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      setLoginError('Введите email и пароль');
+      return;
+    }
 
     try {
-      await api.updateBookingStatus(
-        selectedBooking.id,
-        { status: newStatus as any },
-        token,
-        tenantId
-      );
-      setSelectedBooking(null);
-      await loadCalendar();
+      setIsLoggingIn(true);
+      setLoginError(null);
+      const res = await api.login({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+
+      setToken(res.access_token);
+      localStorage.setItem('crm_token', res.access_token);
+      await loadUserContext(res.access_token);
     } catch (err: any) {
-      console.error('Failed to update status', err);
+      setLoginError(err.message || 'Неверный email или пароль');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  // Handle Logout
+  const handleLogout = () => {
+    setToken(null);
+    setCurrentUser(null);
+    setMemberships([]);
+    setActiveMembership(null);
+    setBookings([]);
+    localStorage.removeItem('crm_token');
+  };
+
+  // Handle Status Update (PATCH /business/bookings/{id}/status)
+  const handleUpdateStatus = async (targetStatus: string) => {
+    if (!token || !activeMembership || !selectedBooking) return;
+
+    try {
+      setStatusUpdating(true);
+      const updated = await api.updateBookingStatus(
+        selectedBooking.id,
+        { status: targetStatus },
+        token,
+        activeMembership.tenant_id
+      );
+
+      // Update in state
+      setSelectedBooking(prev => (prev ? { ...prev, status: updated.status } : null));
+      setBookings(prev =>
+        prev.map(b => (b.id === selectedBooking.id ? { ...b, status: updated.status } : b))
+      );
+
+      setToastMessage(`Статус записи обновлен на «${targetStatus}»`);
+      setTimeout(() => setToastMessage(null), 3500);
+      setSelectedBooking(null);
+    } catch (err: any) {
+      alert(`Ошибка обновления статуса: ${err.message || err}`);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  // Helper styles & status colors
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed':
-        return { label: 'Подтверждена', bg: '#DBEAFE', color: '#1D4ED8' };
+        return { bg: '#DCFCE7', border: '#86EFAC', text: '#166534', label: 'Подтверждена' };
       case 'arrived':
-        return { label: 'Клиент пришёл', bg: '#CCFBF1', color: '#0F766E' };
+        return { bg: '#FEF3C7', border: '#FCD34D', text: '#92400E', label: 'Прибыл' };
       case 'in_progress':
-        return { label: 'В процессе', bg: '#FEF3C7', color: '#B45309' };
+        return { bg: '#DBEAFE', border: '#93C5FD', text: '#1E40AF', label: 'В работе' };
       case 'completed':
-        return { label: 'Завершена', bg: '#DCFCE7', color: '#15803D' };
+        return { bg: '#F1F5F9', border: '#CBD5E1', text: '#475569', label: 'Завершен' };
       case 'cancelled':
-        return { label: 'Отменена', bg: '#FEE2E2', color: '#B91C1C' };
+        return { bg: '#FEE2E2', border: '#FCA5A5', text: '#991B1B', label: 'Отменен' };
       default:
-        return { label: status, bg: '#F1F5F9', color: '#475569' };
+        return { bg: '#F1F5F9', border: '#E2E8F0', text: '#0F172A', label: status };
     }
   };
 
-  // Time grid hours
-  const hours = Array.from({ length: 12 }, (_, i) => i + 9); // 09:00 - 20:00
+  // Hours displayed on the calendar (09:00 - 20:00)
+  const hours = Array.from({ length: 12 }, (_, i) => i + 9);
 
+  // 1. Render Login Screen if not authenticated
+  if (!token || !activeMembership) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0F172A',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          fontFamily: 'Inter, system-ui, sans-serif',
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '420px',
+            background: '#FFFFFF',
+            borderRadius: '20px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+            padding: '36px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '24px',
+          }}
+        >
+          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                background: '#0F172A',
+                color: '#FFFFFF',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '20px',
+                fontWeight: 800,
+                margin: '0 auto 8px',
+              }}
+            >
+              C
+            </div>
+            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>Вход в CRM</h1>
+            <p style={{ margin: 0, fontSize: '14px', color: '#64748B' }}>
+              Панель управления записями компании
+            </p>
+          </div>
+
+          {loginError && (
+            <div
+              role="alert"
+              style={{
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: '#FEF2F2',
+                border: '1px solid #FCA5A5',
+                color: '#991B1B',
+                fontSize: '14px',
+              }}
+            >
+              {loginError}
+            </div>
+          )}
+
+          {token && memberships.length === 0 && (
+            <div
+              role="alert"
+              style={{
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: '#FEF3C7',
+                border: '1px solid #FCD34D',
+                color: '#92400E',
+                fontSize: '14px',
+              }}
+            >
+              У вашей учетной записи нет активных членств в организациях.
+            </div>
+          )}
+
+          <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Электронная почта</label>
+              <input
+                type="email"
+                required
+                value={loginEmail}
+                onChange={e => setLoginEmail(e.target.value)}
+                placeholder="owner@barberhouse.kz"
+                style={{
+                  height: '46px',
+                  padding: '0 14px',
+                  borderRadius: '10px',
+                  border: '1px solid #CBD5E1',
+                  fontSize: '15px',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Пароль</label>
+              <input
+                type="password"
+                required
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+                placeholder="••••••••••••"
+                style={{
+                  height: '46px',
+                  padding: '0 14px',
+                  borderRadius: '10px',
+                  border: '1px solid #CBD5E1',
+                  fontSize: '15px',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              style={{
+                height: '48px',
+                borderRadius: '12px',
+                border: 0,
+                background: '#0F172A',
+                color: '#FFFFFF',
+                fontSize: '16px',
+                fontWeight: 600,
+                cursor: isLoggingIn ? 'not-allowed' : 'pointer',
+                marginTop: '8px',
+                transition: 'background 0.15s ease',
+              }}
+            >
+              {isLoggingIn ? 'Авторизация…' : 'Войти в систему'}
+            </button>
+          </form>
+
+          {token && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#64748B',
+                fontSize: '13px',
+                cursor: 'pointer',
+                textAlign: 'center',
+              }}
+            >
+              Сменить пользователя
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Main Authenticated CRM Calendar Dashboard
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#F8FAFC' }}>
-      {/* Top Navbar */}
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column' }}>
+      {/* CRM Header with Organization Switcher */}
       <header
         style={{
-          height: '60px',
           background: '#FFFFFF',
           borderBottom: '1px solid #E2E8F0',
+          padding: '14px 24px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 24px',
+          flexWrap: 'wrap',
+          gap: '16px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              background: '#0F172A',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 700,
-              fontSize: '14px',
-            }}
-          >
-            {selectedAccount.brandName.slice(0, 2)}
-          </div>
-          <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '0.04em' }}>
-            {selectedAccount.brandName} CRM
-          </span>
-
-          {/* Tenant Switcher (Barber House vs Modern Cut) */}
-          <select
-            value={selectedAccount.slug}
-            onChange={e => {
-              const acc = demoAccounts.find(a => a.slug === e.target.value);
-              if (acc) setSelectedAccount(acc);
-            }}
-            style={{
-              height: '36px',
-              padding: '0 10px',
-              borderRadius: '8px',
-              border: '1px solid #CBD5E1',
-              background: '#F8FAFC',
-              fontWeight: 600,
-              fontSize: '13px',
-              cursor: 'pointer',
-            }}
-          >
-            {demoAccounts.map(a => (
-              <option key={a.slug} value={a.slug}>
-                {a.label}
-              </option>
-            ))}
-          </select>
-
-          {/* Branch Switcher */}
-          {branches.length > 0 && (
-            <select
-              value={selectedBranchId || ''}
-              onChange={e => setSelectedBranchId(e.target.value)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
               style={{
-                height: '36px',
-                padding: '0 10px',
-                borderRadius: '8px',
-                border: '1px solid #CBD5E1',
-                background: '#FFFFFF',
-                fontSize: '13px',
-                cursor: 'pointer',
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: '#0F172A',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontSize: '16px',
               }}
             >
-              {branches.map(b => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+              CRM
+            </div>
+            <div>
+              <span
+                style={{
+                  fontSize: '17px',
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: '#0F172A',
+                }}
+              >
+                {activeMembership.tenant_name} CRM
+              </span>
+              <div style={{ fontSize: '12px', color: '#64748B' }}>Роль: {activeMembership.role}</div>
+            </div>
+          </div>
+
+          {/* Authorized Organizations Switcher */}
+          {memberships.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '13px', color: '#64748B' }}>Организация:</span>
+              <select
+                value={activeMembership.tenant_id}
+                onChange={e => {
+                  const m = memberships.find(x => x.tenant_id === e.target.value);
+                  if (m) setActiveMembership(m);
+                }}
+                style={{
+                  height: '34px',
+                  padding: '0 10px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: '#0F172A',
+                }}
+              >
+                {memberships.map(m => (
+                  <option key={m.tenant_id} value={m.tenant_id}>
+                    {m.tenant_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Branch Selector */}
+          {branches.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '13px', color: '#64748B' }}>Филиал:</span>
+              <select
+                value={selectedBranchId || ''}
+                onChange={e => setSelectedBranchId(e.target.value)}
+                style={{
+                  height: '34px',
+                  padding: '0 10px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  fontSize: '13px',
+                  color: '#0F172A',
+                }}
+              >
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
 
-        {/* Date Selector & Refresh */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <input
-            type="date"
-            value={currentDate}
-            onChange={e => setCurrentDate(e.target.value)}
-            style={{
-              height: '36px',
-              padding: '0 10px',
-              borderRadius: '8px',
-              border: '1px solid #CBD5E1',
-              fontSize: '13px',
-            }}
-          />
+        {/* User Info & Logout */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <span style={{ fontSize: '14px', color: '#334155', fontWeight: 500 }}>
+            {currentUser?.display_name || currentUser?.email}
+          </span>
           <button
             type="button"
-            onClick={loadCalendar}
+            onClick={handleLogout}
             style={{
-              height: '36px',
-              padding: '0 14px',
+              padding: '6px 14px',
               borderRadius: '8px',
               border: '1px solid #CBD5E1',
               background: '#FFFFFF',
-              color: '#0F172A',
-              fontWeight: 600,
+              color: '#64748B',
               fontSize: '13px',
+              fontWeight: 500,
               cursor: 'pointer',
             }}
           >
-            Обновить
+            Выйти
           </button>
         </div>
       </header>
 
-      {/* Main Calendar Area */}
-      <main style={{ flex: 1, padding: '24px', overflowX: 'auto' }}>
-        <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-          <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 700 }}>
-            Календарь записей на {currentDate}
-          </h1>
-          <span style={{ color: '#64748B', fontSize: '14px' }}>
-            Всего записей: {bookings.length}
-          </span>
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            top: '20px',
+            right: '24px',
+            zIndex: 100,
+            padding: '12px 20px',
+            borderRadius: '12px',
+            background: '#15803D',
+            color: '#FFFFFF',
+            fontWeight: 600,
+            fontSize: '14px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
+
+      {/* Main Content Area */}
+      <main style={{ flex: 1, padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        {/* Top Controls: Date & Status Summary */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
+              Календарь записей
+            </h1>
+            <input
+              type="date"
+              value={currentDate}
+              onChange={e => setCurrentDate(e.target.value)}
+              style={{
+                height: '38px',
+                padding: '0 12px',
+                borderRadius: '8px',
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                fontSize: '14px',
+                fontWeight: 600,
+                color: '#0F172A',
+              }}
+            />
+            <button
+              type="button"
+              onClick={fetchCalendar}
+              style={{
+                height: '38px',
+                padding: '0 14px',
+                borderRadius: '8px',
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              Обновить
+            </button>
+          </div>
+
+          <div style={{ fontSize: '14px', color: '#64748B' }}>
+            Всего записей на дату: <strong>{bookings.length}</strong>
+          </div>
         </div>
 
-        {/* Staff Columns Grid */}
+        {/* Day Calendar Grid by Staff */}
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: `80px repeat(${Math.max(1, staffList.length)}, minmax(220px, 1fr))`,
             background: '#FFFFFF',
             borderRadius: '16px',
             border: '1px solid #E2E8F0',
-            overflow: 'hidden',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+            overflowX: 'auto',
           }}
         >
-          {/* Header row */}
-          <div
-            style={{
-              padding: '14px',
-              background: '#F8FAFC',
-              borderBottom: '1px solid #E2E8F0',
-              borderRight: '1px solid #E2E8F0',
-              fontWeight: 600,
-              fontSize: '13px',
-              color: '#64748B',
-            }}
-          >
-            Время
-          </div>
-          {staffList.map(st => (
-            <div
-              key={st.id}
-              style={{
-                padding: '14px',
-                background: '#F8FAFC',
-                borderBottom: '1px solid #E2E8F0',
-                borderRight: '1px solid #E2E8F0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
+          {staffList.length === 0 ? (
+            <div style={{ padding: '60px 24px', textAlign: 'center', color: '#64748B' }}>
+              {isLoading ? 'Загрузка расписания мастеров…' : 'В выбранном филиале нет активных мастеров.'}
+            </div>
+          ) : (
+            <div style={{ minWidth: `${Math.max(600, (staffList.length + 1) * 200)}px` }}>
+              {/* Header Row: Staff Names */}
               <div
                 style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: '#E2E8F0',
-                  color: '#334155',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 600,
-                  fontSize: '12px',
+                  display: 'grid',
+                  gridTemplateColumns: `80px repeat(${staffList.length}, 1fr)`,
+                  borderBottom: '1px solid #E2E8F0',
+                  background: '#F8FAFC',
                 }}
               >
-                {st.name.slice(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '14px' }}>{st.name}</div>
-                <div style={{ fontSize: '12px', color: '#64748B' }}>{st.role_title || 'Барбер'}</div>
-              </div>
-            </div>
-          ))}
-
-          {/* Time Rows */}
-          {hours.map(hour => {
-            const timeStr = `${hour.toString().padStart(2, '0')}:00`;
-            return (
-              <React.Fragment key={hour}>
-                {/* Time Label */}
-                <div
-                  style={{
-                    height: '90px',
-                    padding: '8px',
-                    borderBottom: '1px solid #F1F5F9',
-                    borderRight: '1px solid #E2E8F0',
-                    color: '#64748B',
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    textAlign: 'center',
-                  }}
-                >
-                  {timeStr}
-                </div>
-
-                {/* Staff Cells */}
-                {staffList.map(st => {
-                  // Find bookings starting in this hour for this staff
-                  const cellBookings = bookings.filter(b => {
-                    if (b.staff_id !== st.id) return false;
-                    const bDate = new Date(b.starts_at_utc);
-                    const bHour = (bDate.getUTCHours() + 5) % 24;
-                    return bHour === hour;
-                  });
-
-                  return (
+                <div style={{ padding: '14px', fontSize: '13px', fontWeight: 600, color: '#64748B' }}>Время</div>
+                {staffList.map(st => (
+                  <div
+                    key={st.id}
+                    style={{
+                      padding: '12px 16px',
+                      borderLeft: '1px solid #E2E8F0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                    }}
+                  >
                     <div
-                      key={st.id}
                       style={{
-                        height: '90px',
-                        padding: '6px',
-                        borderBottom: '1px solid #F1F5F9',
-                        borderRight: '1px solid #E2E8F0',
-                        position: 'relative',
-                        background: '#FFFFFF',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: st.color || '#3B82F6',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '13px',
+                        fontWeight: 700,
                       }}
                     >
-                      {cellBookings.map(b => {
-                        const badge = getStatusBadge(b.status);
-                        const bDate = new Date(b.starts_at_utc);
-                        const tStr = bDate.toLocaleTimeString('ru-RU', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          timeZone: 'Asia/Almaty',
-                        });
-
-                        return (
-                          <div
-                            key={b.id}
-                            onClick={() => setSelectedBooking(b)}
-                            style={{
-                              padding: '6px 10px',
-                              borderRadius: '8px',
-                              background: badge.bg,
-                              border: `1px solid ${badge.color}33`,
-                              color: '#0F172A',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '2px',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontWeight: 700, color: badge.color }}>{tStr}</span>
-                              <span style={{ fontSize: '10px', fontWeight: 600, color: badge.color }}>
-                                #{b.public_ref}
-                              </span>
-                            </div>
-                            <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {b.customer_name}
-                            </div>
-                            <div style={{ color: '#475569', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {b.services.join(', ')}
-                            </div>
-                          </div>
-                        );
-                      })}
+                      {st.name.charAt(0)}
                     </div>
-                  );
-                })}
-              </React.Fragment>
-            );
-          })}
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>{st.name}</div>
+                      <div style={{ fontSize: '12px', color: '#64748B' }}>{st.role_title || 'Мастер'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Hours Rows */}
+              {hours.map(hour => {
+                const hourLabel = `${hour.toString().padStart(2, '0')}:00`;
+
+                return (
+                  <div
+                    key={hour}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: `80px repeat(${staffList.length}, 1fr)`,
+                      borderBottom: '1px solid #F1F5F9',
+                      minHeight: '74px',
+                    }}
+                  >
+                    {/* Time Label */}
+                    <div
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#94A3B8',
+                        background: '#FAFAFA',
+                        borderRight: '1px solid #F1F5F9',
+                      }}
+                    >
+                      {hourLabel}
+                    </div>
+
+                    {/* Master Slot Cells */}
+                    {staffList.map(st => {
+                      // Find bookings starting within this hour for this master
+                      const cellBookings = bookings.filter(b => {
+                        if (b.staff_id !== st.id) return false;
+                        const startD = new Date(b.starts_at_utc);
+                        // Convert to branch timezone or local hour
+                        const almatyHour = (startD.getUTCHours() + 5) % 24;
+                        return almatyHour === hour;
+                      });
+
+                      return (
+                        <div
+                          key={st.id}
+                          style={{
+                            padding: '6px 8px',
+                            borderLeft: '1px solid #F1F5F9',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                            background: '#FFFFFF',
+                          }}
+                        >
+                          {cellBookings.map(b => {
+                            const badge = getStatusColor(b.status);
+                            const startD = new Date(b.starts_at_utc);
+                            const timeStr = startD.toLocaleTimeString('ru-RU', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              timeZone: 'Asia/Almaty',
+                            });
+
+                            return (
+                              <div
+                                key={b.id}
+                                onClick={() => setSelectedBooking(b)}
+                                style={{
+                                  padding: '8px 10px',
+                                  borderRadius: '8px',
+                                  background: badge.bg,
+                                  border: `1px solid ${badge.border}`,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '2px',
+                                  transition: 'transform 0.1s ease',
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '11px', fontWeight: 700, color: badge.text }}>
+                                    {timeStr} · #{b.public_ref}
+                                  </span>
+                                  <span style={{ fontSize: '10px', fontWeight: 600, color: badge.text }}>
+                                    {badge.label}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                                  {b.customer_name}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#475569' }}>
+                                  {b.services.join(', ')} · {(b.amount_minor / 100).toLocaleString('ru-RU')} ₸
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </main>
 
-      {/* Booking Details & Status Modal */}
+      {/* Appointment Detail & Status Change Modal */}
       {selectedBooking && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(15,23,42,0.4)',
+            zIndex: 1000,
+            background: 'rgba(15, 23, 42, 0.6)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 50,
+            padding: '16px',
           }}
+          onClick={() => setSelectedBooking(null)}
         >
           <div
             style={{
-              width: '420px',
+              width: '100%',
+              maxWidth: '480px',
               background: '#FFFFFF',
-              borderRadius: '16px',
+              borderRadius: '20px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
               padding: '24px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '16px',
+              gap: '18px',
             }}
+            onClick={e => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
-                Запись #{selectedBooking.public_ref}
-              </h2>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800 }}>Карточка записи</h2>
+                <span style={{ fontSize: '13px', color: '#64748B' }}>Код визита: #{selectedBooking.public_ref}</span>
+              </div>
               <button
                 type="button"
                 onClick={() => setSelectedBooking(null)}
-                style={{ border: 0, background: 'none', cursor: 'pointer', fontSize: '18px' }}
+                style={{
+                  background: 'none',
+                  border: 0,
+                  fontSize: '20px',
+                  color: '#64748B',
+                  cursor: 'pointer',
+                }}
               >
                 ✕
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px' }}>
+            <div
+              style={{
+                padding: '14px',
+                borderRadius: '12px',
+                background: '#F8FAFC',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                fontSize: '14px',
+              }}
+            >
               <div>
                 <span style={{ color: '#64748B' }}>Клиент: </span>
-                <b>{selectedBooking.customer_name}</b> ({selectedBooking.customer_phone})
+                <strong style={{ color: '#0F172A' }}>{selectedBooking.customer_name}</strong>
+              </div>
+              <div>
+                <span style={{ color: '#64748B' }}>Телефон: </span>
+                <strong style={{ color: '#0F172A' }}>{selectedBooking.customer_phone}</strong>
               </div>
               <div>
                 <span style={{ color: '#64748B' }}>Услуги: </span>
-                <span>{selectedBooking.services.join(', ')}</span>
+                <strong style={{ color: '#0F172A' }}>{selectedBooking.services.join(', ')}</strong>
               </div>
               <div>
-                <span style={{ color: '#64748B' }}>Стоимость: </span>
-                <b>{(selectedBooking.amount_minor / 100).toLocaleString('ru-RU')} ₸</b>
+                <span style={{ color: '#64748B' }}>Сумма к оплате: </span>
+                <strong style={{ color: '#0F172A' }}>
+                  {(selectedBooking.amount_minor / 100).toLocaleString('ru-RU')} ₸
+                </strong>
               </div>
               <div>
                 <span style={{ color: '#64748B' }}>Текущий статус: </span>
@@ -499,80 +867,99 @@ export const App: React.FC = () => {
                   style={{
                     padding: '2px 8px',
                     borderRadius: '6px',
-                    fontWeight: 600,
-                    background: getStatusBadge(selectedBooking.status).bg,
-                    color: getStatusBadge(selectedBooking.status).color,
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    ...getStatusColor(selectedBooking.status),
                   }}
                 >
-                  {getStatusBadge(selectedBooking.status).label}
+                  {getStatusColor(selectedBooking.status).label}
                 </span>
               </div>
             </div>
 
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#334155', marginTop: '6px' }}>
-              Изменить статус записи:
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => handleUpdateStatus('arrived')}
-                style={{
-                  height: '38px',
-                  borderRadius: '8px',
-                  border: '1px solid #0F766E',
-                  background: '#CCFBF1',
-                  color: '#0F766E',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Клиент пришёл
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUpdateStatus('in_progress')}
-                style={{
-                  height: '38px',
-                  borderRadius: '8px',
-                  border: '1px solid #B45309',
-                  background: '#FEF3C7',
-                  color: '#B45309',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                В процессе
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUpdateStatus('completed')}
-                style={{
-                  height: '38px',
-                  borderRadius: '8px',
-                  border: '1px solid #15803D',
-                  background: '#DCFCE7',
-                  color: '#15803D',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Завершена
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUpdateStatus('cancelled')}
-                style={{
-                  height: '38px',
-                  borderRadius: '8px',
-                  border: '1px solid #B91C1C',
-                  background: '#FEE2E2',
-                  color: '#B91C1C',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Отменить
-              </button>
+            {/* Action Buttons to Update Status */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>
+                Изменить статус визита:
+              </span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                {selectedBooking.status !== 'arrived' && (
+                  <button
+                    type="button"
+                    disabled={statusUpdating}
+                    onClick={() => handleUpdateStatus('arrived')}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '10px',
+                      border: '1px solid #FCD34D',
+                      background: '#FEF3C7',
+                      color: '#92400E',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Клиент прибыл
+                  </button>
+                )}
+                {selectedBooking.status !== 'in_progress' && (
+                  <button
+                    type="button"
+                    disabled={statusUpdating}
+                    onClick={() => handleUpdateStatus('in_progress')}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '10px',
+                      border: '1px solid #93C5FD',
+                      background: '#DBEAFE',
+                      color: '#1E40AF',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    В работе
+                  </button>
+                )}
+                {selectedBooking.status !== 'completed' && (
+                  <button
+                    type="button"
+                    disabled={statusUpdating}
+                    onClick={() => handleUpdateStatus('completed')}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '10px',
+                      border: '1px solid #86EFAC',
+                      background: '#DCFCE7',
+                      color: '#166534',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Завершить визит
+                  </button>
+                )}
+                {selectedBooking.status !== 'cancelled' && (
+                  <button
+                    type="button"
+                    disabled={statusUpdating}
+                    onClick={() => handleUpdateStatus('cancelled')}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '10px',
+                      border: '1px solid #FCA5A5',
+                      background: '#FEE2E2',
+                      color: '#991B1B',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Отменить
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

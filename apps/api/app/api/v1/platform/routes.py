@@ -258,14 +258,14 @@ async def create_tenant(
     )
 
     await db.commit()
-    is_dev = settings.ENVIRONMENT in ("development", "test")
+    is_test = settings.ENVIRONMENT == "test"
     return {
         "tenant_id": str(tenant.id),
         "slug": tenant.slug,
         "display_name": tenant.display_name,
         "owner_status": "invited",
-        "invite_token": raw_invite_token if is_dev else None,
-        "invite_url": f"https://{settings.CRM_DOMAIN}/accept-invite?token={raw_invite_token}" if is_dev else None
+        "invite_token": raw_invite_token if is_test else None,
+        "invite_url": f"https://{settings.CRM_DOMAIN}/accept-invite?token={raw_invite_token}" if is_test else None
     }
 
 

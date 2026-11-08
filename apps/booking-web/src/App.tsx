@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   PublicApiClient,
   PublicSiteResponse,
@@ -20,6 +20,20 @@ import { SummaryCard } from './components/SummaryCard';
 import { ConfirmationScreen } from './components/ConfirmationScreen';
 import { ManageBookingScreen } from './components/ManageBookingScreen';
 
+function getLocalDateString(timeZone: string = 'Asia/Almaty'): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(new Date());
+  } catch {
+    return new Date().toISOString().split('T')[0];
+  }
+}
+
 export const App: React.FC = () => {
   const [api] = useState(() => new PublicApiClient());
 
@@ -31,18 +45,42 @@ export const App: React.FC = () => {
   const [services, setServices] = useState<ServiceItemResponse[]>([]);
   const [staffList, setStaffList] = useState<StaffPublicResponse[]>([]);
 
-  // Booking selections
-  const [flow, setFlow] = useState<BookingFlow>('service-first');
-  const [step, setStep] = useState<BookingStep>('services');
+  // Deep-link initial token extraction
+  const [manageToken, setManageToken] = useState<string | null>(() => {
+    const pathname = window.location.pathname;
+    const match = pathname.match(/^\/manage\/([^/]+)/);
+    if (match) return match[1];
+    const params = new URLSearchParams(window.location.search);
+    return params.get('manage') || null;
+  });
+
+  // Booking selections & active flow
+  const [flow, setFlow] = useState<BookingFlow>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const flowParam = params.get('flow');
+    if (flowParam === 'master-first' || flowParam === 'time-first') return flowParam;
+    if (params.get('master')) return 'master-first';
+    return 'service-first';
+  });
+
+  const [step, setStep] = useState<BookingStep>(() => {
+    if (manageToken) return 'manage';
+    const params = new URLSearchParams(window.location.search);
+    const flowParam = params.get('flow');
+    if (flowParam === 'time-first') return 'datetime';
+    if (params.get('master') || flowParam === 'master-first') return 'staff';
+    return 'services';
+  });
+
   const [selectedServices, setSelectedServices] = useState<ServiceItemResponse[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<StaffPublicResponse | 'any' | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
-  });
-  const [preferredTime, setPreferredTime] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateString());
+  const [preferredTime] = useState<string | null>(null);
   const [availableSlots, setAvailableSlots] = useState<SlotResponse[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<SlotResponse | null>(null);
+
+  // Intent-bound Idempotency key
+  const [bookingIntentKey, setBookingIntentKey] = useState<string | null>(null);
 
   // Customer Form
   const [clientName, setClientName] = useState('');
@@ -52,10 +90,6 @@ export const App: React.FC = () => {
 
   // Result & Manage
   const [bookingResult, setBookingResult] = useState<BookingCreatedResponse | null>(null);
-  const [manageToken, setManageToken] = useState<string | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('manage') || null;
-  });
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
@@ -88,6 +122,8 @@ export const App: React.FC = () => {
         setSelectedBranch(defaultBranch);
 
         if (defaultBranch) {
+          setSelectedDate(getLocalDateString(defaultBranch.timezone_iana));
+
           // Load services
           const svcList = await api.getServices(defaultBranch.id);
           setServices(svcList || []);
@@ -104,6 +140,23 @@ export const App: React.FC = () => {
           // Load staff
           const stfRes = await api.getStaff(defaultBranch.id);
           setStaffList(stfRes || []);
+
+          // Handle master deep-link (?master=UUID)
+          const params = new URLSearchParams(window.location.search);
+          const masterId = params.get('master');
+          if (masterId && stfRes) {
+            const foundMaster = stfRes.find(s => s.id === masterId);
+            if (foundMaster) {
+              setSelectedStaff(foundMaster);
+              setFlow('master-first');
+              setStep('services');
+              // Fetch services specific to this master
+              try {
+                const mSvcs = await api.getStaffServices(foundMaster.id, defaultBranch.id);
+                if (mSvcs && mSvcs.length > 0) setServices(mSvcs);
+              } catch {}
+            }
+          }
         }
       } catch (err: any) {
         if (err instanceof ApiError && err.status === 404) {
@@ -152,7 +205,7 @@ export const App: React.FC = () => {
         if (isCancelled) return;
 
         setAvailableSlots(res.slots || []);
-        // If current selected slot is not in new slots, clear it
+        // Invalidate selected slot if not in the new results
         if (selectedSlot && !res.slots.some(s => s.quote_id === selectedSlot.quote_id)) {
           setSelectedSlot(null);
         }
@@ -174,64 +227,148 @@ export const App: React.FC = () => {
     };
   }, [selectedBranch, selectedServices, selectedStaff, selectedDate, step, api]);
 
+  // Handle flow switching from tabs
+  const handleChangeFlow = (newFlow: BookingFlow) => {
+    setFlow(newFlow);
+    setSelectedSlot(null);
+    setBookingIntentKey(null);
+    if (newFlow === 'master-first') {
+      setStep('staff');
+    } else if (newFlow === 'time-first') {
+      setStep('datetime');
+    } else {
+      setStep('services');
+    }
+  };
+
+  // Handle branch change with dependent state reload
+  const handleSelectBranch = async (newBranch: BranchResponse) => {
+    if (selectedBranch?.id === newBranch.id) return;
+    setSelectedBranch(newBranch);
+    setSelectedServices([]);
+    setSelectedStaff(null);
+    setSelectedSlot(null);
+    setBookingIntentKey(null);
+    setSelectedDate(getLocalDateString(newBranch.timezone_iana));
+
+    if (flow === 'master-first') setStep('staff');
+    else if (flow === 'time-first') setStep('datetime');
+    else setStep('services');
+
+    try {
+      setIsLoading(true);
+      const svcList = await api.getServices(newBranch.id);
+      setServices(svcList || []);
+      const catsMap = new Map();
+      svcList.forEach(s => {
+        if (s.category_id && s.category_name) {
+          catsMap.set(s.category_id, { id: s.category_id, name: s.category_name });
+        }
+      });
+      setCategories(Array.from(catsMap.values()));
+      const stfRes = await api.getStaff(newBranch.id);
+      setStaffList(stfRes || []);
+    } catch (err: any) {
+      console.error('Failed to reload branch data', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Handlers
   const handleToggleService = (svc: ServiceItemResponse) => {
     setSelectedServices(prev => {
       const exists = prev.some(s => s.id === svc.id);
-      if (exists) {
-        return prev.filter(s => s.id !== svc.id);
-      } else {
-        return [...prev, svc];
-      }
+      return exists ? prev.filter(s => s.id !== svc.id) : [...prev, svc];
     });
-    // Invalidate slot if services changed
     setSelectedSlot(null);
+    setBookingIntentKey(null);
   };
 
-  const handleSelectStaff = (st: StaffPublicResponse | 'any') => {
+  const handleSelectStaff = async (st: StaffPublicResponse | 'any') => {
     setSelectedStaff(st);
     setSelectedSlot(null);
+    setBookingIntentKey(null);
+
+    // In master-first flow, fetch services with master's price and duration overrides
+    if (flow === 'master-first' && typeof st === 'object' && st !== null && selectedBranch) {
+      try {
+        setIsLoading(true);
+        const masterSvcs = await api.getStaffServices(st.id, selectedBranch.id);
+        if (masterSvcs && masterSvcs.length > 0) {
+          setServices(masterSvcs);
+          const catsMap = new Map();
+          masterSvcs.forEach(s => {
+            if (s.category_id && s.category_name) {
+              catsMap.set(s.category_id, { id: s.category_id, name: s.category_name });
+            }
+          });
+          setCategories(Array.from(catsMap.values()));
+        }
+      } catch (err) {
+        console.error('Failed to load master services', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
   };
 
   const handleSelectSlot = (slot: SlotResponse) => {
     setSelectedSlot(slot);
+    setBookingIntentKey(null);
   };
 
   const handleNextStep = () => {
     if (step === 'services') {
-      if (flow === 'master-first') {
-        setStep('datetime');
-      } else {
+      if (flow === 'service-first') {
         setStep(selectedStaff ? 'datetime' : 'staff');
-      }
-    } else if (step === 'staff') {
-      if (flow === 'master-first') {
-        setStep('services');
-      } else {
+      } else if (flow === 'master-first') {
         setStep('datetime');
-      }
-    } else if (step === 'datetime') {
-      setStep('confirm');
-    }
-  };
-
-  const handleBack = () => {
-    if (step === 'confirm') {
-      setStep('datetime');
-    } else if (step === 'datetime') {
-      if (flow === 'master-first') {
-        setStep('services');
-      } else {
+      } else if (flow === 'time-first') {
         setStep('staff');
       }
     } else if (step === 'staff') {
       if (flow === 'master-first') {
         setStep('services');
+      } else if (flow === 'service-first' || flow === 'time-first') {
+        setStep(flow === 'time-first' ? 'confirm' : 'datetime');
+      }
+    } else if (step === 'datetime') {
+      if (flow === 'time-first') {
+        setStep('services');
+      } else {
+        setStep('confirm');
+        // Generate stable idempotency key for this intent
+        if (!bookingIntentKey) {
+          setBookingIntentKey(`bk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+        }
+      }
+    }
+  };
+
+  const handleBack = () => {
+    if (step === 'confirm') {
+      setStep(flow === 'time-first' ? 'staff' : 'datetime');
+    } else if (step === 'datetime') {
+      if (flow === 'master-first') {
+        setStep('services');
+      } else if (flow === 'service-first') {
+        setStep('staff');
+      }
+    } else if (step === 'staff') {
+      if (flow === 'master-first') {
+        setStep('staff');
+      } else if (flow === 'time-first') {
+        setStep('services');
       } else {
         setStep('services');
       }
-    } else if (step === 'services' && flow === 'master-first') {
-      setStep('staff');
+    } else if (step === 'services') {
+      if (flow === 'master-first') {
+        setStep('staff');
+      } else if (flow === 'time-first') {
+        setStep('datetime');
+      }
     }
   };
 
@@ -243,8 +380,10 @@ export const App: React.FC = () => {
       setIsSubmitting(true);
       setError(null);
 
-      // Unique idempotency key per intent
-      const idempotencyKey = `bk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      // Reuse stable idempotency key per intent to prevent duplicates on network retry
+      const idempotencyKey =
+        bookingIntentKey || `bk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      if (!bookingIntentKey) setBookingIntentKey(idempotencyKey);
 
       const staffId =
         typeof selectedStaff === 'object' && selectedStaff !== null
@@ -276,6 +415,11 @@ export const App: React.FC = () => {
             title: 'Условия бронирования изменились',
             message: 'Стоимость или длительность слота обновилась. Пожалуйста, проверьте и повторите.',
           });
+        } else if (err.code === 'QUOTE_MISMATCH') {
+          setError({
+            title: 'Несовпадение параметров слота',
+            message: 'Выбранный слот относится к другому времени или специалисту. Пожалуйста, выберите слот снова.',
+          });
         } else {
           setError({
             title: 'Выбранный слот уже занят',
@@ -294,7 +438,7 @@ export const App: React.FC = () => {
   };
 
   // 3. Render Special States (Loading, 404, 403 Suspended)
-  if (isLoading) {
+  if (isLoading && !site) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <header style={{ background: '#FFFFFF', borderBottom: '1px solid #E2E8F0', padding: '16px 24px' }}>
@@ -361,7 +505,9 @@ export const App: React.FC = () => {
           site={site}
           branch={selectedBranch}
           branches={branches}
-          onSelectBranch={setSelectedBranch}
+          onSelectBranch={handleSelectBranch}
+          flow={flow}
+          step="manage"
         />
         <ManageBookingScreen
           token={manageToken}
@@ -369,8 +515,7 @@ export const App: React.FC = () => {
           onBackToBooking={() => {
             setManageToken(null);
             setStep('services');
-            // Remove token from query string
-            window.history.pushState({}, '', window.location.pathname);
+            window.history.pushState({}, '', '/');
           }}
         />
       </div>
@@ -385,7 +530,9 @@ export const App: React.FC = () => {
           site={site}
           branch={selectedBranch}
           branches={branches}
-          onSelectBranch={setSelectedBranch}
+          onSelectBranch={handleSelectBranch}
+          flow={flow}
+          step="result"
         />
         <ConfirmationScreen
           booking={bookingResult}
@@ -394,7 +541,11 @@ export const App: React.FC = () => {
           staff={selectedStaff}
           clientName={clientName}
           clientPhone={clientPhone}
-          onManageClick={(t) => setManageToken(t)}
+          onManageClick={(t) => {
+            setManageToken(t);
+            window.history.pushState({}, '', `/manage/${t}`);
+          }}
+          cancellationCutoffMinutes={site?.cancellation_cutoff_minutes || 120}
         />
       </div>
     );
@@ -407,10 +558,10 @@ export const App: React.FC = () => {
         site={site}
         branch={selectedBranch}
         branches={branches}
-        onSelectBranch={b => {
-          setSelectedBranch(b);
-          setSelectedSlot(null);
-        }}
+        onSelectBranch={handleSelectBranch}
+        flow={flow}
+        onChangeFlow={handleChangeFlow}
+        step={step}
       />
 
       <main
@@ -436,7 +587,9 @@ export const App: React.FC = () => {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', alignItems: 'flex-start' }}>
           {/* Left Column */}
           <section style={{ flex: '999 1 540px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {step !== 'services' && (
+            {((flow === 'service-first' && step !== 'services') ||
+              (flow === 'master-first' && step !== 'staff') ||
+              (flow === 'time-first' && step !== 'datetime')) && (
               <button
                 type="button"
                 onClick={handleBack}
@@ -464,7 +617,7 @@ export const App: React.FC = () => {
               </button>
             )}
 
-            {/* Step 1: Services */}
+            {/* Step: Services */}
             {step === 'services' && (
               <ServicesStep
                 categories={categories}
@@ -473,16 +626,13 @@ export const App: React.FC = () => {
                 onToggleService={handleToggleService}
                 selectedStaff={selectedStaff}
                 onClearStaff={() => setSelectedStaff(null)}
-                onSwitchToMasterFirst={() => {
-                  setFlow('master-first');
-                  setStep('staff');
-                }}
+                onSwitchToMasterFirst={() => handleChangeFlow('master-first')}
                 preferredTime={preferredTime}
                 selectedDate={selectedDate}
               />
             )}
 
-            {/* Step 2: Staff */}
+            {/* Step: Staff */}
             {step === 'staff' && (
               <StaffStep
                 staffList={staffList}
@@ -492,7 +642,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {/* Step 3: Date & Time */}
+            {/* Step: Date & Time */}
             {step === 'datetime' && (
               <DateTimeStep
                 selectedDate={selectedDate}
@@ -504,7 +654,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {/* Step 4: Confirmation Form */}
+            {/* Step: Confirmation Form */}
             {step === 'confirm' && (
               <ConfirmationStep
                 branch={selectedBranch}

@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Backend Test Suite (PostgreSQL 17 + Python 3.11)
+    name: Full CI Suite (PostgreSQL 17, Pytest 26+ Tests, Frontend Build, Playwright E2E)
     runs-on: ubuntu-latest
 
     services:
@@ -35,6 +35,12 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
 
       - name: Install System Dependencies
         run: |
@@ -66,11 +72,40 @@ jobs:
         run: |
           alembic upgrade head
 
-      - name: Run Pytest Test Suite
+      - name: Run Pytest Test Suite (Non-Superuser Runtime Role)
         env:
           ADMIN_DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/saas_crm_test
-          DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@localhost:5432/saas_crm_test
+          DATABASE_URL: postgresql+asyncpg://crm_app_user:crm_app_secret@localhost:5432/saas_crm_test
           ENVIRONMENT: test
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: saas_crm_test
+          ADMIN_DB_USER: postgres
+          ADMIN_DB_PASSWORD: postgrespassword
+          DB_USER: crm_app_user
+          DB_PASSWORD: crm_app_secret
+          ENABLE_DEMO_SEED: "true"
+          JWT_SECRET_KEY: test-jwt-secret-key-32-chars-long-minimum-length!
+        run: |
+          python -m pytest apps/api/tests/ -v --durations=10
+
+      - name: Install Frontend Dependencies
+        run: |
+          npm ci
+
+      - name: Build Frontend Workspaces (TypeScript & Vite)
+        run: |
+          npm run build --workspaces
+
+      - name: Install Playwright Browsers
+        run: |
+          npx playwright install --with-deps chromium
+
+      - name: Start API and Frontend Dev Servers for Playwright E2E
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@localhost:5432/saas_crm_test
+          ADMIN_DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/saas_crm_test
+          ENVIRONMENT: development
           DB_HOST: localhost
           DB_PORT: 5432
           DB_NAME: saas_crm_test
@@ -79,4 +114,13 @@ jobs:
           ENABLE_DEMO_SEED: "true"
           JWT_SECRET_KEY: test-jwt-secret-key-32-chars-long-minimum-length!
         run: |
-          python -m pytest apps/api/tests/ -v --durations=10
+          python -c "from apps.api.app.infrastructure.db.init_db import init_database, seed_database; init_database(); seed_database()"
+          uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 &
+          npm run dev --workspace=@crm/booking-web -- --port 3000 --host 0.0.0.0 &
+          npm run dev --workspace=@crm/business-crm -- --port 3001 --host 0.0.0.0 &
+          sleep 5
+          curl -s http://127.0.0.1:8000/api/v1/public/site -H "Host: barberhouse.book.example.kz"
+
+      - name: Run Playwright E2E Tests
+        run: |
+          npx playwright test

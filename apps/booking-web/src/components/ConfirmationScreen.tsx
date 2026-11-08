@@ -10,6 +10,7 @@ interface ConfirmationScreenProps {
   clientPhone: string;
   onManageClick: (token: string) => void;
   accentColor?: string;
+  cancellationCutoffMinutes?: number;
 }
 
 export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
@@ -21,6 +22,7 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
   clientPhone,
   onManageClick,
   accentColor = '#2563EB',
+  cancellationCutoffMinutes = 120,
 }) => {
   const [calDownloaded, setCalDownloaded] = useState(false);
 
@@ -29,35 +31,56 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
 
   const formatDateTime = (isoString: string) => {
     const d = new Date(isoString);
-    const dateFormatted = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-    const timeFormatted = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Almaty' });
-    return { date: dateFormatted, time: timeFormatted };
+    const dateFormatted = d.toLocaleDateString('ru-RU', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: branch?.timezone_iana || 'Asia/Almaty',
+    });
+    const timeFormatted = d.toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: branch?.timezone_iana || 'Asia/Almaty',
+    });
+    return `${dateFormatted} в ${timeFormatted}`;
   };
 
-  const { date, time } = formatDateTime(booking.starts_at_utc);
+  const formatCutoffMinutes = (minutes: number) => {
+    if (minutes < 60) return `за ${minutes} минут`;
+    const hours = Math.round(minutes / 60);
+    if (hours === 1) return 'за 1 час';
+    if (hours >= 2 && hours <= 4) return `за ${hours} часа`;
+    return `за ${hours} часов`;
+  };
 
-  // Calculate duration in minutes between starts_at_utc and service_ends_at_utc
-  const startMs = new Date(booking.starts_at_utc).getTime();
-  const endMs = new Date(booking.service_ends_at_utc).getTime();
-  const durationMins = Math.max(15, Math.round((endMs - startMs) / 60000));
+  // Generate and download .ics calendar event
+  const downloadIcs = () => {
+    const start = new Date(booking.starts_at_utc);
+    const end = new Date(booking.service_ends_at_utc);
 
-  // Generate .ics file for calendar
-  const handleDownloadICS = () => {
-    const formatICSDate = (d: Date) =>
-      d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const formatIcsDate = (d: Date) =>
+      `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z`;
+
+    const summary = `${branch?.name || 'Салон'} — ${services.map(s => s.name).join(', ')}`;
+    const description = `Мастер: ${staffName}\\nКод записи: ${booking.public_ref}\\nТелефон клиента: ${clientPhone}`;
+    const location = branch?.address || '';
 
     const icsContent = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//SaaS CRM//Booking Engine//RU',
+      'PRODID:-//SaaS CRM Platform//Booking System//RU',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
       'BEGIN:VEVENT',
-      `UID:${booking.booking_id}@saas-crm.com`,
-      `DTSTAMP:${formatICSDate(new Date())}`,
-      `DTSTART:${formatICSDate(new Date(booking.starts_at_utc))}`,
-      `DTEND:${formatICSDate(new Date(booking.service_ends_at_utc))}`,
-      `SUMMARY:Запись в ${branch?.name || 'барбершоп'}`,
-      `DESCRIPTION:Услуги: ${services.map(s => s.name).join(', ')}. Мастер: ${staffName}. Номер записи: ${booking.public_ref}`,
-      `LOCATION:${branch?.address || ''}`,
+      `UID:${booking.booking_id}@crm.platform`,
+      `DTSTAMP:${formatIcsDate(new Date())}`,
+      `DTSTART:${formatIcsDate(start)}`,
+      `DTEND:${formatIcsDate(end)}`,
+      `SUMMARY:${summary}`,
+      `DESCRIPTION:${description}`,
+      `LOCATION:${location}`,
       'STATUS:CONFIRMED',
       'END:VEVENT',
       'END:VCALENDAR',
@@ -67,45 +90,34 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `booking-${booking.public_ref}.ics`);
+    link.download = `booking-${booking.public_ref}.ics`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     setCalDownloaded(true);
   };
+
+  const totalAmountFormatted = `${(booking.total_amount_minor / 100).toLocaleString('ru-RU')} ₸`;
 
   return (
     <main
       style={{
-        width: '100%',
-        maxWidth: '760px',
-        margin: '0 auto',
-        padding: '32px 24px 56px',
+        maxWidth: '560px',
+        margin: '32px auto',
+        padding: '0 16px',
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        gap: '20px',
+        gap: '24px',
       }}
     >
-      {/* Success banner */}
-      <div
-        role="status"
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '14px',
-          padding: '24px',
-          borderRadius: '16px',
-          background: '#F0FDF4',
-          border: '1px solid #BBF7D0',
-          color: '#166534',
-        }}
-      >
-        <span
+      {/* Success Badge & Title */}
+      <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+        <div
           style={{
-            width: '48px',
-            height: '48px',
-            flex: 'none',
+            width: '64px',
+            height: '64px',
             borderRadius: '50%',
             background: '#DCFCE7',
             color: '#15803D',
@@ -114,113 +126,163 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
             justifyContent: 'center',
           }}
         >
-          <svg
-            width="26"
-            height="26"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
             <polyline points="20 6 9 17 4 12" />
           </svg>
-        </span>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: '28px', lineHeight: 1.25, fontWeight: 700 }}>
-            Запись подтверждена!
-          </h1>
-          <span style={{ fontSize: '15px', lineHeight: 1.4, color: '#14532D' }}>
-            Ждём вас по адресу филиала. Вы можете сохранить встречу в календарь или управлять ей по ссылке.
-          </span>
         </div>
+        <h1 style={{ margin: 0, fontSize: '32px', fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>
+          Запись подтверждена!
+        </h1>
+        <p style={{ margin: 0, fontSize: '16px', color: '#64748B' }}>
+          Мы ждем вас в назначенное время. Ссылка на управление визитом отправлена на указанный телефон.
+        </p>
       </div>
 
       {/* Booking Details Card */}
       <div
         style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '14px',
-          padding: '24px',
-          borderRadius: '16px',
           background: '#FFFFFF',
+          borderRadius: '20px',
           border: '1px solid #E2E8F0',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
+          overflow: 'hidden',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ color: '#64748B', fontSize: '14px' }}>Номер записи</span>
-          <b style={{ fontSize: '18px', letterSpacing: '0.04em', color: '#0F172A' }}>
+        <div
+          style={{
+            background: '#F8FAFC',
+            padding: '16px 20px',
+            borderBottom: '1px solid #E2E8F0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' }}>
+            Номер визита
+          </span>
+          <span
+            style={{
+              fontSize: '18px',
+              fontWeight: 700,
+              color: accentColor,
+              letterSpacing: '0.04em',
+              fontFamily: 'monospace',
+            }}
+          >
             #{booking.public_ref}
-          </b>
+          </span>
         </div>
 
-        <div style={{ height: '1px', background: '#E2E8F0' }} />
-
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#64748B' }}>
-            Где
-          </span>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>{branch?.name}</span>
-          <span style={{ fontSize: '15px', color: '#475569' }}>{branch?.address}</span>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#64748B' }}>
-            Когда
-          </span>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>{date}</span>
-          <span style={{ fontSize: '15px' }}>{time} · {durationMins} мин</span>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#64748B' }}>
-            Мастер
-          </span>
-          <span style={{ fontSize: '16px', fontWeight: 600, overflowWrap: 'anywhere' }}>{staffName}</span>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#64748B' }}>
-            Клиент
-          </span>
-          <span style={{ fontSize: '16px', fontWeight: 600, overflowWrap: 'anywhere' }}>{clientName}</span>
-          <span style={{ fontSize: '15px', color: '#475569' }}>{clientPhone}</span>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#64748B' }}>
-            Услуги
-          </span>
-          {services.map(s => (
-            <span key={s.id} style={{ fontSize: '15px', overflowWrap: 'anywhere' }}>
-              • {s.name}
+        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          {/* Time & Date */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+            <span style={{ color: '#64748B', marginTop: '2px' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 14 14" />
+              </svg>
             </span>
-          ))}
-        </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Дата и время</span>
+              <span style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A', textTransform: 'capitalize' }}>
+                {formatDateTime(booking.starts_at_utc)}
+              </span>
+            </div>
+          </div>
 
-        <div style={{ height: '1px', background: '#E2E8F0' }} />
+          {/* Master */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+            <span style={{ color: '#64748B', marginTop: '2px' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Специалист</span>
+              <span style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>{staffName}</span>
+            </div>
+          </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>Итого</span>
-          <span style={{ fontSize: '24px', fontWeight: 700 }}>
-            {(booking.total_amount_minor / 100).toLocaleString('ru-RU')} ₸
-          </span>
+          {/* Location */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+            <span style={{ color: '#64748B', marginTop: '2px' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Филиал и адрес</span>
+              <span style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+                {branch?.name || 'Главный филиал'}
+              </span>
+              <span style={{ fontSize: '14px', color: '#64748B' }}>{branch?.address}</span>
+            </div>
+          </div>
+
+          <hr style={{ border: 0, borderTop: '1px solid #E2E8F0', margin: '4px 0' }} />
+
+          {/* Services list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 500 }}>Выбранные услуги</span>
+            {services.map(s => (
+              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                <span style={{ color: '#0F172A', fontWeight: 500 }}>{s.name}</span>
+                <span style={{ color: '#64748B' }}>{s.price_formatted}</span>
+              </div>
+            ))}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '17px',
+                fontWeight: 700,
+                color: '#0F172A',
+                marginTop: '6px',
+                paddingTop: '10px',
+                borderTop: '1px dashed #E2E8F0',
+              }}
+            >
+              <span>Итого к оплате</span>
+              <span style={{ color: accentColor }}>{totalAmountFormatted}</span>
+            </div>
+          </div>
+
+          {/* Client info */}
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: '12px',
+              background: '#F8FAFC',
+              fontSize: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#64748B' }}>Клиент:</span>
+              <span style={{ fontWeight: 600, color: '#0F172A' }}>{clientName}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#64748B' }}>Телефон:</span>
+              <span style={{ fontWeight: 600, color: '#0F172A' }}>{clientPhone}</span>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Action buttons */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <button
           type="button"
-          onClick={handleDownloadICS}
+          onClick={downloadIcs}
           style={{
-            minHeight: '52px',
-            padding: '0 18px',
+            height: '52px',
+            borderRadius: '14px',
             border: 0,
-            borderRadius: '12px',
             background: accentColor,
             color: '#FFFFFF',
             fontSize: '16px',
@@ -233,35 +295,13 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
           }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
             <line x1="16" y1="2" x2="16" y2="6" />
             <line x1="8" y1="2" x2="8" y2="6" />
             <line x1="3" y1="10" x2="21" y2="10" />
           </svg>
-          {calDownloaded ? 'Календарь скачан ✓' : 'Добавить в календарь'}
+          {calDownloaded ? 'Календарь скачан (.ics)' : 'Добавить в календарь'}
         </button>
-
-        <a
-          href={`https://maps.google.com/?q=${encodeURIComponent(branch?.address || '')}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            minHeight: '52px',
-            boxSizing: 'border-box',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '12px',
-            border: '1px solid #CBD5E1',
-            background: '#FFFFFF',
-            color: '#0F172A',
-            fontSize: '16px',
-            fontWeight: 600,
-            textDecoration: 'none',
-          }}
-        >
-          Как добраться
-        </a>
 
         <button
           type="button"
@@ -284,7 +324,7 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 4px', fontSize: '13px', color: '#64748B' }}>
         <span>Оплата производится на месте администратору удобным для вас способом.</span>
-        <span>Бесплатная отмена возможна не позднее чем за 2 часа до начала визита.</span>
+        <span>Бесплатная отмена возможна не позднее чем {formatCutoffMinutes(cancellationCutoffMinutes)} до начала визита.</span>
       </div>
     </main>
   );

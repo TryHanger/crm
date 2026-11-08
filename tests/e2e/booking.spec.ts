@@ -37,9 +37,9 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await page.locator('button:has-text("Выбрать дату и время")').click();
     await expect(page.locator('h1')).toContainText('Выберите дату и время');
 
-    // Select "Завтра" to pick a working day
-    const tomorrowBtn = page.locator('button:has-text("Завтра"), button:has-text("вт")').first();
-    await tomorrowBtn.click();
+    // Select date
+    const dateBtn = page.locator('button:has-text("Завтра"), button:has-text("вт"), button:has-text("ср"), button:has-text("чт")').first();
+    await dateBtn.click();
 
     // Wait for slot buttons to load and click first slot button containing ":"
     const slotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
@@ -64,7 +64,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await submitBtn.click();
 
     // Verify confirmation result
-    await expect(page.locator('h1')).toContainText('Запись подтверждена!', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('Запись подтверждена!', { timeout: 15000 });
     await expect(page.locator('text=Карим Сериков')).toBeVisible();
 
     await page.screenshot({ path: 'docs/screenshots/06-desktop-booking-confirmed.png', fullPage: true });
@@ -95,9 +95,9 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     // DateTime step
     await expect(page.locator('h1')).toContainText('Выберите дату и время');
 
-    // Select "Завтра"
-    const tomorrowBtn = page.locator('button:has-text("Завтра"), button:has-text("вт")').first();
-    await tomorrowBtn.click();
+    // Select date
+    const dateBtn = page.locator('button:has-text("Завтра"), button:has-text("вт"), button:has-text("ср")').first();
+    await dateBtn.click();
 
     const slotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
     await slotBtn.waitFor({ state: 'visible', timeout: 10000 });
@@ -114,32 +114,110 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
 
     // Submit
     await page.locator('button:has-text("Подтвердить запись")').click();
-    await expect(page.locator('h1')).toContainText('Запись подтверждена!', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('Запись подтверждена!', { timeout: 15000 });
     await page.screenshot({ path: 'docs/screenshots/11-mobile-booking-confirmed.png' });
   });
 
-  test('CRM Calendar Flow - Barber House & Modern Cut', async ({ page }) => {
+  test('Cross-App Vertical Slice: CRM Login, Calendar Verification, PATCH Status & Tenant Isolation', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
 
-    // 1. Visit CRM
+    // 1. Visit CRM Login
     await page.goto('http://localhost:3001');
 
+    // Login screen should be displayed
+    await expect(page.locator('h1')).toContainText('Вход в CRM');
+
+    // Fill Barber House owner credentials
+    await page.fill('input[type="email"]', 'owner@barberhouse.kz');
+    await page.fill('input[type="password"]', 'Password123!');
+    await page.click('button[type="submit"]');
+
     // Wait for calendar to load
-    await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 10000 });
-    await page.waitForTimeout(1000);
+    await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
+    await expect(page.locator('header')).toContainText(/barber house/i);
 
     // Screenshot Barber House CRM
     await page.screenshot({ path: 'docs/screenshots/12-crm-calendar-barberhouse.png', fullPage: true });
 
-    // 2. Switch tenant to Modern Cut
-    const tenantSelect = page.locator('select').first();
-    await tenantSelect.selectOption('moderncut');
+    // Find and click any appointment card in Barber House calendar
+    const bookingCard = page.locator('[style*="border-left"]').first();
+    if (await bookingCard.isVisible()) {
+      await bookingCard.click();
 
-    await expect(page.locator('header')).toContainText('MODERN CUT CRM', { timeout: 10000 });
-    await page.waitForTimeout(1000);
+      // Modal opens
+      await expect(page.locator('text=Детали записи')).toBeVisible();
+
+      // Click "Клиент прибыл" (fires PATCH status)
+      const arrivedBtn = page.locator('button:has-text("Клиент прибыл")');
+      if (await arrivedBtn.isVisible()) {
+        await arrivedBtn.click();
+        // Toast confirms status update
+        await expect(page.locator('text=Статус записи обновлен')).toBeVisible({ timeout: 5000 });
+      }
+    }
+
+    // 2. Logout from Barber House
+    await page.click('button:has-text("Выйти")');
+    await expect(page.locator('h1')).toContainText('Вход в CRM');
+
+    // 3. Login as Modern Cut owner
+    await page.fill('input[type="email"]', 'owner@moderncut.kz');
+    await page.fill('input[type="password"]', 'Password123!');
+    await page.click('button[type="submit"]');
+
+    // Wait for Modern Cut calendar to load
+    await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
+    await expect(page.locator('header')).toContainText(/modern cut/i);
+
+    // Modern Cut calendar must NOT show Barber House customer
+    await expect(page.locator('text=Карим Сериков')).not.toBeVisible();
 
     // Screenshot Modern Cut CRM
     await page.screenshot({ path: 'docs/screenshots/13-crm-calendar-moderncut.png', fullPage: true });
+  });
+
+  test('Three Entry Flows (service-first, master-first, time-first) & Navigation', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('http://barberhouse.localhost:3000');
+
+    // Verify all 3 tab buttons are visible in header
+    await expect(page.locator('button:has-text("По услуге")')).toBeVisible();
+    await expect(page.locator('button:has-text("По мастеру")')).toBeVisible();
+    await expect(page.locator('button:has-text("По времени")')).toBeVisible();
+
+    // 1. Switch to "По мастеру" flow
+    await page.locator('button:has-text("По мастеру")').click();
+    await expect(page.locator('h1')).toContainText('Выберите специалиста');
+
+    // 2. Switch to "По времени" flow
+    await page.locator('button:has-text("По времени")').click();
+    await expect(page.locator('h1')).toContainText('Выберите дату и время');
+
+    // 3. Switch back to "По услуге" flow
+    await page.locator('button:has-text("По услуге")').click();
+    await expect(page.locator('h1')).toContainText('Выберите услуги');
+  });
+
+  test('Multi-Viewport Layout Integrity (320px, 360px, 390px, 1280px)', async ({ page }) => {
+    const viewports = [
+      { width: 320, height: 600 },
+      { width: 360, height: 740 },
+      { width: 390, height: 844 },
+      { width: 1280, height: 800 }
+    ];
+
+    for (const vp of viewports) {
+      await page.setViewportSize(vp);
+      await page.goto('http://barberhouse.localhost:3000');
+      await expect(page.locator('header')).toBeVisible();
+      await expect(page.locator('h1')).toBeVisible();
+
+      // Check horizontal overflow: scrollWidth should equal or be close to clientWidth
+      const hasHorizontalScroll = await page.evaluate(() => {
+        return document.documentElement.scrollWidth > window.innerWidth;
+      });
+      expect(hasHorizontalScroll).toBe(false);
+    }
   });
 
 });

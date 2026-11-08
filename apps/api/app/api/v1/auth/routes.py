@@ -17,7 +17,8 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 class AcceptInviteRequest(BaseModel):
     token: str
-    password: str = Field(min_length=8)
+    password: Optional[str] = Field(default=None, min_length=8)
+    current_password: Optional[str] = None
     display_name: Optional[str] = None
 
 @router.post("/login", response_model=TokenResponse)
@@ -115,19 +116,42 @@ async def accept_invite(req: AcceptInviteRequest, db: AsyncSession = Depends(get
     stmt_u = select(IdentityUser).where(IdentityUser.email_normalized == invite.email.lower().strip())
     res_u = await db.execute(stmt_u)
     user = res_u.scalar_one_or_none()
-    if not user:
-        user = IdentityUser(
-            oidc_subject=f"oidc_{uuid.uuid4()}",
-            email_normalized=invite.email.lower().strip(),
-            display_name=req.display_name or invite.email.split("@")[0],
-            password_hash=get_password_hash(req.password)
-        )
-        db.add(user)
-        await db.flush()
+    if not user or not user.password_hash:
+        # New account: setting the initial password is required
+        initial_password = req.password or req.current_password
+        if not initial_password or len(initial_password) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для активации новой учетной записи требуется задать пароль (не менее 8 символов)"
+            )
+        if not user:
+            user = IdentityUser(
+                oidc_subject=f"oidc_{uuid.uuid4()}",
+                email_normalized=invite.email.lower().strip(),
+                display_name=req.display_name or invite.email.split("@")[0],
+                password_hash=get_password_hash(initial_password)
+            )
+            db.add(user)
+            await db.flush()
+        else:
+            user.password_hash = get_password_hash(initial_password)
+            if req.display_name:
+                user.display_name = req.display_name
     else:
-        user.password_hash = get_password_hash(req.password)
-        if req.display_name:
-            user.display_name = req.display_name
+        # Security: account already exists with password!
+        # Do NOT allow account takeover or password overwrite via invite token.
+        # User must verify identity with their existing password.
+        if not req.current_password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="CURRENT_PASSWORD_REQUIRED: Учетная запись с таким email уже существует. Подтвердите текущий пароль для принятия приглашения."
+            )
+        if not verify_password(req.current_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="INVALID_CURRENT_PASSWORD: Неверный текущий пароль учетной записи."
+            )
+        # Note: We NEVER modify user.password_hash here!
 
     # Activate tenant membership
     stmt_m = select(TenantMembership).where(
