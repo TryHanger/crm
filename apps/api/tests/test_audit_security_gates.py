@@ -326,3 +326,172 @@ async def test_partial_payment_does_not_mark_charge_paid():
         }, headers=p_headers)
         assert pmt_resp.status_code == 201
         assert pmt_resp.json()["status"] == "partially_paid"
+
+
+@pytest.mark.asyncio
+async def test_owner_invite_and_acceptance_flow():
+    """Validates Gate 0 #6: Owner invite issuance, status 'invited', and acceptance flow."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login as Platform Owner
+        login_p = await client.post("/api/v1/auth/login", json={"email": "owner@platform.example.kz", "password": "Password123!"})
+        p_headers = {"Authorization": f"Bearer {login_p.json()['access_token']}"}
+
+        # 2. Create New Company
+        slug = f"barber-{uuid.uuid4().hex[:6]}"
+        owner_email = f"owner-{slug}@example.kz"
+        create_resp = await client.post("/api/v1/platform/tenants", json={
+            "slug": slug,
+            "display_name": "Тестовый Барбершоп",
+            "vertical": "barbershop",
+            "owner_name": "Новый Владелец",
+            "owner_email": owner_email,
+            "plan_code": "start"
+        }, headers=p_headers)
+        assert create_resp.status_code == 201
+        data = create_resp.json()
+        assert data["owner_status"] == "invited"
+        invite_token = data.get("invite_token")
+        assert invite_token is not None
+
+        # 3. Try to login before accepting invite -> 401
+        login_fail = await client.post("/api/v1/auth/login", json={"email": owner_email, "password": "Password123!"})
+        assert login_fail.status_code == 401
+
+        # 4. Accept with invalid token -> 400
+        inv_bad = await client.post("/api/v1/auth/accept-invite", json={"token": "invalid_tok_123", "password": "NewSecretPassword123!"})
+        assert inv_bad.status_code == 400
+
+        # 5. Accept with short password -> 422
+        inv_short = await client.post("/api/v1/auth/accept-invite", json={"token": invite_token, "password": "123"})
+        assert inv_short.status_code == 422
+
+        # 6. Accept invite successfully
+        inv_ok = await client.post("/api/v1/auth/accept-invite", json={
+            "token": invite_token,
+            "password": "NewSecurePassword123!",
+            "display_name": "Активированный Владелец"
+        })
+        assert inv_ok.status_code == 200
+        ok_data = inv_ok.json()
+        assert ok_data["role"] == "owner"
+        assert "access_token" in ok_data
+
+        # 7. Login with newly created password -> 200
+        login_ok = await client.post("/api/v1/auth/login", json={"email": owner_email, "password": "NewSecurePassword123!"})
+        assert login_ok.status_code == 200
+        assert login_ok.json()["role"] == "owner"
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_reuse_rejection_on_payload_mismatch():
+    """Validates Gate 1 #8: Reusing Idempotency-Key with different payload is rejected with 409."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        headers = {"Host": "barberhouse.book.example.kz"}
+        resp_b = await client.get("/api/v1/public/branches", headers=headers)
+        b_id = resp_b.json()[0]["id"]
+        resp_s = await client.get("/api/v1/public/services", headers=headers)
+        s_id = resp_s.json()[0]["id"]
+        resp_st = await client.get(f"/api/v1/public/staff?branch_id={b_id}&service_ids={s_id}", headers=headers)
+        staff_id = resp_st.json()[0]["id"]
+
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        target_day = today + datetime.timedelta(days=18)
+        while target_day.isoweekday() not in (1, 2, 3, 4, 5):
+            target_day += datetime.timedelta(days=1)
+        slot1_utc = datetime.datetime.combine(target_day, datetime.time(11, 0), tzinfo=datetime.timezone.utc)
+        slot2_utc = datetime.datetime.combine(target_day, datetime.time(12, 0), tzinfo=datetime.timezone.utc)
+        idem_key = f"key-test-mismatch-{uuid.uuid4()}"
+
+        payload1 = {
+            "branch_id": b_id,
+            "staff_id": staff_id,
+            "service_ids": [s_id],
+            "starts_at_utc": slot1_utc.isoformat(),
+            "customer_name": "Идемпотентный Клиент",
+            "customer_phone": "+77081112233"
+        }
+
+        # Request 1: succeeds
+        resp1 = await client.post("/api/v1/public/bookings", json=payload1, headers={**headers, "Idempotency-Key": idem_key})
+        assert resp1.status_code == 201
+
+        # Request 2: exact same payload -> replays booking successfully
+        resp2 = await client.post("/api/v1/public/bookings", json=payload1, headers={**headers, "Idempotency-Key": idem_key})
+        assert resp2.status_code in (200, 201)
+        assert resp2.json()["public_ref"] == resp1.json()["public_ref"]
+
+        # Request 3: different payload (different slot time!) with same key -> 409 IDEMPOTENCY_KEY_REUSED
+        payload3 = {**payload1, "starts_at_utc": slot2_utc.isoformat()}
+        resp3 = await client.post("/api/v1/public/bookings", json=payload3, headers={**headers, "Idempotency-Key": idem_key})
+        assert resp3.status_code == 409
+        err = resp3.json()
+        assert err["code"] == "IDEMPOTENCY_KEY_REUSED" or err.get("detail", {}).get("code") == "IDEMPOTENCY_KEY_REUSED"
+
+
+@pytest.mark.asyncio
+async def test_master_cannot_create_booking_for_another_master():
+    """Validates Gate 1 #10: Master is forbidden from creating appointments for other staff members in CRM."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login as Master (Damir)
+        login_m = await client.post("/api/v1/auth/login", json={"email": "damir@barberhouse.kz", "password": "Password123!"})
+        m_headers = {"Authorization": f"Bearer {login_m.json()['access_token']}"}
+
+        # Login as Owner to get Erzhan's ID
+        login_o = await client.post("/api/v1/auth/login", json={"email": "owner@barberhouse.kz", "password": "Password123!"})
+        o_headers = {"Authorization": f"Bearer {login_o.json()['access_token']}"}
+        branches = (await client.get("/api/v1/business/branches", headers=o_headers)).json()
+        b_id = branches[0]["id"]
+        services = (await client.get("/api/v1/business/services", headers=o_headers)).json()
+        s_id = services[0]["id"]
+        staff_list = (await client.get("/api/v1/business/staff", headers=o_headers)).json()
+        erzhan = next(s for s in staff_list if "Ержан" in s["display_name"])
+        erzhan_id = erzhan["id"]
+
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        target_day = today + datetime.timedelta(days=20)
+        while target_day.isoweekday() not in (1, 2, 3, 4, 5):
+            target_day += datetime.timedelta(days=1)
+        slot_utc = datetime.datetime.combine(target_day, datetime.time(11, 0), tzinfo=datetime.timezone.utc)
+
+        # Damir attempts to create booking for Erzhan in CRM -> 403 Forbidden!
+        crm_resp = await client.post("/api/v1/business/bookings", json={
+            "branch_id": b_id,
+            "staff_id": erzhan_id,
+            "service_ids": [s_id],
+            "starts_at_utc": slot_utc.isoformat(),
+            "customer_name": "Попытка Чужой Записи",
+            "customer_phone": "+77095554433"
+        }, headers=m_headers)
+        assert crm_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_plans_catalog_api():
+    """Validates Gate 1 #12: Platform plans catalog GET/POST endpoints."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        login_p = await client.post("/api/v1/auth/login", json={"email": "owner@platform.example.kz", "password": "Password123!"})
+        p_headers = {"Authorization": f"Bearer {login_p.json()['access_token']}"}
+
+        # 1. GET /plans
+        plans_resp = await client.get("/api/v1/platform/plans", headers=p_headers)
+        assert plans_resp.status_code == 200
+        plan_codes = [p["code"] for p in plans_resp.json()]
+        assert "start" in plan_codes
+        assert "pro" in plan_codes
+
+        # 2. POST /plans (Create Enterprise)
+        new_code = f"ent-{uuid.uuid4().hex[:4]}"
+        create_p = await client.post("/api/v1/platform/plans", json={
+            "code": new_code,
+            "name": "Enterprise Plan",
+            "description": "Для крупных сетей",
+            "price_minor": 5000000,
+            "max_branches": 10,
+            "max_active_staff": 50
+        }, headers=p_headers)
+        assert create_p.status_code == 201
+        assert create_p.json()["code"] == new_code

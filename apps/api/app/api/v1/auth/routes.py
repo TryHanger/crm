@@ -1,16 +1,24 @@
 import uuid
 import datetime
+import hashlib
+from typing import Optional
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.infrastructure.db.session import get_db
-from apps.api.app.infrastructure.db.models import IdentityUser, TenantMembership, PlatformStaff, Tenant
-from apps.api.app.infrastructure.security.jwt import verify_password, create_access_token
+from apps.api.app.infrastructure.db.models import IdentityUser, TenantMembership, PlatformStaff, Tenant, Invite
+from apps.api.app.infrastructure.security.jwt import verify_password, get_password_hash, create_access_token
 from apps.api.app.infrastructure.security.auth import get_current_user
 from apps.api.app.modules.schemas import LoginRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+    display_name: Optional[str] = None
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -82,3 +90,80 @@ async def get_me(user: IdentityUser = Depends(get_current_user), db: AsyncSessio
         "crm_memberships": memberships_data,
         "platform_role": p_staff.platform_role if p_staff else None
     }
+
+
+@router.post("/accept-invite", response_model=TokenResponse)
+async def accept_invite(req: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
+    """Accepts an owner or staff invitation, sets user password, and activates membership."""
+    tok_hash = hashlib.sha256(req.token.strip().encode()).hexdigest()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+    stmt_inv = select(Invite).where(
+        Invite.token_hash == tok_hash,
+        Invite.consumed_at.is_(None)
+    )
+    res_inv = await db.execute(stmt_inv)
+    invite = res_inv.scalar_one_or_none()
+
+    if not invite or (invite.expires_at and invite.expires_at < now_utc):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Приглашение недействительно или срок его действия истек"
+        )
+
+    # Find or update user
+    stmt_u = select(IdentityUser).where(IdentityUser.email_normalized == invite.email.lower().strip())
+    res_u = await db.execute(stmt_u)
+    user = res_u.scalar_one_or_none()
+    if not user:
+        user = IdentityUser(
+            oidc_subject=f"oidc_{uuid.uuid4()}",
+            email_normalized=invite.email.lower().strip(),
+            display_name=req.display_name or invite.email.split("@")[0],
+            password_hash=get_password_hash(req.password)
+        )
+        db.add(user)
+        await db.flush()
+    else:
+        user.password_hash = get_password_hash(req.password)
+        if req.display_name:
+            user.display_name = req.display_name
+
+    # Activate tenant membership
+    stmt_m = select(TenantMembership).where(
+        TenantMembership.tenant_id == invite.tenant_id,
+        TenantMembership.user_id == user.id
+    )
+    res_m = await db.execute(stmt_m)
+    membership = res_m.scalar_one_or_none()
+    if not membership:
+        membership = TenantMembership(
+            tenant_id=invite.tenant_id,
+            user_id=user.id,
+            role=invite.role,
+            status="active"
+        )
+        db.add(membership)
+    else:
+        membership.status = "active"
+
+    invite.consumed_at = now_utc
+    await db.commit()
+
+    # Generate token
+    token = create_access_token({
+        "sub": str(user.id),
+        "email": user.email_normalized,
+        "name": user.display_name,
+        "role": membership.role,
+        "platform_role": None
+    })
+
+    return TokenResponse(
+        access_token=token,
+        user_id=user.id,
+        display_name=user.display_name,
+        email=user.email_normalized,
+        role=membership.role,
+        platform_role=None
+    )

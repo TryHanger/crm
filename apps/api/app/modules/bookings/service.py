@@ -304,6 +304,9 @@ class BookingEngine:
         if is_public and not policy.allow_online_booking:
             raise BookingEngineError("BOOKING_DISABLED", "Online booking is currently disabled for this location", 403)
 
+        if not service_ids or len(service_ids) == 0:
+            raise BookingEngineError("EMPTY_SERVICES", "At least one service must be selected to search availability", 422)
+
         if len(service_ids) > policy.max_services_per_booking:
             raise BookingEngineError("TOO_MANY_SERVICES", f"Maximum {policy.max_services_per_booking} services allowed", 422)
 
@@ -456,8 +459,20 @@ class BookingEngine:
                             )
 
                             if not (has_break_conflict or has_occ_conflict or has_to_conflict):
-                                # Valid slot!
-                                quote_id = str(uuid.uuid4())
+                                # Valid slot! Create and persist authoritative quote
+                                quote = BookingQuote(
+                                    tenant_id=tenant_id,
+                                    branch_id=branch_id,
+                                    staff_id=c_staff_id,
+                                    selected_service_ids_ordered=[str(s) for s in service_ids],
+                                    starts_at_utc=slot_start,
+                                    ends_at_utc=slot_end,
+                                    amount_minor=price_minor,
+                                    duration_minutes=duration_mins,
+                                    pricing_version_hash=hashlib.sha256(f"{price_minor}:{duration_mins}".encode()).hexdigest(),
+                                    expires_at=now_utc + datetime.timedelta(minutes=15)
+                                )
+                                db.add(quote)
                                 slots.append({
                                     "staff_id": str(c_staff_id),
                                     "staff_name": staff_prof.display_name,
@@ -467,13 +482,15 @@ class BookingEngine:
                                     "duration_minutes": duration_mins,
                                     "price_minor": price_minor,
                                     "currency": "KZT",
-                                    "quote_id": quote_id,
-                                    "quote_expires_at": (now_utc + datetime.timedelta(minutes=10)).isoformat()
+                                    "quote_id": str(quote.id),
+                                    "quote_expires_at": quote.expires_at.isoformat()
                                 })
 
                         slot_start += datetime.timedelta(minutes=step_minutes)
 
                 current_day += datetime.timedelta(days=1)
+
+        await db.flush()
 
         # Ordering:
         # If staff_mode == 'any': 1) earliest start time, 2) lowest price, 3) stable staff UUID
@@ -503,19 +520,25 @@ class BookingEngine:
         source: str = "public",  # public or crm_manual
         idempotency_key: Optional[str] = None,
         created_by_user_id: Optional[uuid.UUID] = None,
+        quote_id: Optional[uuid.UUID] = None,
         expected_price_minor: Optional[int] = None
     ) -> Tuple[Booking, PublicManagementToken, str]:
         """
         Creates a booking atomically.
         Guarantees:
         - Exclusion constraint on staff_occupancies prevents double booking.
-        - Idempotency checks prevent duplicate bookings on network retries.
+        - Idempotency checks prevent duplicate bookings on network retries and reject reused keys with mismatching payloads.
         - Verification that current price/duration match expected quote.
         - Immediately confirmed status.
         - Outbox event and audit logging.
         """
         await set_tenant_context(db, tenant_id)
-        # 1. Idempotency Check
+
+        payload_hash = hashlib.sha256(
+            f"{tenant_id}:{branch_id}:{staff_id}:{sorted(str(s) for s in service_ids)}:{starts_at_utc.isoformat()}:{customer_phone_e164}".encode()
+        ).hexdigest()
+
+        # 1. Idempotency Check with Request Hash Verification
         if idempotency_key:
             stmt_idem = select(IdempotencyRecord).where(
                 IdempotencyRecord.scope == f"{source}_booking",
@@ -524,6 +547,12 @@ class BookingEngine:
             res_idem = await db.execute(stmt_idem)
             rec = res_idem.scalar_one_or_none()
             if rec:
+                if rec.request_hash != payload_hash:
+                    raise BookingEngineError(
+                        "IDEMPOTENCY_KEY_REUSED",
+                        "Idempotency key has already been used with different booking parameters",
+                        status_code=409
+                    )
                 # Return existing booking with fresh management token
                 stmt_b = select(Booking).where(Booking.idempotency_key == idempotency_key, Booking.tenant_id == tenant_id)
                 res_b = await db.execute(stmt_b)
@@ -545,6 +574,29 @@ class BookingEngine:
         duration_mins, actual_price_minor, items_data = await cls.calculate_quote_for_staff(
             db, tenant_id, branch_id, staff_id, service_ids
         )
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if quote_id:
+            stmt_q = select(BookingQuote).where(
+                BookingQuote.id == quote_id,
+                BookingQuote.tenant_id == tenant_id
+            )
+            res_q = await db.execute(stmt_q)
+            quote = res_q.scalar_one_or_none()
+            if not quote or quote.expires_at < now_utc or quote.used_at is not None:
+                raise BookingEngineError(
+                    "QUOTE_EXPIRED",
+                    "Selected booking quote has expired or was already used. Please select slot again.",
+                    status_code=409
+                )
+            if quote.amount_minor != actual_price_minor or quote.duration_minutes != duration_mins:
+                raise BookingEngineError(
+                    "QUOTE_CHANGED",
+                    f"Service price has updated to {actual_price_minor / 100} KZT. Please re-confirm terms.",
+                    status_code=409,
+                    details={"new_price_minor": actual_price_minor, "duration_minutes": duration_mins}
+                )
+            quote.used_at = now_utc
 
         if expected_price_minor is not None and expected_price_minor != actual_price_minor:
             raise BookingEngineError(
@@ -701,7 +753,7 @@ class BookingEngine:
                 tenant_id=tenant_id,
                 actor_or_context_hash=customer_phone_e164,
                 idempotency_key=idempotency_key,
-                request_hash=hashlib.sha256(f"{staff_id}_{starts_at_utc.isoformat()}".encode()).hexdigest(),
+                request_hash=payload_hash,
                 response_body_redacted=f"booking_ref:{ref_code}",
                 response_code=201,
                 expires_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)

@@ -102,6 +102,7 @@ class CreatePublicBookingRequest(BaseModel):
     customer_phone: str
     customer_email: Optional[str] = None
     notes: Optional[str] = None
+    quote_id: Optional[uuid.UUID] = None
     expected_price_minor: Optional[int] = None
 
 class BookingCreatedResponse(BaseModel):

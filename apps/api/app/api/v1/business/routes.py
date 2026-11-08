@@ -1,5 +1,6 @@
 import uuid
 import datetime
+import zoneinfo
 from typing import List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from sqlalchemy import select, and_, or_, func, text
@@ -216,8 +217,18 @@ async def get_calendar(
             )
         effective_staff_id = master_profile.id
 
-    day_start_utc = datetime.datetime.combine(date, datetime.time.min, tzinfo=datetime.timezone.utc)
-    day_end_utc = datetime.datetime.combine(date, datetime.time.max, tzinfo=datetime.timezone.utc)
+    stmt_b = select(Branch).where(Branch.id == branch_id, Branch.tenant_id == tenant_id)
+    res_b = await db.execute(stmt_b)
+    branch = res_b.scalar_one_or_none()
+    try:
+        tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty") if branch else zoneinfo.ZoneInfo("Asia/Almaty")
+    except Exception:
+        tz = zoneinfo.ZoneInfo("Asia/Almaty")
+
+    start_local = datetime.datetime.combine(date, datetime.time.min, tzinfo=tz)
+    end_local = datetime.datetime.combine(date, datetime.time.max, tzinfo=tz)
+    day_start_utc = start_local.astimezone(datetime.timezone.utc)
+    day_end_utc = end_local.astimezone(datetime.timezone.utc)
 
     # 1. Staff on duty
     stmt_staff = select(StaffProfile).join(
@@ -308,6 +319,18 @@ async def crm_create_booking(
 ):
     """Creates a booking manually from CRM via unified BookingEngine."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
+    if crm_user.role == "master":
+        stmt_sp = select(StaffProfile).where(
+            StaffProfile.tenant_id == crm_user.tenant_id,
+            StaffProfile.user_id == crm_user.user.id
+        )
+        res_sp = await db.execute(stmt_sp)
+        sp = res_sp.scalar_one_or_none()
+        if not sp or req.staff_id != sp.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "FORBIDDEN", "message": "Access denied: master cannot create appointments for other staff"}
+            )
     try:
         booking, mgmt_token, raw_token = await BookingEngine.create_booking(
             db=db,

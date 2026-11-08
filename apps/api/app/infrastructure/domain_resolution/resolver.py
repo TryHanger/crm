@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from fastapi import Request, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from apps.api.app.core.config import settings
 from apps.api.app.infrastructure.db.session import get_db, set_tenant_context
 from apps.api.app.infrastructure.db.models import Tenant, TenantDomain, BookingPublication
 
@@ -13,11 +14,24 @@ class ResolvedPublicTenant:
     publication: BookingPublication
 
 def normalize_hostname(raw_host: str) -> str:
-    """Strips port and normalizes host to lowercase ASCII."""
+    """Strips port and normalizes host to validated lowercase ASCII/IDNA."""
     if not raw_host:
         return ""
-    # Strip port if present
-    host = raw_host.split(":")[0].strip().lower()
+    host = raw_host.strip().lower()
+    # Handle bracketed IPv6
+    if host.startswith("["):
+        idx = host.find("]")
+        if idx != -1:
+            host = host[1:idx]
+    else:
+        # Strip port
+        host = host.split(":")[0].strip()
+    
+    # IDNA validation
+    try:
+        host = host.encode("idna").decode("ascii")
+    except Exception:
+        return ""
     return host
 
 async def resolve_public_tenant(
@@ -26,21 +40,36 @@ async def resolve_public_tenant(
 ) -> ResolvedPublicTenant:
     """
     Extracts the client booking tenant based on the incoming Host header.
-    Validates host in tenant_domains and sets PostgreSQL RLS context.
+    Validates host in tenant_domains and sets PostgreSQL transaction-scoped RLS context.
+    Trusts X-Forwarded-Host only from configured trusted proxies.
     """
-    # Prefer Host header (or X-Forwarded-Host from trusted edge)
-    host_header = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
-    hostname = normalize_hostname(host_header)
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    is_trusted_proxy = (
+        client_ip in settings.TRUSTED_PROXIES or
+        client_ip in ("127.0.0.1", "::1", "testclient") or
+        settings.ENVIRONMENT == "test"
+    )
+
+    if is_trusted_proxy and "x-forwarded-host" in request.headers:
+        raw_host = request.headers.get("x-forwarded-host") or ""
+    else:
+        raw_host = request.headers.get("host") or ""
+
+    hostname = normalize_hostname(raw_host)
 
     if not hostname:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "SITE_NOT_FOUND", "message": "Host header is missing or empty"}
+            detail={"code": "SITE_NOT_FOUND", "message": "Host header is missing, invalid, or empty"}
         )
 
-    # Allow query param slug for local development/testing e.g. ?demo_slug=barberhouse or header X-Demo-Slug
-    demo_slug = request.query_params.get("demo_slug") or request.headers.get("x-demo-slug")
-    if demo_slug and ("localhost" in hostname or "127.0.0.1" in hostname or "testserver" in hostname):
+    # Local development/test bypass via demo_slug or x-demo-slug
+    is_local_host = hostname in ("localhost", "127.0.0.1", "testserver") or hostname.endswith(".localhost")
+    demo_slug = None
+    if settings.ENVIRONMENT in ("development", "test") and is_local_host:
+        demo_slug = request.query_params.get("demo_slug") or request.headers.get("x-demo-slug")
+
+    if demo_slug:
         stmt = (
             select(TenantDomain, Tenant)
             .join(Tenant, Tenant.id == TenantDomain.tenant_id)

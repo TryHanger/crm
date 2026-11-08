@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "SaaS Online Booking & CRM Platform"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = Field(default=os.getenv("ENVIRONMENT", "development"))  # development, test, production
+    ENABLE_DEMO_SEED: bool = Field(default=os.getenv("ENABLE_DEMO_SEED", "false").lower() in ("true", "1", "yes"))
+    TRUSTED_PROXIES: List[str] = Field(default_factory=lambda: [p.strip() for p in os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1,localhost").split(",") if p.strip()])
 
     # PostgreSQL Direct Connection Strings (preferred if provided, e.g. from Docker Compose / Cloud)
     DATABASE_URL: Optional[str] = Field(default=os.getenv("DATABASE_URL", None))
@@ -21,17 +23,38 @@ class Settings(BaseSettings):
     ADMIN_DB_PASSWORD: str = Field(default=os.getenv("ADMIN_DB_PASSWORD", "postgres"))
     DB_NAME: str = Field(default=os.getenv("DB_NAME", "saas_crm"))
 
+    def set_test_database_name(self, test_db_name: str):
+        """Forces settings to test mode and rebinds all URLs to the verified test database."""
+        if not test_db_name.endswith("_test") or test_db_name in ("saas_crm", "postgres", "production"):
+            raise RuntimeError(f"FATAL: Unsafe test database name '{test_db_name}'. Must end with '_test'.")
+        self.ENVIRONMENT = "test"
+        self.DB_NAME = test_db_name
+        self.ENABLE_DEMO_SEED = True
+        if self.DATABASE_URL:
+            base, _ = self.DATABASE_URL.rsplit("/", 1)
+            self.DATABASE_URL = f"{base}/{test_db_name}"
+        if self.ADMIN_DATABASE_URL:
+            base, _ = self.ADMIN_DATABASE_URL.rsplit("/", 1)
+            self.ADMIN_DATABASE_URL = f"{base}/{test_db_name}"
+
     # Dynamic URLs with priority to explicit environment variables
     @property
     def ASYNC_DATABASE_URL(self) -> str:
         if self.DATABASE_URL:
-            # Ensure asyncpg dialect
             url = self.DATABASE_URL
+            if self.ENVIRONMENT == "test":
+                base, db_part = url.rsplit("/", 1)
+                db_name = db_part.split("?")[0]
+                if not db_name.endswith("_test") or db_name in ("saas_crm", "postgres", "production"):
+                    raise RuntimeError(f"FATAL: In test mode, database URL must point to a database ending with '_test', got '{db_name}'!")
             if url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
             elif not url.startswith("postgresql+asyncpg://"):
                 url = f"postgresql+asyncpg://{url}"
             return url
+        if self.ENVIRONMENT == "test":
+            if not self.DB_NAME.endswith("_test") or self.DB_NAME in ("saas_crm", "postgres", "production"):
+                raise RuntimeError(f"FATAL: In test mode, DB_NAME must end with '_test', got '{self.DB_NAME}'!")
         pwd = f":{self.DB_PASSWORD}" if self.DB_PASSWORD else ""
         return f"postgresql+asyncpg://{self.DB_USER}{pwd}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
@@ -39,11 +62,19 @@ class Settings(BaseSettings):
     def SYNC_DATABASE_URL(self) -> str:
         if self.DATABASE_URL:
             url = self.DATABASE_URL
+            if self.ENVIRONMENT == "test":
+                base, db_part = url.rsplit("/", 1)
+                db_name = db_part.split("?")[0]
+                if not db_name.endswith("_test") or db_name in ("saas_crm", "postgres", "production"):
+                    raise RuntimeError(f"FATAL: In test mode, database URL must point to a database ending with '_test', got '{db_name}'!")
             if url.startswith("postgresql+asyncpg://"):
                 url = url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
             elif url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
             return url
+        if self.ENVIRONMENT == "test":
+            if not self.DB_NAME.endswith("_test") or self.DB_NAME in ("saas_crm", "postgres", "production"):
+                raise RuntimeError(f"FATAL: In test mode, DB_NAME must end with '_test', got '{self.DB_NAME}'!")
         pwd = f":{self.DB_PASSWORD}" if self.DB_PASSWORD else ""
         return f"postgresql+psycopg2://{self.DB_USER}{pwd}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
@@ -51,11 +82,19 @@ class Settings(BaseSettings):
     def ADMIN_SYNC_DATABASE_URL(self) -> str:
         if self.ADMIN_DATABASE_URL:
             url = self.ADMIN_DATABASE_URL
+            if self.ENVIRONMENT == "test":
+                base, db_part = url.rsplit("/", 1)
+                db_name = db_part.split("?")[0]
+                if not db_name.endswith("_test") or db_name in ("saas_crm", "postgres", "production"):
+                    raise RuntimeError(f"FATAL: In test mode, ADMIN_DATABASE_URL must point to a database ending with '_test', got '{db_name}'!")
             if url.startswith("postgresql+asyncpg://"):
                 url = url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
             elif url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
             return url
+        if self.ENVIRONMENT == "test":
+            if not self.DB_NAME.endswith("_test") or self.DB_NAME in ("saas_crm", "postgres", "production"):
+                raise RuntimeError(f"FATAL: In test mode, DB_NAME must end with '_test', got '{self.DB_NAME}'!")
         pwd = f":{self.ADMIN_DB_PASSWORD}" if self.ADMIN_DB_PASSWORD else ""
         return f"postgresql+psycopg2://{self.ADMIN_DB_USER}{pwd}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 

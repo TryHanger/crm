@@ -21,11 +21,13 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS btree_gist;")
 
     # 2. Ensure application runtime role exists with NOSUPERUSER and NOBYPASSRLS
-    op.execute("""
+    db_user = "crm_app_user"
+    db_pwd = "crm_app_secret"
+    op.execute(f"""
         DO $$
         BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'crm_app_user') THEN
-                CREATE ROLE crm_app_user WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD 'crm_app_secret';
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{db_user}') THEN
+                EXECUTE format('CREATE ROLE %I WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD %L', '{db_user}', '{db_pwd}');
             END IF;
         END $$;
     """)
@@ -81,12 +83,14 @@ def upgrade() -> None:
             );
         """)
 
-    # 7. Grant least-privilege runtime access to crm_app_user
+    # 7. Grant least-privilege runtime access to crm_app_user (no DDL)
     op.execute("""
         GRANT USAGE ON SCHEMA public TO crm_app_user;
-        GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO crm_app_user;
-        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO crm_app_user;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO crm_app_user;
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO crm_app_user;
         GRANT EXECUTE ON FUNCTION lookup_public_management_token(text) TO crm_app_user;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO crm_app_user;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO crm_app_user;
     """)
 
 def downgrade() -> None:

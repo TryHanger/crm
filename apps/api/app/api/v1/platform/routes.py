@@ -1,19 +1,21 @@
 import uuid
 import datetime
 import secrets
+import hashlib
 from typing import List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.core.config import settings
 from apps.api.app.infrastructure.db.session import get_db
 from apps.api.app.infrastructure.security.jwt import get_password_hash
 from apps.api.app.infrastructure.security.auth import (
     get_current_platform_staff, require_platform_roles, AuthenticatedPlatformStaff
 )
 from apps.api.app.infrastructure.db.models import (
-    Tenant, TenantDomain, IdentityUser, TenantMembership, Plan, PlanVersion,
-    Subscription, SubscriptionCharge, PaymentRecord, SubscriptionDecision,
+    Tenant, TenantDomain, IdentityUser, TenantMembership, Invite, Plan, PlanVersion,
+    PlanEntitlement, Subscription, SubscriptionCharge, PaymentRecord, SubscriptionDecision,
     PlatformAuditEvent, PlatformAlert, TenantEntitlementOverride, FeatureCatalog,
     PlatformSupportTicket, SupportMessage, SupportAccessRequest, SupportAccessSession,
     Branch, StaffProfile, Booking
@@ -188,26 +190,39 @@ async def create_tenant(
     res_u = await db.execute(stmt_u)
     owner_user = res_u.scalar_one_or_none()
     if not owner_user:
-        initial_pwd = secrets.token_urlsafe(16)
         owner_user = IdentityUser(
             oidc_subject=f"oidc_{uuid.uuid4()}",
             email_normalized=req.owner_email.lower().strip(),
             display_name=req.owner_name,
-            password_hash=get_password_hash(initial_pwd)
+            password_hash=None
         )
         db.add(owner_user)
         await db.flush()
 
-    # Membership
+    # Membership in "invited" status until invite acceptance
     membership = TenantMembership(
         tenant_id=tenant.id,
         user_id=owner_user.id,
         role="owner",
-        status="active"
+        status="invited"
     )
     db.add(membership)
     await db.flush()
     tenant.owner_membership_id = membership.id
+
+    # Create one-time secure Owner Invite record
+    raw_invite_token = secrets.token_urlsafe(32)
+    tok_hash = hashlib.sha256(raw_invite_token.encode()).hexdigest()
+    invite = Invite(
+        tenant_id=tenant.id,
+        email=req.owner_email.lower().strip(),
+        invite_type="owner_invite",
+        role="owner",
+        token_hash=tok_hash,
+        expires_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48),
+        sent_at=datetime.datetime.now(datetime.timezone.utc)
+    )
+    db.add(invite)
 
     # Assign default plan (Start trial 14 days)
     stmt_p = select(PlanVersion).join(Plan, Plan.id == PlanVersion.plan_id).where(Plan.code == req.plan_code).order_by(PlanVersion.version.desc())
@@ -243,7 +258,15 @@ async def create_tenant(
     )
 
     await db.commit()
-    return {"tenant_id": str(tenant.id), "slug": tenant.slug, "display_name": tenant.display_name}
+    is_dev = settings.ENVIRONMENT in ("development", "test")
+    return {
+        "tenant_id": str(tenant.id),
+        "slug": tenant.slug,
+        "display_name": tenant.display_name,
+        "owner_status": "invited",
+        "invite_token": raw_invite_token if is_dev else None,
+        "invite_url": f"https://{settings.CRM_DOMAIN}/accept-invite?token={raw_invite_token}" if is_dev else None
+    }
 
 
 @router.get("/tenants/{tenant_id}")
@@ -605,3 +628,106 @@ async def create_access_request(
 
     await db.commit()
     return {"request_id": str(access_req.id), "status": "pending", "message": "Запрос отправлен владельцу компании"}
+
+
+# =========================================================================
+# PLAN CATALOG MANAGEMENT
+# =========================================================================
+
+from pydantic import BaseModel, Field
+
+class CreatePlanRequest(BaseModel):
+    code: str = Field(min_length=2, max_length=32)
+    name: str = Field(min_length=2, max_length=128)
+    description: Optional[str] = None
+    price_minor: int = Field(ge=0)
+    currency: str = "KZT"
+    max_branches: int = Field(default=1, ge=1)
+    max_active_staff: int = Field(default=5, ge=1)
+
+@router.get("/plans")
+async def get_plans(
+    staff: AuthenticatedPlatformStaff = Depends(get_current_platform_staff),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns platform plan catalog with active versions and entitlements."""
+    stmt = select(Plan).order_by(Plan.created_at)
+    res = await db.execute(stmt)
+    plans = res.scalars().all()
+    results = []
+    for p in plans:
+        stmt_v = select(PlanVersion).where(PlanVersion.plan_id == p.id, PlanVersion.is_active == True).order_by(PlanVersion.version.desc())
+        res_v = await db.execute(stmt_v)
+        v = res_v.scalars().first()
+        entitlements = {}
+        if v:
+            stmt_e = select(PlanEntitlement).where(PlanEntitlement.plan_version_id == v.id)
+            res_e = await db.execute(stmt_e)
+            for pe in res_e.scalars().all():
+                entitlements[pe.feature_key] = {"enabled": pe.enabled, "limit": pe.limit_value}
+        results.append({
+            "id": str(p.id),
+            "code": p.code,
+            "name": p.name,
+            "description": p.description,
+            "active_version": {
+                "id": str(v.id),
+                "version": v.version,
+                "price_minor": v.price_minor,
+                "currency": v.currency,
+                "entitlements": entitlements
+            } if v else None
+        })
+    return results
+
+@router.post("/plans", status_code=status.HTTP_201_CREATED)
+async def create_plan(
+    req: CreatePlanRequest,
+    staff: AuthenticatedPlatformStaff = Depends(require_platform_roles(["platform_owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Creates a new tariff plan with baseline version and entitlements."""
+    stmt_check = select(Plan).where(Plan.code == req.code.strip().lower())
+    res_c = await db.execute(stmt_check)
+    if res_c.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Plan code already exists")
+
+    plan = Plan(
+        code=req.code.strip().lower(),
+        name=req.name,
+        description=req.description
+    )
+    db.add(plan)
+    await db.flush()
+
+    pv = PlanVersion(
+        plan_id=plan.id,
+        version=1,
+        price_minor=req.price_minor,
+        currency=req.currency,
+        is_active=True
+    )
+    db.add(pv)
+    await db.flush()
+
+    pe_list = [
+        PlanEntitlement(plan_version_id=pv.id, feature_key="max_branches", limit_value=req.max_branches, enabled=True),
+        PlanEntitlement(plan_version_id=pv.id, feature_key="max_active_staff", limit_value=req.max_active_staff, enabled=True),
+        PlanEntitlement(plan_version_id=pv.id, feature_key="online_booking", limit_value=None, enabled=True),
+        PlanEntitlement(plan_version_id=pv.id, feature_key="basic_reports", limit_value=None, enabled=True),
+    ]
+    db.add_all(pe_list)
+
+    await record_audit_event(
+        db=db,
+        actor_id=staff.user.id,
+        actor_email=staff.user.email_normalized,
+        action="plan.created",
+        object_type="plan",
+        target_tenant_id=None,
+        object_id=str(plan.id),
+        after={"code": plan.code, "name": plan.name, "price_minor": pv.price_minor}
+    )
+
+    await db.commit()
+    return {"plan_id": str(plan.id), "code": plan.code, "name": plan.name}

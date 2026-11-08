@@ -1,6 +1,7 @@
 import uuid
 import hashlib
 import datetime
+import zoneinfo
 from typing import List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy import select, and_, text
@@ -213,6 +214,7 @@ async def get_staff_services(
 
 
 @router.post("/availability/search", response_model=AvailabilitySearchResponse)
+@router.post("/availability", response_model=AvailabilitySearchResponse)
 async def search_availability(
     req: AvailabilitySearchRequest,
     pub_ctx: ResolvedPublicTenant = Depends(resolve_public_tenant),
@@ -222,9 +224,26 @@ async def search_availability(
     Deterministic slot search:
     - Service-first, Master-first, Time-first
     - 'any master' mode ranks: 1) earliest start time, 2) lowest quote price, 3) stable UUID
+    - Boundaries are calculated in the branch's local timezone
     """
-    from_utc = datetime.datetime.combine(req.from_date, datetime.time.min, tzinfo=datetime.timezone.utc)
-    to_utc = datetime.datetime.combine(req.to_date, datetime.time.max, tzinfo=datetime.timezone.utc)
+    if not req.service_ids or len(req.service_ids) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "EMPTY_SERVICES", "message": "At least one service must be selected to search availability"}
+        )
+
+    stmt_b = select(Branch).where(Branch.id == req.branch_id, Branch.tenant_id == pub_ctx.tenant.id)
+    res_b = await db.execute(stmt_b)
+    branch = res_b.scalar_one_or_none()
+    try:
+        tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty") if branch else zoneinfo.ZoneInfo("Asia/Almaty")
+    except Exception:
+        tz = zoneinfo.ZoneInfo("Asia/Almaty")
+
+    from_local = datetime.datetime.combine(req.from_date, datetime.time.min, tzinfo=tz)
+    to_local = datetime.datetime.combine(req.to_date, datetime.time.max, tzinfo=tz)
+    from_utc = from_local.astimezone(datetime.timezone.utc)
+    to_utc = to_local.astimezone(datetime.timezone.utc)
 
     try:
         data = await BookingEngine.search_availability(
@@ -270,6 +289,7 @@ async def create_public_booking(
             notes=req.notes,
             source="public",
             idempotency_key=idempotency_key,
+            quote_id=req.quote_id,
             expected_price_minor=req.expected_price_minor
         )
 

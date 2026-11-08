@@ -31,12 +31,18 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${DB_USER:-crm_app_user}:${DB_PASSWORD:-crm_app_secret}@postgres:5432/${POSTGRES_DB:-saas_crm}
       ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@postgres:5432/${POSTGRES_DB:-saas_crm}
+      DB_USER: ${DB_USER:-crm_app_user}
+      DB_PASSWORD: ${DB_PASSWORD:-crm_app_secret}
+      ADMIN_DB_USER: ${POSTGRES_USER:-postgres}
+      ADMIN_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-insecure-jwt-secret-key-change-in-production-1234567890}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      ENABLE_DEMO_SEED: ${ENABLE_DEMO_SEED:-true}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,::1,localhost,caddy,nginx}
       PLATFORM_ROOT_DOMAIN: ${PLATFORM_ROOT_DOMAIN:-platform.example.kz}
     command: >
-      sh -c "python -m apps.api.app.infrastructure.db.init_db &&
-             alembic upgrade head &&
+      sh -c "alembic upgrade head &&
+             python -m apps.api.app.infrastructure.db.init_db &&
              uvicorn apps.api.app.main:app --host 0.0.0.0 --port 8000"
 
 volumes:

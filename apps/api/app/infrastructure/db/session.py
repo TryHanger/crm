@@ -65,18 +65,22 @@ def configure_engines():
     SyncSessionLocal = sessionmaker(bind=sync_engine, autocommit=False, autoflush=False)
 
 async def set_tenant_context(session: AsyncSession, tenant_id: uuid.UUID) -> None:
-    """Sets session-scoped app.current_tenant in PostgreSQL."""
+    """Sets transaction-scoped app.current_tenant in PostgreSQL."""
     await session.execute(
-        text("SELECT set_config('app.current_tenant', :tenant_id, false)"),
+        text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)}
     )
 
 def set_tenant_context_sync(session: Session, tenant_id: uuid.UUID) -> None:
-    """Sync version for testing / migrations / tasks."""
+    """Sync version for testing / migrations / tasks with transaction-local scope."""
     session.execute(
-        text("SELECT set_config('app.current_tenant', :tenant_id, false)"),
+        text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)}
     )
+
+async def clear_tenant_context(session: AsyncSession) -> None:
+    """Explicitly resets transaction-scoped app.current_tenant."""
+    await session.execute(text("SELECT set_config('app.current_tenant', '', true)"))
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency for database session."""
@@ -87,6 +91,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.rollback()
             raise
         finally:
+            await session.close()
             try:
                 await session.execute(text("RESET app.current_tenant"))
             except Exception:
