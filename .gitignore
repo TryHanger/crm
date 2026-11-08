@@ -70,3 +70,4 @@ playwright-report/
 *.tsbuildinfo
 dist/
 
+.vite/
