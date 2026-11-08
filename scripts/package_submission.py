@@ -2,22 +2,25 @@ import os
 import zipfile
 
 def package_delivery():
-    output_zip = "SAAS_PLATFORM_BACKEND_DELIVERY_V1.zip"
+    output_zip = "SAAS_PLATFORM_BACKEND_DELIVERY_V2.zip"
     if os.path.exists(output_zip):
         os.remove(output_zip)
 
-    include_dirs = ["apps", "alembic", "docs", "packages"]
+    include_dirs = ["apps", "alembic", "docs", "packages", "scripts", "agent_pack"]
     include_files = [
         "Dockerfile",
         "docker-compose.yml",
         "Makefile",
         ".dockerignore",
         ".env.example",
+        ".gitignore",
         "openapi.json",
         "pytest.ini",
         "pyproject.toml",
+        "requirements.txt",
         "README.md",
-        "alembic.ini"
+        "alembic.ini",
+        "готовый фронт.html"
     ]
 
     ignore_patterns = ["__pycache__", ".pytest_cache", ".pyc", ".dump"]
