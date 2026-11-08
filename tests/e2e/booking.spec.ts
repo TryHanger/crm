@@ -41,7 +41,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await dateBtn.click();
 
     // Wait for slot buttons to load and click first slot button containing ":"
-    const slotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
+    const slotBtn = page.locator('main button:has-text(":")').first();
     await slotBtn.waitFor({ state: 'visible', timeout: 10000 });
     await slotBtn.click();
 
@@ -102,7 +102,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     const dateBtn = page.locator('button[data-date]').nth(1);
     await dateBtn.click();
 
-    const slotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
+    const slotBtn = page.locator('main button:has-text(":")').first();
     await slotBtn.waitFor({ state: 'visible', timeout: 10000 });
     await slotBtn.click();
     await page.screenshot({ path: 'docs/screenshots/09-mobile-datetime-step.png' });
@@ -147,7 +147,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     expect(targetDate).toBeTruthy();
     await dateBtn.click();
 
-    const slotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
+    const slotBtn = page.locator('main button:has-text(":")').first();
     await slotBtn.waitFor({ state: 'visible', timeout: 10000 });
     await slotBtn.click();
 
@@ -236,7 +236,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     const dateBtn = page.locator('button[data-date]').nth(1);
     await dateBtn.click();
 
-    const slotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
+    const slotBtn = page.locator('main button:has-text(":")').first();
     await slotBtn.waitFor({ state: 'visible', timeout: 10000 });
     await slotBtn.click();
 
@@ -257,8 +257,8 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await page.locator('button:has-text("Выбрать дату и время")').click();
     await expect(page.locator('h1')).toContainText('Выберите дату и время');
 
-    // Select the confirmed slot
-    const finalSlotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
+    // Ensure slots are loaded and select the confirmed slot
+    const finalSlotBtn = page.locator('main button:has-text(":")').first();
     await finalSlotBtn.waitFor({ state: 'visible', timeout: 10000 });
     await finalSlotBtn.click();
 
@@ -298,7 +298,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     const dateBtn = page.locator('button[data-date]').nth(1);
     await dateBtn.click();
 
-    const slotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
+    const slotBtn = page.locator('main button:has-text(":")').first();
     await slotBtn.waitFor({ state: 'visible', timeout: 10000 });
     await slotBtn.click();
 
@@ -326,7 +326,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     const initialDate = await dateBtn.getAttribute('data-date');
     await dateBtn.click();
 
-    const slotBtn = page.locator('div:has-text("Свободные слоты") button:has-text(":")').first();
+    const slotBtn = page.locator('main button:has-text(":")').first();
     await slotBtn.waitFor({ state: 'visible', timeout: 10000 });
     await slotBtn.click();
 
@@ -378,7 +378,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await freshPage.locator('button:has-text("Отменить запись")').click();
     await freshPage.locator('button:has-text("Да, отменить запись")').click();
     await expect(freshPage.locator('text=Запись успешно отменена.')).toBeVisible({ timeout: 10000 });
-    await expect(freshPage.locator('text=Отменена')).toBeVisible();
+    await expect(freshPage.getByText('Отменена', { exact: true })).toBeVisible({ timeout: 5000 });
 
     await freshContext.close();
 
