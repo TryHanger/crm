@@ -444,3 +444,322 @@ export interface InviteCreateRequest {
   role: string;
   branch_ids?: string[];
 }
+
+// =========================================================================
+// PLATFORM CONSOLE TYPES
+// =========================================================================
+
+export interface PlatformOverviewResponse {
+  total_tenants: number;
+  active_subscriptions: number;
+  suspended_tenants: number;
+  total_revenue_minor: number;
+  total_revenue_formatted: string;
+  non_mrr_disclaimer: string;
+  alerts_count: number;
+  recent_alerts: {
+    type: string;
+    severity: string;
+    message: string;
+    created_at: string;
+  }[];
+  attention_items: {
+    urgent_today: {
+      tenant_id: string;
+      tenant_name: string;
+      tenant_slug: string;
+      subscription_id: string;
+      plan_name: string;
+      status: string;
+      period_end: string;
+      grace_ends_at?: string;
+      issue: string;
+    }[];
+    upcoming_days: {
+      tenant_id: string;
+      tenant_name: string;
+      tenant_slug: string;
+      subscription_id: string;
+      plan_name: string;
+      status: string;
+      period_end: string;
+      grace_ends_at?: string;
+      issue: string;
+    }[];
+  };
+  recent_tenants: {
+    id: string;
+    slug: string;
+    display_name: string;
+    vertical: string;
+    lifecycle_status: string;
+    created_at: string;
+    plan_name: string;
+    subscription_status: string;
+  }[];
+}
+
+export interface PlatformTenantListItem {
+  id: string;
+  slug: string;
+  display_name: string;
+  lifecycle_status: string;
+  vertical: string;
+  created_at: string;
+  subscription: {
+    id: string;
+    status: string;
+    plan_code: string;
+    plan_name: string;
+    price_minor: number;
+    period_end: string;
+    trial_ends_at?: string;
+    grace_ends_at?: string;
+  } | null;
+  payment_status: 'paid' | 'pending';
+}
+
+export interface PlatformTenantDetailResponse {
+  id: string;
+  slug: string;
+  display_name: string;
+  lifecycle_status: string;
+  vertical: string;
+  suspended_at?: string | null;
+  suspension_reason?: string | null;
+  created_at: string;
+  domains: {
+    hostname: string;
+    domain_type: string;
+    status: string;
+    canonical: boolean;
+  }[];
+  subscription: {
+    id: string;
+    status: string;
+    plan_code: string;
+    plan_name: string;
+    price_minor: number;
+    currency: string;
+    period_start: string;
+    period_end: string;
+    trial_ends_at?: string | null;
+    grace_ends_at?: string | null;
+    renewal_mode: string;
+  } | null;
+  usage_aggregates: {
+    branches_count: number;
+    staff_count: number;
+    total_bookings_count: number;
+  };
+}
+
+export interface PlatformTenantUsersResponse {
+  members: {
+    membership_id: string;
+    user_id: string;
+    email: string;
+    display_name: string;
+    role: string;
+    status: string;
+    created_at: string;
+  }[];
+  invites: {
+    id: string;
+    email: string;
+    role: string;
+    invite_type: string;
+    sent_at: string;
+    expires_at: string;
+  }[];
+}
+
+export interface PlatformTenantEntitlement {
+  feature_key: string;
+  plan_value: number | null;
+  plan_enabled: boolean;
+  is_overridden: boolean;
+  override_value?: number | null;
+  override_reason?: string | null;
+  override_expires_at?: string | null;
+  effective_value: number | null;
+}
+
+export interface PlatformSubscriptionItem {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  tenant_slug: string;
+  plan_code: string;
+  plan_name: string;
+  price_minor: number;
+  currency: string;
+  lifecycle_status: string;
+  period_start: string;
+  period_end: string;
+  trial_ends_at?: string;
+  grace_ends_at?: string;
+  renewal_mode: string;
+}
+
+export interface PlatformChargeItem {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  period_start: string;
+  period_end: string;
+  amount_minor: number;
+  currency: string;
+  charge_status: string;
+  evidence_reference?: string;
+  created_at: string;
+  payments: {
+    id: string;
+    amount_minor: number;
+    evidence_reference: string;
+    payment_method: string;
+    recorded_at: string;
+    note?: string;
+  }[];
+}
+
+export interface PlatformPlanItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  active_version: {
+    id: string;
+    version: number;
+    price_minor: number;
+    currency: string;
+    entitlements: Record<string, { enabled: boolean; limit?: number | null }>;
+  } | null;
+}
+
+export interface PlatformFeatureItem {
+  key: string;
+  name: string;
+  release_stage: string;
+  configurable: boolean;
+  description?: string;
+}
+
+export interface PlatformSupportTicketItem {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  tenant_slug: string;
+  subject: string;
+  status: string;
+  priority: string;
+  messages_count: number;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PlatformSupportTicketDetail {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  subject: string;
+  status: string;
+  priority: string;
+  created_at: string;
+  messages: {
+    id: string;
+    sender_id: string;
+    sender_name: string;
+    sender_role: string;
+    message: string;
+    is_internal: boolean;
+    created_at: string;
+  }[];
+}
+
+export interface PlatformDiagnosisResponse {
+  tenant: {
+    id: string;
+    slug: string;
+    display_name: string;
+    lifecycle_status: string;
+    vertical: string;
+    timezone: string;
+  };
+  domains: { hostname: string; status: string; type: string }[];
+  subscription: {
+    status: string;
+    plan_code: string;
+    plan_name: string;
+    period_end: string;
+  } | null;
+  metrics: {
+    branches: number;
+    staff: number;
+    services: number;
+    bookings_total: number;
+  };
+  active_overrides: { key: string; value?: number | null; expires_at: string }[];
+  infrastructure: {
+    db_status: string;
+    rls_enforcement: string;
+    read_only: boolean;
+  };
+}
+
+export interface PlatformAccessRequestItem {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  requester_name: string;
+  requester_email: string;
+  reason: string;
+  requested_scope: string;
+  status: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface PlatformActiveSessionResponse {
+  has_active_session: boolean;
+  session_id?: string;
+  request_id?: string;
+  tenant_id?: string;
+  tenant_name?: string;
+  minutes_left?: number;
+  expires_at?: string;
+}
+
+export interface PlatformAuditEventItem {
+  id: string;
+  actor_id?: string;
+  actor_email?: string;
+  action: string;
+  target_tenant_id?: string;
+  object_type: string;
+  object_id?: string;
+  reason?: string;
+  before?: any;
+  after?: any;
+  occurred_at: string;
+}
+
+export interface PlatformStaffItem {
+  id: string;
+  user_id: string;
+  email: string;
+  display_name: string;
+  platform_role: string;
+  status: string;
+  created_at: string;
+}
+
+export interface PlatformSettingsResponse {
+  settings_map: Record<string, any>;
+  items: {
+    key: string;
+    value: any;
+    description?: string;
+    updated_at: string;
+  }[];
+}

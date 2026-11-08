@@ -21,13 +21,20 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
   accentColor = '#2563EB',
 }) => {
   // Generate next 14 days starting from today
+  const formatLocalDate = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return [year, month, day].join('-');
+  };
+
   const days: { dateStr: string; dayName: string; dayNum: number; monthName: string }[] = [];
   const today = new Date();
 
   for (let i = 0; i < 14; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(d);
     const dayName = i === 0 ? 'Сегодня' : i === 1 ? 'Завтра' : d.toLocaleDateString('ru-RU', { weekday: 'short' });
     const dayNum = d.getDate();
     const monthName = d.toLocaleDateString('ru-RU', { month: 'short' }).replace('.', '');

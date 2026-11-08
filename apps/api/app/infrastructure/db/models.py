@@ -360,6 +360,15 @@ class PlatformAlert(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
+class PlatformSetting(Base):
+    __tablename__ = "platform_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value_json: Mapped[Any] = mapped_column(JSON, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+
 class OutboxEvent(Base):
     __tablename__ = "outbox_events"
 

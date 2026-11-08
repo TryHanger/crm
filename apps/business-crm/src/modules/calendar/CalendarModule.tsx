@@ -129,13 +129,17 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'list'>('day');
   const [weekData, setWeekData] = useState<Record<string, CalendarBooking[]>>({});
   const [isLoadingWeek, setIsLoadingWeek] = useState(false);
+  const [weekError, setWeekError] = useState<string | null>(null);
 
   const weekDates = getWeekDates(currentDate);
 
   const loadWeekBookings = React.useCallback(async (dates: string[]) => {
     if (!branchId || !token || !tenantId) return;
     setIsLoadingWeek(true);
+    setWeekError(null);
     try {
+      let hasError = false;
+      let lastErrMsg = '';
       const results = await Promise.all(
         dates.map(async (d) => {
           try {
@@ -152,17 +156,24 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               public_ref: b.public_ref,
               services: b.services || ['Визит'],
             }));
-            return { date: d, bookings: mapped };
-          } catch {
-            return { date: d, bookings: [] };
+            return { date: d, bookings: mapped, ok: true };
+          } catch (err: any) {
+            hasError = true;
+            lastErrMsg = err?.message || 'Ошибка сети или API';
+            return { date: d, bookings: [], ok: false };
           }
         })
       );
+      if (hasError) {
+        setWeekError(`Не удалось загрузить данные части дней расписания (${lastErrMsg}).`);
+      }
       const map: Record<string, CalendarBooking[]> = {};
       for (const r of results) {
         map[r.date] = r.bookings;
       }
       setWeekData(map);
+    } catch (e: any) {
+      setWeekError(e?.message || 'Ошибка загрузки недели');
     } finally {
       setIsLoadingWeek(false);
     }
@@ -839,12 +850,25 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               </div>
             </div>
 
+            {weekError && (
+              <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', color: '#B91C1C', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <span style={{ fontSize: '13px' }}>⚠️ {weekError}</span>
+                <button
+                  type="button"
+                  onClick={() => loadWeekBookings(weekDates)}
+                  style={{ padding: '6px 14px', background: '#DC2626', color: '#FFFFFF', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Повторить загрузку
+                </button>
+              </div>
+            )}
+
             {isLoadingWeek ? (
               <div style={{ padding: '40px', textAlign: 'center', color: '#64748B', fontSize: '14px' }}>
                 Загрузка недельного расписания команды...
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(130px, 1fr))', gap: '8px', overflowX: 'auto', paddingBottom: '12px' }}>
                 {weekDates.map((dateStr, idx) => {
                   const dayBookings = (weekData[dateStr] || []).filter(b => {
                     if (selectedStaffFilter === 'all') return true;

@@ -7,6 +7,8 @@ from apps.api.app.infrastructure.security.jwt import get_password_hash
 from apps.api.app.infrastructure.db.models import (
     Base, Tenant, TenantDomain, IdentityUser, TenantMembership, PlatformStaff,
     Invite, Plan, PlanVersion, PlanEntitlement, FeatureCatalog, Subscription,
+    PlatformSetting, PlatformAlert, PlatformSupportTicket, SupportMessage,
+    SupportAccessRequest, SupportAccessSession, SubscriptionCharge, PaymentRecord,
     Branch, TenantSettings, BookingPolicy, ServiceCategory, Service,
     StaffProfile, StaffBranch, StaffServiceOffer, WeeklyShift, ShiftBreak,
     Customer, Booking, BookingItem, StaffOccupancy, BookingTheme, BookingPublication
@@ -222,6 +224,32 @@ def seed_system_baseline(session):
     ps_finance = PlatformStaff(user_id=u_pfinance.id, platform_role="finance")
     session.add(ps_finance)
     session.flush()
+
+    # Platform Viewer
+    u_pviewer = IdentityUser(
+        oidc_subject="platform_viewer_sub",
+        email_normalized="viewer@platform.example.kz",
+        display_name="Аудитор Платформы",
+        password_hash=demo_pwd_hash
+    )
+    session.add(u_pviewer)
+    session.flush()
+
+    ps_viewer = PlatformStaff(user_id=u_pviewer.id, platform_role="viewer")
+    session.add(ps_viewer)
+    session.flush()
+
+    # Seed Platform Settings if not exist
+    if not session.query(PlatformSetting).filter_by(key="trial_days").first():
+        s_trial = PlatformSetting(key="trial_days", value_json=14, description="Стандартный пробный период (дней)")
+        s_grace = PlatformSetting(key="grace_period_days", value_json=7, description="Льготный период после окончания срока (дней)")
+        s_verticals = PlatformSetting(
+            key="supported_verticals",
+            value_json=["barbershop", "beauty_salon", "dentistry", "auto_service", "fitness"],
+            description="Поддерживаемые ниши бизнеса"
+        )
+        session.add_all([s_trial, s_grace, s_verticals])
+        session.flush()
 
 
 def seed_demo_tenants(session):
@@ -661,7 +689,127 @@ def seed_demo_tenants(session):
     )
     session.add(c2)
     session.flush()
-    print("Demo tenants (Barber House & Modern Cut) seeded successfully.")
+
+    # Seed additional tenants for Platform Console review (Cut & Co, Studio 17, Fade Lab, Smile Dent, Old Town Cuts)
+    pv_business = session.query(PlanVersion).join(Plan).filter(Plan.code == "business").first()
+    if not pv_business:
+        plan_bus = session.query(Plan).filter_by(code="business").first()
+        if not plan_bus:
+            plan_bus = Plan(code="business", name="Business", description="Сеть и свой домен")
+            session.add(plan_bus)
+            session.flush()
+        pv_business = PlanVersion(plan_id=plan_bus.id, version=1, price_minor=3900000, currency="KZT", is_active=True)
+        session.add(pv_business)
+        session.flush()
+
+    extra_tenants = [
+        ("cutco", "Cut & Co", "barbershop", "active", "start", "pending_suspension", now - datetime.timedelta(days=22), now - datetime.timedelta(days=8), now - datetime.timedelta(days=1)),
+        ("studio17", "Studio 17", "beauty_salon", "active", "start", "grace", now - datetime.timedelta(days=33), now - datetime.timedelta(days=3), now + datetime.timedelta(days=4)),
+        ("fadelab", "Fade Lab", "barbershop", "active", "business", "active", now - datetime.timedelta(days=60), now + datetime.timedelta(days=120), None),
+        ("smiledent", "Smile Dent", "dentistry", "active", "start", "trial", now - datetime.timedelta(days=9), now + datetime.timedelta(days=5), None),
+        ("oldtowncuts", "Old Town Cuts", "barbershop", "suspended", "start", "suspended", now - datetime.timedelta(days=90), now - datetime.timedelta(days=8), None)
+    ]
+
+    for slug, dname, vert, lstatus, pcode, sstatus, pstart, pend, gends in extra_tenants:
+        t_exist = session.query(Tenant).filter_by(slug=slug).first()
+        if not t_exist:
+            ext_t = Tenant(slug=slug, display_name=dname, vertical=vert, lifecycle_status=lstatus, timezone_default="Asia/Almaty")
+            if lstatus == "suspended":
+                ext_t.suspended_at = now - datetime.timedelta(days=8)
+                ext_t.suspension_reason = "Не оплачена подписка по окончании льготного периода"
+            session.add(ext_t)
+            session.flush()
+            ext_dom = TenantDomain(tenant_id=ext_t.id, hostname_normalized=f"{slug}.book.example.kz", domain_type="system_subdomain", verification_status="verified", canonical=True, verified_at=now)
+            session.add(ext_dom)
+            p_ver = pv_business if pcode == "business" else (pv_pro if pcode == "pro" else pv_start)
+            ext_sub = Subscription(
+                tenant_id=ext_t.id,
+                plan_version_id=p_ver.id,
+                lifecycle_status=sstatus,
+                period_start=pstart,
+                period_end=pend,
+                trial_ends_at=pend if sstatus == "trial" else None,
+                grace_ends_at=gends,
+                renewal_mode="manual"
+            )
+            session.add(ext_sub)
+            session.flush()
+
+    # Platform users for demo seed
+    p_fin = session.query(IdentityUser).filter_by(email_normalized="finance@platform.example.kz").first()
+    p_sup = session.query(IdentityUser).filter_by(email_normalized="support@platform.example.kz").first()
+
+    # Seed demo charges and payments for Barber House
+    ch1 = SubscriptionCharge(
+        tenant_id=t1.id,
+        subscription_id=sub1.id,
+        period_start=now - datetime.timedelta(days=30),
+        period_end=now,
+        amount_minor=1900000,
+        currency="KZT",
+        charge_status="paid",
+        evidence_reference="Счёт № 201 от 15 сен"
+    )
+    session.add(ch1)
+    session.flush()
+    pm1 = PaymentRecord(
+        charge_id=ch1.id,
+        tenant_id=t1.id,
+        amount_minor=1900000,
+        currency="KZT",
+        recorded_by=p_fin.id if p_fin else u_t1_owner.id,
+        payment_method="bank_transfer",
+        evidence_reference="Платёжное поручение № 4410",
+        note="Оплата подписки Pro за сентябрь-октябрь"
+    )
+    session.add(pm1)
+
+    # Current charge (issued, awaiting payment)
+    ch2 = SubscriptionCharge(
+        tenant_id=t1.id,
+        subscription_id=sub1.id,
+        period_start=now,
+        period_end=now + datetime.timedelta(days=30),
+        amount_minor=1900000,
+        currency="KZT",
+        charge_status="issued",
+        evidence_reference="Счёт № 214 от 15 окт"
+    )
+    session.add(ch2)
+
+    # Seed demo support ticket for Barber House
+    tick1 = PlatformSupportTicket(
+        tenant_id=t1.id,
+        creator_id=u_t1_owner.id,
+        subject="Не приходит приглашение мастеру",
+        status="open",
+        priority="high"
+    )
+    session.add(tick1)
+    session.flush()
+
+    msg1 = SupportMessage(
+        ticket_id=tick1.id,
+        sender_id=u_t1_owner.id,
+        sender_role="tenant_user",
+        message="Мастер Ерлан не получил письмо с приглашением. Проверьте, пожалуйста.",
+        is_internal=False
+    )
+    session.add(msg1)
+
+    # Seed support access request for ticket #1042
+    req_acc = SupportAccessRequest(
+        tenant_id=t1.id,
+        requester_id=p_sup.id if p_sup else u_t1_owner.id,
+        reason="Обращение #1042: не приходит приглашение мастеру",
+        requested_scope="read_only_diagnostic",
+        status="pending",
+        expires_at=now + datetime.timedelta(hours=24)
+    )
+    session.add(req_acc)
+    session.flush()
+
+    print("Demo tenants, billing ledger and support tickets seeded successfully.")
 
 
 def seed_database():

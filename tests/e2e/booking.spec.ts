@@ -298,7 +298,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await page.locator('button:has-text("время")').click();
     await expect(page.locator('h1')).toContainText('Выберите дату и время');
 
-    const dateBtn = page.locator('button[data-date]').nth(1);
+    const dateBtn = page.locator('button[data-date]').nth(2);
     await dateBtn.click();
 
     const slotBtn = page.locator('main button:has-text(":")').first();

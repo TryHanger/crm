@@ -278,6 +278,42 @@ class RecordPaymentRequest(BaseModel):
     payment_method: str = "bank_transfer"
     note: Optional[str] = None
 
+
+class PlanVersionCreateRequest(BaseModel):
+    price_minor: int
+    currency: str = "KZT"
+    max_branches: int = 1
+    max_active_staff: int = 5
+    online_booking: bool = True
+    basic_reports: bool = True
+
+class RenewSubscriptionRequest(BaseModel):
+    extend_days: int = 30
+    record_payment: bool = False
+    amount_minor: Optional[int] = None
+    evidence_reference: Optional[str] = None
+    payment_method: str = "bank_transfer"
+
+class ChangePlanRequest(BaseModel):
+    new_plan_code: str
+    reason: Optional[str] = None
+
+class FeatureOverrideCreateRequest(BaseModel):
+    feature_key: str
+    override_value: Optional[int] = None
+    expires_days: int = 30
+    reason: str
+
+class PlatformStaffCreateRequest(BaseModel):
+    email: EmailStr
+    display_name: str
+    platform_role: str = "viewer"
+    password: Optional[str] = None
+
+class PlatformSettingUpdateRequest(BaseModel):
+    value: Any
+    description: Optional[str] = None
+
 class FeatureOverrideRequest(BaseModel):
     feature_key: str
     override_value: Optional[int] = None

@@ -278,7 +278,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <div>
                   <span style={{ fontSize: '12px', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Факт-выручка
+                    Стоимость оказанных услуг
                   </span>
                   <div style={{ fontSize: '11px', color: '#64748B' }}>Стоимость завершённых визитов</div>
                 </div>
@@ -353,7 +353,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                     <th style={{ padding: '12px 16px' }}>Записей</th>
                     <th style={{ padding: '12px 16px' }}>Отработано (мин)</th>
                     <th style={{ padding: '12px 16px' }}>Загрузка смены</th>
-                    <th style={{ padding: '12px 20px', textAlign: 'right' }}>Факт-выручка</th>
+                    <th style={{ padding: '12px 20px', textAlign: 'right' }}>Стоимость оказанных услуг</th>
                   </tr>
                 </thead>
                 <tbody>

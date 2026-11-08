@@ -33,6 +33,23 @@ import {
   ReportsOverviewResponse,
   MembershipResponse,
   InviteCreateRequest,
+  PlatformOverviewResponse,
+  PlatformTenantListItem,
+  PlatformTenantDetailResponse,
+  PlatformTenantUsersResponse,
+  PlatformTenantEntitlement,
+  PlatformSubscriptionItem,
+  PlatformChargeItem,
+  PlatformPlanItem,
+  PlatformFeatureItem,
+  PlatformSupportTicketItem,
+  PlatformSupportTicketDetail,
+  PlatformDiagnosisResponse,
+  PlatformAccessRequestItem,
+  PlatformActiveSessionResponse,
+  PlatformAuditEventItem,
+  PlatformStaffItem,
+  PlatformSettingsResponse
 } from './types';
 
 export * from './types';
@@ -764,6 +781,482 @@ export class BusinessCrmApiClient {
         ...this.headers(token, tenantId),
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+}
+
+
+export class PlatformApiClient {
+  private baseUrl: string;
+
+  constructor(config: ApiClientConfig = {}) {
+    this.baseUrl = config.baseUrl ?? '';
+  }
+
+  private headers(token: string, idempotencyKey?: string): Record<string, string> {
+    const h: Record<string, string> = {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+    if (idempotencyKey) {
+      h['Idempotency-Key'] = idempotencyKey;
+    }
+    return h;
+  }
+
+  async login(payload: LoginRequest): Promise<TokenResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<TokenResponse>(res);
+  }
+
+  async getMe(token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/auth/me`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<any>(res);
+  }
+
+  // --- OVERVIEW ---
+  async getOverview(token: string): Promise<PlatformOverviewResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/overview`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformOverviewResponse>(res);
+  }
+
+  // --- TENANTS REGISTRY ---
+  async getTenants(
+    params: {
+      query?: string;
+      status_filter?: string;
+      niche?: string;
+      plan_code?: string;
+      payment_status?: string;
+    } = {},
+    token: string
+  ): Promise<PlatformTenantListItem[]> {
+    const qs = new URLSearchParams();
+    if (params.query) qs.append('query', params.query);
+    if (params.status_filter) qs.append('status_filter', params.status_filter);
+    if (params.niche) qs.append('niche', params.niche);
+    if (params.plan_code) qs.append('plan_code', params.plan_code);
+    if (params.payment_status) qs.append('payment_status', params.payment_status);
+
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants?${qs.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformTenantListItem[]>(res);
+  }
+
+  async createTenant(payload: any, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getTenantDetails(tenantId: string, token: string): Promise<PlatformTenantDetailResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformTenantDetailResponse>(res);
+  }
+
+  async getTenantUsers(tenantId: string, token: string): Promise<PlatformTenantUsersResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}/users`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformTenantUsersResponse>(res);
+  }
+
+  async resendInvite(tenantId: string, email: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}/resend-invite`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getTenantEntitlements(tenantId: string, token: string): Promise<PlatformTenantEntitlement[]> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}/entitlements`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformTenantEntitlement[]>(res);
+  }
+
+  async setTenantEntitlementOverride(
+    tenantId: string,
+    payload: { feature_key: string; override_value?: number | null; expires_days?: number; reason: string },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}/entitlements`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getTenantActivity(tenantId: string, token: string): Promise<PlatformAuditEventItem[]> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}/activity`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformAuditEventItem[]>(res);
+  }
+
+  async changeTenantPlan(
+    tenantId: string,
+    payload: { new_plan_code: string; reason?: string },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}/change-plan`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async suspendTenant(tenantId: string, reason: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}/suspend`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async reactivateTenant(tenantId: string, reason: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/tenants/${tenantId}/reactivate`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    return handleResponse<any>(res);
+  }
+
+  // --- SUBSCRIPTIONS & CHARGES ---
+  async getSubscriptions(
+    params: { status_filter?: string; query?: string } = {},
+    token: string
+  ): Promise<PlatformSubscriptionItem[]> {
+    const qs = new URLSearchParams();
+    if (params.status_filter) qs.append('status_filter', params.status_filter);
+    if (params.query) qs.append('query', params.query);
+
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/subscriptions?${qs.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformSubscriptionItem[]>(res);
+  }
+
+  async renewSubscription(
+    subscriptionId: string,
+    payload: {
+      extend_days?: number;
+      record_payment?: boolean;
+      amount_minor?: number;
+      evidence_reference?: string;
+      payment_method?: string;
+    },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/subscriptions/${subscriptionId}/renew`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getCharges(
+    params: { status_filter?: string; tenant_id?: string } = {},
+    token: string
+  ): Promise<PlatformChargeItem[]> {
+    const qs = new URLSearchParams();
+    if (params.status_filter) qs.append('status_filter', params.status_filter);
+    if (params.tenant_id) qs.append('tenant_id', params.tenant_id);
+
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/charges?${qs.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformChargeItem[]>(res);
+  }
+
+  async issueCharge(
+    subscriptionId: string,
+    payload: {
+      period_start: string;
+      period_end: string;
+      amount_minor: number;
+      currency?: string;
+      evidence_reference?: string;
+    },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/subscriptions/${subscriptionId}/charges`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async recordPayment(
+    chargeId: string,
+    payload: {
+      amount_minor: number;
+      evidence_reference: string;
+      payment_method?: string;
+      note?: string;
+    },
+    token: string,
+    idempotencyKey?: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/charges/${chargeId}/record-payment`, {
+      method: 'POST',
+      headers: {
+        ...this.headers(token, idempotencyKey),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  // --- PLANS ---
+  async getPlans(token: string): Promise<PlatformPlanItem[]> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/plans`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformPlanItem[]>(res);
+  }
+
+  async createPlan(
+    payload: {
+      code: string;
+      name: string;
+      description?: string;
+      price_minor: number;
+      currency?: string;
+      max_branches?: number;
+      max_active_staff?: number;
+    },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/plans`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async createPlanVersion(
+    planId: string,
+    payload: {
+      price_minor: number;
+      currency?: string;
+      max_branches?: number;
+      max_active_staff?: number;
+      online_booking?: boolean;
+      basic_reports?: boolean;
+    },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/plans/${planId}/versions`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  // --- MODULES CATALOG ---
+  async getModulesCatalog(token: string): Promise<PlatformFeatureItem[]> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/modules/catalog`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformFeatureItem[]>(res);
+  }
+
+  // --- SUPPORT & DIAGNOSIS ---
+  async getSupportTickets(
+    params: { status_filter?: string; tenant_id?: string } = {},
+    token: string
+  ): Promise<PlatformSupportTicketItem[]> {
+    const qs = new URLSearchParams();
+    if (params.status_filter) qs.append('status_filter', params.status_filter);
+    if (params.tenant_id) qs.append('tenant_id', params.tenant_id);
+
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/support/tickets?${qs.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformSupportTicketItem[]>(res);
+  }
+
+  async createSupportTicket(
+    payload: {
+      tenant_id: string;
+      subject: string;
+      priority?: string;
+      initial_message: string;
+    },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/support/tickets`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getSupportTicketDetails(ticketId: string, token: string): Promise<PlatformSupportTicketDetail> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/support/tickets/${ticketId}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformSupportTicketDetail>(res);
+  }
+
+  async addSupportMessage(
+    ticketId: string,
+    payload: { message: string; is_internal?: boolean },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/support/tickets/${ticketId}/messages`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getTenantDiagnosis(tenantId: string, token: string): Promise<PlatformDiagnosisResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/support/diagnosis/${tenantId}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformDiagnosisResponse>(res);
+  }
+
+  async getAccessRequests(token: string): Promise<PlatformAccessRequestItem[]> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/access-requests`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformAccessRequestItem[]>(res);
+  }
+
+  async createAccessRequest(
+    payload: { tenant_id: string; reason: string; requested_scope?: string },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/access-requests`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async approveAccessRequest(requestId: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/access-requests/${requestId}/approve`, {
+      method: 'POST',
+      headers: this.headers(token),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async revokeAccessRequest(requestId: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/access-requests/${requestId}/revoke`, {
+      method: 'POST',
+      headers: this.headers(token),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getActiveSupportSession(token: string): Promise<PlatformActiveSessionResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/support/active-session`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformActiveSessionResponse>(res);
+  }
+
+  // --- AUDIT LOGS ---
+  async getAuditLogs(
+    params: { target_tenant_id?: string; action?: string; actor_email?: string; limit?: number } = {},
+    token: string
+  ): Promise<PlatformAuditEventItem[]> {
+    const qs = new URLSearchParams();
+    if (params.target_tenant_id) qs.append('target_tenant_id', params.target_tenant_id);
+    if (params.action) qs.append('action', params.action);
+    if (params.actor_email) qs.append('actor_email', params.actor_email);
+    if (params.limit) qs.append('limit', String(params.limit));
+
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/audit?${qs.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformAuditEventItem[]>(res);
+  }
+
+  // --- STAFF & SETTINGS ---
+  async getStaff(token: string): Promise<PlatformStaffItem[]> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/staff`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformStaffItem[]>(res);
+  }
+
+  async createStaff(
+    payload: { email: string; display_name: string; platform_role?: string; password?: string },
+    token: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/staff`, {
+      method: 'POST',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getSettings(token: string): Promise<PlatformSettingsResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/settings`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<PlatformSettingsResponse>(res);
+  }
+
+  async updateSetting(key: string, payload: { value: any; description?: string }, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/settings/${key}`, {
+      method: 'PATCH',
+      headers: { ...this.headers(token), 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     return handleResponse<any>(res);

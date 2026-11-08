@@ -127,7 +127,7 @@ test.describe('CRM Full Business Modules & Workflows', () => {
 
     // Verify key metrics
     await expect(page.locator('text=Всего записей').first()).toBeVisible();
-    await expect(page.locator('text=Факт-выручка').first()).toBeVisible();
+    await expect(page.locator('text=/Факт-выручка|Стоимость оказанных услуг/').first()).toBeVisible();
     await expect(page.locator('text=Плановая стоимость').first()).toBeVisible();
     await expect(page.locator('text=Выработка мастеров').first()).toBeVisible();
 
