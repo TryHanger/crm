@@ -20,8 +20,10 @@ from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineEr
 from apps.api.app.modules.schemas import (
     BranchResponse, CRMCreateBookingRequest, StatusUpdateRequest,
     CalendarBlockCreateRequest, CustomerCreateRequest, CustomerNoteCreateRequest,
-    StaffCreateRequest, StaffServiceOfferUpdateRequest, ServiceCreateRequest,
-    ServiceCategoryCreateRequest, BookingPolicyUpdateRequest, BookingBrandingUpdateRequest,
+    CustomerUpdateRequest, StaffCreateRequest, StaffUpdateRequest,
+    StaffServiceOfferUpdateRequest, StaffScheduleUpdateRequest, ServiceCreateRequest,
+    ServiceUpdateRequest, ServiceCategoryCreateRequest, ServiceCategoryUpdateRequest,
+    BranchUpdateRequest, BookingPolicyUpdateRequest, BookingBrandingUpdateRequest,
     InviteCreateRequest, RescheduleRequest, CancelRequest
 )
 
@@ -1025,9 +1027,12 @@ async def get_reports_overview(
     completed_count = sum(1 for b in bookings if b.status == "completed")
     cancelled_count = sum(1 for b in bookings if b.status == "cancelled")
     no_show_count = sum(1 for b in bookings if b.status == "no_show")
+    arrived_count = sum(1 for b in bookings if b.status in ["arrived", "in_progress"])
 
     # Planned revenue
     planned_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status != "cancelled")
+    # Actual revenue from completed visits
+    actual_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status == "completed")
 
     # Occupied minutes from staff_occupancies
     stmt_occ = select(StaffOccupancy).where(
@@ -1040,15 +1045,49 @@ async def get_reports_overview(
     occupancies = res_occ.scalars().all()
     occupied_minutes = sum((o.ends_at_utc - o.starts_at_utc).total_seconds() / 60 for o in occupancies)
 
+    # Staff breakdown
+    staff_stmt = select(StaffProfile).where(StaffProfile.tenant_id == tenant_id)
+    if branch_id:
+        staff_stmt = staff_stmt.where(StaffProfile.branch_id == branch_id)
+    all_staff = (await db.execute(staff_stmt)).scalars().all()
+    staff_stats = []
+    for s in all_staff:
+        st_bookings = [b for b in bookings if b.staff_id == s.id and b.status != "cancelled"]
+        st_rev = sum(b.amount_minor_snapshot for b in bookings if b.staff_id == s.id and b.status == "completed")
+        staff_stats.append({
+            "staff_id": str(s.id),
+            "staff_name": s.full_name,
+            "bookings_count": len(st_bookings),
+            "revenue_minor": st_rev,
+            "workload_pct": min(100, int((len(st_bookings) * 45) / (8 * 60) * 100)) if len(st_bookings) else 0
+        })
+
+    # New customers count in period
+    cust_stmt = select(func.count(Customer.id)).where(
+        Customer.tenant_id == tenant_id,
+        Customer.created_at >= from_utc,
+        Customer.created_at <= to_utc
+    )
+    new_customers_count = (await db.execute(cust_stmt)).scalar() or 0
+
     return {
         "period": {"from": from_date.isoformat(), "to": to_date.isoformat()},
+        "period_start": from_date.isoformat(),
+        "period_end": to_date.isoformat(),
         "total_bookings": total_count,
         "completed": completed_count,
+        "completed_bookings": completed_count,
         "cancelled": cancelled_count,
+        "cancelled_bookings": cancelled_count,
         "no_show": no_show_count,
+        "arrived_bookings": arrived_count,
         "planned_revenue_minor": planned_revenue_minor,
         "planned_revenue_formatted": f"{planned_revenue_minor / 100:,.0f} ₸".replace(",", " "),
-        "occupied_minutes": int(occupied_minutes)
+        "actual_revenue_minor": actual_revenue_minor,
+        "actual_revenue_formatted": f"{actual_revenue_minor / 100:,.0f} ₸".replace(",", " "),
+        "new_customers_count": new_customers_count,
+        "occupied_minutes": int(occupied_minutes),
+        "staff_stats": staff_stats
     }
 
 
@@ -1088,3 +1127,398 @@ async def approve_support_access(
     db.add(session)
     await db.commit()
     return {"message": "Доступ поддержки успешно одобрен на 30 минут"}
+
+
+# =========================================================================
+# FULL CRM EXPANDED ENDPOINTS (CRM-0 .. CRM-3)
+# =========================================================================
+
+@router.get("/customers/{customer_id}")
+async def get_customer_card(
+    customer_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Customer).where(Customer.id == customer_id, Customer.tenant_id == crm_user.tenant_id)
+    res = await db.execute(stmt)
+    c = res.scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Visits history
+    stmt_b = select(Booking).where(Booking.customer_id == c.id, Booking.tenant_id == crm_user.tenant_id).order_by(Booking.starts_at_utc.desc())
+    res_b = await db.execute(stmt_b)
+    bookings = res_b.scalars().all()
+    visits = []
+    for b in bookings:
+        stmt_it = select(BookingItem).where(BookingItem.booking_id == b.id).order_by(BookingItem.sequence)
+        items = (await db.execute(stmt_it)).scalars().all()
+        visits.append({
+            "id": str(b.id),
+            "public_ref": b.public_ref,
+            "starts_at_utc": b.starts_at_utc.isoformat(),
+            "status": b.status,
+            "amount_minor": b.amount_minor_snapshot,
+            "services": [it.service_name_snapshot for it in items]
+        })
+
+    # Notes
+    stmt_n = select(CustomerNote).where(CustomerNote.customer_id == c.id).order_by(CustomerNote.created_at.desc())
+    notes_res = await db.execute(stmt_n)
+    notes = [{"id": str(n.id), "note": n.note, "created_at": n.created_at.isoformat()} for n in notes_res.scalars().all()]
+
+    return {
+        "id": str(c.id),
+        "full_name": c.full_name,
+        "phone": c.phone_e164,
+        "email": c.email,
+        "notes_private": c.notes_private,
+        "completed_visits": sum(1 for b in bookings if b.status == "completed"),
+        "total_bookings": len(bookings),
+        "created_at": c.created_at.isoformat(),
+        "history": visits,
+        "notes": notes
+    }
+
+
+@router.patch("/customers/{customer_id}")
+async def update_customer(
+    customer_id: uuid.UUID,
+    req: CustomerUpdateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt = select(Customer).where(Customer.id == customer_id, Customer.tenant_id == crm_user.tenant_id)
+    res = await db.execute(stmt)
+    c = res.scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    if req.full_name is not None:
+        c.full_name = req.full_name
+    if req.email is not None:
+        c.email = req.email
+    if req.notes_private is not None:
+        c.notes_private = req.notes_private
+    if req.phone_e164 is not None:
+        c.phone_e164 = req.phone_e164
+        c.phone_digits_index = "".join(filter(str.isdigit, req.phone_e164))
+
+    await db.commit()
+    return {"message": "Данные клиента обновлены", "id": str(c.id), "full_name": c.full_name}
+
+
+@router.get("/staff/{staff_id}")
+async def get_staff_detail(
+    staff_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(StaffProfile).where(StaffProfile.id == staff_id, StaffProfile.tenant_id == crm_user.tenant_id)
+    res = await db.execute(stmt)
+    staff = res.scalar_one_or_none()
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff not found")
+
+    stmt_br = select(StaffBranch.branch_id).where(StaffBranch.staff_id == staff.id)
+    branch_ids = [str(bid) for bid in (await db.execute(stmt_br)).scalars().all()]
+
+    stmt_off = select(StaffServiceOffer, Service).join(
+        Service, Service.id == StaffServiceOffer.service_id
+    ).where(StaffServiceOffer.staff_id == staff.id)
+    offers = []
+    for off, svc in (await db.execute(stmt_off)).all():
+        offers.append({
+            "service_id": str(svc.id),
+            "service_name": svc.name,
+            "branch_id": str(off.branch_id),
+            "price_override_minor": off.price_override_minor,
+            "duration_override_minutes": off.duration_override_minutes,
+            "active": off.active,
+            "online_visible": off.online_visible
+        })
+
+    return {
+        "id": str(staff.id),
+        "display_name": staff.display_name,
+        "role_title": staff.role_title,
+        "color": staff.color,
+        "active": staff.active,
+        "online_bookable": staff.online_bookable,
+        "branch_ids": branch_ids,
+        "offers": offers
+    }
+
+
+@router.patch("/staff/{staff_id}")
+async def update_staff_profile(
+    staff_id: uuid.UUID,
+    req: StaffUpdateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt = select(StaffProfile).where(StaffProfile.id == staff_id, StaffProfile.tenant_id == crm_user.tenant_id)
+    res = await db.execute(stmt)
+    staff = res.scalar_one_or_none()
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff not found")
+
+    if req.display_name is not None: staff.display_name = req.display_name
+    if req.role_title is not None: staff.role_title = req.role_title
+    if req.color is not None: staff.color = req.color
+    if req.online_bookable is not None: staff.online_bookable = req.online_bookable
+    if req.active is not None: staff.active = req.active
+
+    if req.branch_ids is not None:
+        stmt_del = select(StaffBranch).where(StaffBranch.staff_id == staff.id)
+        existing_sb = (await db.execute(stmt_del)).scalars().all()
+        for sb in existing_sb:
+            await db.delete(sb)
+        for b_id in req.branch_ids:
+            new_sb = StaffBranch(tenant_id=crm_user.tenant_id, staff_id=staff.id, branch_id=b_id)
+            db.add(new_sb)
+
+    await db.commit()
+    return {"message": "Профиль сотрудника обновлен", "id": str(staff.id)}
+
+
+@router.get("/staff/{staff_id}/schedule")
+async def get_staff_schedule(
+    staff_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(WeeklyShift).where(
+        WeeklyShift.staff_id == staff_id,
+        WeeklyShift.tenant_id == crm_user.tenant_id
+    ).order_by(WeeklyShift.weekday_iso)
+    shifts = (await db.execute(stmt)).scalars().all()
+
+    results = []
+    for s in shifts:
+        stmt_br = select(ShiftBreak).where(ShiftBreak.shift_id == s.id)
+        breaks = (await db.execute(stmt_br)).scalars().all()
+        results.append({
+            "weekday_iso": s.weekday_iso,
+            "local_start": s.local_start.strftime("%H:%M") if s.local_start else "10:00",
+            "local_end": s.local_end.strftime("%H:%M") if s.local_end else "20:00",
+            "is_working": True,
+            "breaks": [{"local_start": b.local_start.strftime("%H:%M"), "local_end": b.local_end.strftime("%H:%M")} for b in breaks]
+        })
+    return results
+
+
+@router.put("/staff/{staff_id}/schedule")
+async def update_staff_schedule(
+    staff_id: uuid.UUID,
+    req: StaffScheduleUpdateRequest,
+    branch_id: Optional[uuid.UUID] = None,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    if not branch_id:
+        stmt_sb = select(StaffBranch.branch_id).where(StaffBranch.staff_id == staff_id)
+        branch_id = (await db.execute(stmt_sb)).scalars().first()
+    if not branch_id:
+        raise HTTPException(status_code=400, detail="Staff is not assigned to any branch")
+
+    stmt_old = select(WeeklyShift).where(WeeklyShift.staff_id == staff_id, WeeklyShift.tenant_id == crm_user.tenant_id)
+    old_shifts = (await db.execute(stmt_old)).scalars().all()
+    for os in old_shifts:
+        stmt_b = select(ShiftBreak).where(ShiftBreak.shift_id == os.id)
+        for ob in (await db.execute(stmt_b)).scalars().all():
+            await db.delete(ob)
+        await db.delete(os)
+
+    for item in req.shifts:
+        if not item.is_working:
+            continue
+        st_parts = [int(p) for p in item.local_start.split(":")]
+        end_parts = [int(p) for p in item.local_end.split(":")]
+        shift = WeeklyShift(
+            tenant_id=crm_user.tenant_id,
+            staff_id=staff_id,
+            branch_id=branch_id,
+            weekday_iso=item.weekday_iso,
+            local_start=datetime.time(st_parts[0], st_parts[1]),
+            local_end=datetime.time(end_parts[0], end_parts[1]),
+            effective_from=datetime.datetime.now(datetime.timezone.utc)
+        )
+        db.add(shift)
+        await db.flush()
+
+        for b_item in item.breaks:
+            b_st = [int(p) for p in b_item.local_start.split(":")]
+            b_end = [int(p) for p in b_item.local_end.split(":")]
+            s_break = ShiftBreak(
+                tenant_id=crm_user.tenant_id,
+                shift_id=shift.id,
+                local_start=datetime.time(b_st[0], b_st[1]),
+                local_end=datetime.time(b_end[0], b_end[1])
+            )
+            db.add(s_break)
+
+    await db.commit()
+    return {"message": "График работы успешно обновлен"}
+
+
+@router.patch("/services/{service_id}")
+async def update_service(
+    service_id: uuid.UUID,
+    req: ServiceUpdateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt = select(Service).where(Service.id == service_id, Service.tenant_id == crm_user.tenant_id)
+    svc = (await db.execute(stmt)).scalar_one_or_none()
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    if req.name is not None: svc.name = req.name
+    if req.category_id is not None: svc.category_id = req.category_id
+    if req.description is not None: svc.description = req.description
+    if req.base_price_minor is not None: svc.base_price_minor = req.base_price_minor
+    if req.base_duration_minutes is not None: svc.base_duration_minutes = req.base_duration_minutes
+    if req.active is not None: svc.active = req.active
+    if req.online_visible is not None: svc.online_visible = req.online_visible
+
+    await db.commit()
+    return svc
+
+
+@router.delete("/services/{service_id}")
+async def delete_service(
+    service_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt = select(Service).where(Service.id == service_id, Service.tenant_id == crm_user.tenant_id)
+    svc = (await db.execute(stmt)).scalar_one_or_none()
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    svc.active = False
+    svc.archived_at = datetime.datetime.now(datetime.timezone.utc)
+    await db.commit()
+    return {"message": "Услуга архивирована"}
+
+
+@router.patch("/service-categories/{category_id}")
+async def update_service_category(
+    category_id: uuid.UUID,
+    req: ServiceCategoryUpdateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt = select(ServiceCategory).where(ServiceCategory.id == category_id, ServiceCategory.tenant_id == crm_user.tenant_id)
+    cat = (await db.execute(stmt)).scalar_one_or_none()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    if req.name is not None: cat.name = req.name
+    if req.sort_order is not None: cat.sort_order = req.sort_order
+
+    await db.commit()
+    return cat
+
+
+@router.patch("/booking-theme")
+async def update_booking_theme(
+    req: BookingBrandingUpdateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt = select(BookingTheme).where(BookingTheme.tenant_id == crm_user.tenant_id)
+    theme = (await db.execute(stmt)).scalars().first()
+    if not theme:
+        theme = BookingTheme(tenant_id=crm_user.tenant_id)
+        db.add(theme)
+
+    if req.primary_color is not None: theme.primary_color = req.primary_color
+    if req.accent_color is not None: theme.accent_color = req.accent_color
+    if req.logo_url is not None: theme.logo_url = req.logo_url
+
+    await db.commit()
+    return {"primary_color": theme.primary_color, "accent_color": theme.accent_color}
+
+
+@router.patch("/branches/{branch_id}")
+async def update_branch(
+    branch_id: uuid.UUID,
+    req: BranchUpdateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt = select(Branch).where(Branch.id == branch_id, Branch.tenant_id == crm_user.tenant_id)
+    branch = (await db.execute(stmt)).scalar_one_or_none()
+    if not branch:
+        raise HTTPException(status_code=404, detail="Branch not found")
+
+    if req.name is not None: branch.name = req.name
+    if req.city is not None: branch.city = req.city
+    if req.address is not None: branch.address = req.address
+    if req.timezone_iana is not None: branch.timezone_iana = req.timezone_iana
+    if req.phone is not None: branch.phone = req.phone
+
+    await db.commit()
+    return branch
+
+
+@router.get("/users")
+async def list_crm_users(
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    from apps.api.app.infrastructure.db.models import IdentityUser
+    stmt = select(TenantMembership, IdentityUser).join(
+        IdentityUser, IdentityUser.id == TenantMembership.user_id
+    ).where(TenantMembership.tenant_id == crm_user.tenant_id)
+    rows = (await db.execute(stmt)).all()
+
+    return [{
+        "id": str(m.id),
+        "user_id": str(u.id),
+        "email": u.email_normalized,
+        "display_name": u.display_name,
+        "role": m.role,
+        "status": m.status,
+        "created_at": m.joined_at.isoformat() if m.joined_at else None
+    } for m, u in rows]
+
+
+@router.post("/invites", status_code=status.HTTP_201_CREATED)
+async def create_crm_invite(
+    req: InviteCreateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    import secrets
+    raw_token = secrets.token_urlsafe(32)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    inv = Invite(
+        tenant_id=crm_user.tenant_id,
+        email=req.email.lower().strip(),
+        role=req.role,
+        invite_type="staff",
+        branch_scope="all",
+        token_hash=raw_token,
+        expires_at=now_utc + datetime.timedelta(days=7),
+    )
+    db.add(inv)
+    await db.commit()
+    return {
+        "invite_id": str(inv.id),
+        "email": inv.email,
+        "role": inv.role,
+        "token": raw_token,
+        "invite_url": f"/accept-invite?token={raw_token}"
+    }
