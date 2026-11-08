@@ -101,7 +101,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
 
-      - name: Start API and Frontend Dev Servers for Playwright E2E
+      - name: Run Playwright E2E Tests (with API and Frontend Services)
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@localhost:5432/saas_crm_test
           ADMIN_DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/saas_crm_test
@@ -118,9 +118,14 @@ jobs:
           uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 &
           npm run dev --workspace=@crm/booking-web -- --port 3000 --host 0.0.0.0 &
           npm run dev --workspace=@crm/business-crm -- --port 3001 --host 0.0.0.0 &
-          sleep 5
+          sleep 6
           curl -s http://127.0.0.1:8000/api/v1/public/site -H "Host: barberhouse.book.example.kz"
-
-      - name: Run Playwright E2E Tests
-        run: |
           npx playwright test
+
+      - name: Upload Playwright Test Results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 7

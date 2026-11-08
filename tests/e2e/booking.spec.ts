@@ -384,12 +384,10 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
 
     // 5. Verify status updated to cancelled in CRM
     await page.goto(`http://localhost:3001/?date=${futureDateStr}`);
-    const loginHeading = page.locator('h1:has-text("Вход в CRM")');
-    if (await loginHeading.isVisible()) {
-      await page.fill('input[type="email"]', 'owner@barberhouse.kz');
-      await page.fill('input[type="password"]', 'Password123!');
-      await page.click('button[type="submit"]');
-    }
+    await expect(page.locator('h1')).toContainText('Вход в CRM', { timeout: 15000 });
+    await page.fill('input[type="email"]', 'owner@barberhouse.kz');
+    await page.fill('input[type="password"]', 'Password123!');
+    await page.click('button[type="submit"]');
     await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
     const cardInCrm = page.locator(`[data-public-ref="${publicRef}"]`);
     await expect(cardInCrm).toBeVisible({ timeout: 10000 });
