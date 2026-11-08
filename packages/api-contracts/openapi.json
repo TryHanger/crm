@@ -113,6 +113,48 @@
         ]
       }
     },
+    "/api/v1/auth/accept-invite": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Accept Invite",
+        "description": "Accepts an owner or staff invitation, sets user password, and activates membership.",
+        "operationId": "accept_invite_api_v1_auth_accept_invite_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/public/site": {
       "get": {
         "tags": [
@@ -345,13 +387,55 @@
         }
       }
     },
+    "/api/v1/public/availability": {
+      "post": {
+        "tags": [
+          "Public Client Booking"
+        ],
+        "summary": "Search Availability",
+        "description": "Deterministic slot search:\n- Service-first, Master-first, Time-first\n- 'any master' mode ranks: 1) earliest start time, 2) lowest quote price, 3) stable UUID\n- Boundaries are calculated in the branch's local timezone",
+        "operationId": "search_availability_api_v1_public_availability_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvailabilitySearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilitySearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/public/availability/search": {
       "post": {
         "tags": [
           "Public Client Booking"
         ],
         "summary": "Search Availability",
-        "description": "Deterministic slot search:\n- Service-first, Master-first, Time-first\n- 'any master' mode ranks: 1) earliest start time, 2) lowest quote price, 3) stable UUID",
+        "description": "Deterministic slot search:\n- Service-first, Master-first, Time-first\n- 'any master' mode ranks: 1) earliest start time, 2) lowest quote price, 3) stable UUID\n- Boundaries are calculated in the branch's local timezone",
         "operationId": "search_availability_api_v1_public_availability_search_post",
         "requestBody": {
           "content": {
@@ -2918,10 +3002,108 @@
           }
         ]
       }
+    },
+    "/api/v1/platform/plans": {
+      "get": {
+        "tags": [
+          "Platform Console"
+        ],
+        "summary": "Get Plans",
+        "description": "Returns platform plan catalog with active versions and entitlements.",
+        "operationId": "get_plans_api_v1_platform_plans_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Platform Console"
+        ],
+        "summary": "Create Plan",
+        "description": "Creates a new tariff plan with baseline version and entitlements.",
+        "operationId": "create_plan_api_v1_platform_plans_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "AcceptInviteRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "AcceptInviteRequest"
+      },
       "AvailabilitySearchRequest": {
         "properties": {
           "branch_id": {
@@ -3310,6 +3492,62 @@
         "type": "object",
         "title": "CancelRequest"
       },
+      "CreatePlanRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "price_minor": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Price Minor"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "KZT"
+          },
+          "max_branches": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Branches",
+            "default": 1
+          },
+          "max_active_staff": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Active Staff",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "price_minor"
+        ],
+        "title": "CreatePlanRequest"
+      },
       "CreatePublicBookingRequest": {
         "properties": {
           "branch_id": {
@@ -3364,6 +3602,18 @@
               }
             ],
             "title": "Notes"
+          },
+          "quote_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Id"
           },
           "expected_price_minor": {
             "anyOf": [

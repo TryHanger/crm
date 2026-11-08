@@ -343,6 +343,7 @@ async def _resolve_management_token(token: str, db: AsyncSession) -> Tuple[Publi
 
 
 @router.get("/manage/{token}", response_model=PublicManageBookingResponse)
+@router.get("/bookings/manage/{token}", response_model=PublicManageBookingResponse, include_in_schema=False)
 async def get_manage_booking(
     token: str,
     db: AsyncSession = Depends(get_db)
@@ -390,6 +391,7 @@ async def get_manage_booking(
 
 
 @router.post("/manage/{token}/cancel")
+@router.post("/bookings/manage/{token}/cancel", include_in_schema=False)
 async def public_cancel_booking(
     token: str,
     req: CancelRequest,
@@ -411,6 +413,7 @@ async def public_cancel_booking(
 
 
 @router.post("/manage/{token}/reschedule")
+@router.post("/bookings/manage/{token}/reschedule", include_in_schema=False)
 async def public_reschedule_booking(
     token: str,
     req: RescheduleRequest,

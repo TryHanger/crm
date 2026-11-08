@@ -62,3 +62,11 @@ Thumbs.db
 # Output & Temp Archives
 *.zip
 ОТЧЕТЫ/
+
+# Node & Frontend
+node_modules/
+test-results/
+playwright-report/
+*.tsbuildinfo
+dist/
+

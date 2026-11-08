@@ -1,0 +1,19 @@
+{
+  "name": "crm-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:booking": "npm run dev --workspace=apps/booking-web",
+    "dev:crm": "npm run dev --workspace=apps/business-crm",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "typescript": "^5.3.3"
+  }
+}

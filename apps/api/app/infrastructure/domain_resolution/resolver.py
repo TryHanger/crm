@@ -63,11 +63,13 @@ async def resolve_public_tenant(
             detail={"code": "SITE_NOT_FOUND", "message": "Host header is missing, invalid, or empty"}
         )
 
-    # Local development/test bypass via demo_slug or x-demo-slug
+    # Local development/test bypass via demo_slug, x-demo-slug, or *.localhost subdomain
     is_local_host = hostname in ("localhost", "127.0.0.1", "testserver") or hostname.endswith(".localhost")
     demo_slug = None
     if settings.ENVIRONMENT in ("development", "test") and is_local_host:
         demo_slug = request.query_params.get("demo_slug") or request.headers.get("x-demo-slug")
+        if not demo_slug and hostname.endswith(".localhost") and hostname != "localhost":
+            demo_slug = hostname.split(".")[0]
 
     if demo_slug:
         stmt = (

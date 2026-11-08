@@ -139,3 +139,92 @@ async def test_crm_calendar_and_master_role_isolation():
         }, headers=owner_headers)
         assert cust2.status_code in (200, 201)
         assert cust2.json()["duplicate_detected"] is True
+
+
+@pytest.mark.asyncio
+async def test_multi_tenant_calendar_strict_isolation_between_barberhouse_and_moderncut():
+    """
+    Verifies Task 4 Gate 2 acceptance:
+    - Client in Barber House books an appointment.
+    - The booking appears in Barber House owner calendar.
+    - The booking is strictly absent from Modern Cut CRM calendar.
+    - Modern Cut owner cannot access Barber House booking by ID (returns 404).
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login to Barber House
+        bh_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@barberhouse.kz",
+            "password": "Password123!"
+        })
+        assert bh_login.status_code == 200
+        bh_token = bh_login.json()["access_token"]
+        bh_headers = {"Authorization": f"Bearer {bh_token}"}
+
+        # 2. Login to Modern Cut
+        mc_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@moderncut.kz",
+            "password": "Password123!"
+        })
+        assert mc_login.status_code == 200
+        mc_token = mc_login.json()["access_token"]
+        mc_headers = {"Authorization": f"Bearer {mc_token}"}
+
+        # 3. Get Barber House branch and staff
+        bh_branches = (await client.get("/api/v1/business/branches", headers=bh_headers)).json()
+        bh_branch_id = bh_branches[0]["id"]
+        bh_services = (await client.get("/api/v1/business/services", headers=bh_headers)).json()
+        bh_service_id = bh_services[0]["id"]
+
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        target_day = today + datetime.timedelta(days=32)
+        while target_day.isoweekday() not in (1, 2, 3, 4, 5):
+            target_day += datetime.timedelta(days=1)
+
+        cal_bh_initial = (await client.get(
+            f"/api/v1/business/calendar?date={target_day.isoformat()}&branch_id={bh_branch_id}",
+            headers=bh_headers
+        )).json()
+        bh_staff_id = cal_bh_initial["staff"][0]["id"]
+
+        # 4. Create appointment in Barber House
+        slot_dt = datetime.datetime.combine(target_day, datetime.time(10, 30), tzinfo=datetime.timezone.utc) # 15:30 local time, after lunch
+        created_resp = await client.post(
+            "/api/v1/business/bookings",
+            json={
+                "branch_id": bh_branch_id,
+                "staff_id": bh_staff_id,
+                "service_ids": [bh_service_id],
+                "starts_at_utc": slot_dt.isoformat(),
+                "customer_name": "Карим Сериков",
+                "customer_phone": "+77017778899"
+            },
+            headers=bh_headers
+        )
+        assert created_resp.status_code == 201, f"Create booking failed: {created_resp.text}"
+        bh_booking_id = created_resp.json()["booking_id"]
+
+        # 5. Verify appointment appears in Barber House calendar
+        cal_bh_after = (await client.get(
+            f"/api/v1/business/calendar?date={target_day.isoformat()}&branch_id={bh_branch_id}",
+            headers=bh_headers
+        )).json()
+        bh_booking_ids = [b["id"] for b in cal_bh_after["bookings"]]
+        assert bh_booking_id in bh_booking_ids
+
+        # 6. Verify appointment does NOT appear in Modern Cut calendar
+        mc_branches = (await client.get("/api/v1/business/branches", headers=mc_headers)).json()
+        mc_branch_id = mc_branches[0]["id"]
+        cal_mc = (await client.get(
+            f"/api/v1/business/calendar?date={target_day.isoformat()}&branch_id={mc_branch_id}",
+            headers=mc_headers
+        )).json()
+        mc_booking_ids = [b["id"] for b in cal_mc["bookings"]]
+        assert bh_booking_id not in mc_booking_ids
+
+        # 7. Modern Cut owner cannot read Barber House booking details
+        cross_resp = await client.get(
+            f"/api/v1/business/bookings/{bh_booking_id}",
+            headers=mc_headers
+        )
+        assert cross_resp.status_code == 404

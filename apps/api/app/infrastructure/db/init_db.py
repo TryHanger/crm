@@ -257,6 +257,16 @@ def seed_demo_tenants(session):
     )
     session.add(td1)
 
+    td1_local = TenantDomain(
+        tenant_id=t1.id,
+        hostname_normalized="barberhouse.localhost",
+        domain_type="custom",
+        verification_status="verified",
+        canonical=False,
+        verified_at=datetime.datetime.utcnow()
+    )
+    session.add(td1_local)
+
     # Owner for Barber House
     u_t1_owner = IdentityUser(
         oidc_subject="barberhouse_owner_sub",
@@ -513,6 +523,16 @@ def seed_demo_tenants(session):
     )
     session.add(td2)
 
+    td2_local = TenantDomain(
+        tenant_id=t2.id,
+        hostname_normalized="moderncut.localhost",
+        domain_type="custom",
+        verification_status="verified",
+        canonical=False,
+        verified_at=datetime.datetime.utcnow()
+    )
+    session.add(td2_local)
+
     u_t2_owner = IdentityUser(
         oidc_subject="moderncut_owner_sub",
         email_normalized="owner@moderncut.kz",
@@ -615,6 +635,18 @@ def seed_demo_tenants(session):
         tenant_id=t2.id, staff_id=sp_t2_master.id, branch_id=b2.id, service_id=s2_cut.id,
         price_override_minor=900000, duration_override_minutes=60, active=True, online_visible=True
     ))
+
+    # Weekly shifts for Modern Cut master (Mon - Sat, 10:00 - 19:00)
+    for wd in range(1, 7):
+        session.add(WeeklyShift(
+            tenant_id=t2.id,
+            staff_id=sp_t2_master.id,
+            branch_id=b2.id,
+            weekday_iso=wd,
+            local_start=datetime.time(10, 0),
+            local_end=datetime.time(19, 0),
+            effective_from=datetime.date(2026, 1, 1)
+        ))
 
     # Tenant 2: Customer with SAME PHONE as Tenant 1 customer! (Crucial isolation test fixture)
     c2 = Customer(

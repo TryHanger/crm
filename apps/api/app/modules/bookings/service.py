@@ -460,7 +460,9 @@ class BookingEngine:
 
                             if not (has_break_conflict or has_occ_conflict or has_to_conflict):
                                 # Valid slot! Create and persist authoritative quote
+                                quote_id = uuid.uuid4()
                                 quote = BookingQuote(
+                                    id=quote_id,
                                     tenant_id=tenant_id,
                                     branch_id=branch_id,
                                     staff_id=c_staff_id,
@@ -482,7 +484,7 @@ class BookingEngine:
                                     "duration_minutes": duration_mins,
                                     "price_minor": price_minor,
                                     "currency": "KZT",
-                                    "quote_id": str(quote.id),
+                                    "quote_id": str(quote_id),
                                     "quote_expires_at": quote.expires_at.isoformat()
                                 })
 
@@ -490,7 +492,7 @@ class BookingEngine:
 
                 current_day += datetime.timedelta(days=1)
 
-        await db.flush()
+        await db.commit()
 
         # Ordering:
         # If staff_mode == 'any': 1) earliest start time, 2) lowest price, 3) stable staff UUID
