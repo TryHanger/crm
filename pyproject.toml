@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saas-crm-platform"
+version = "1.0.0"
+description = "Multi-Tenant SaaS Online Booking and Business CRM Backend"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+    { name = "Engineering Team", email = "engineering@platform.example.kz" }
+]
+dependencies = [
+    "fastapi>=0.115.0,<0.116.0",
+    "uvicorn[standard]>=0.34.0,<0.35.0",
+    "pydantic>=2.10.0,<2.11.0",
+    "pydantic-settings>=2.7.0,<2.8.0",
+    "sqlalchemy>=2.0.36,<2.1.0",
+    "asyncpg>=0.30.0,<0.31.0",
+    "psycopg2-binary>=2.9.10,<2.10.0",
+    "alembic>=1.14.0,<1.15.0",
+    "python-jose[cryptography]>=3.3.0,<3.4.0",
+    "passlib[bcrypt]>=1.7.4,<1.8.0",
+    "bcrypt>=4.0.0,<4.3.0",
+    "python-multipart>=0.0.20,<0.0.21"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=1.1.0",
+    "httpx>=0.28.0",
+    "anyio>=4.6.0"
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["apps/api/tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

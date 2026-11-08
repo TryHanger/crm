@@ -1,0 +1,84 @@
+import uuid
+import datetime
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from apps.api.app.infrastructure.db.session import get_db
+from apps.api.app.infrastructure.db.models import IdentityUser, TenantMembership, PlatformStaff, Tenant
+from apps.api.app.infrastructure.security.jwt import verify_password, create_access_token
+from apps.api.app.infrastructure.security.auth import get_current_user
+from apps.api.app.modules.schemas import LoginRequest, TokenResponse
+
+router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+@router.post("/login", response_model=TokenResponse)
+async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Authenticates staff user or platform administrator."""
+    stmt = select(IdentityUser).where(IdentityUser.email_normalized == req.email.lower().strip())
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+
+    if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password"
+        )
+
+    # Check memberships and platform role
+    stmt_m = select(TenantMembership).where(TenantMembership.user_id == user.id, TenantMembership.status == "active")
+    res_m = await db.execute(stmt_m)
+    memberships = res_m.scalars().all()
+    crm_role = memberships[0].role if memberships else None
+
+    stmt_p = select(PlatformStaff).where(PlatformStaff.user_id == user.id, PlatformStaff.status == "active")
+    res_p = await db.execute(stmt_p)
+    p_staff = res_p.scalar_one_or_none()
+    platform_role = p_staff.platform_role if p_staff else None
+
+    token = create_access_token({
+        "sub": str(user.id),
+        "email": user.email_normalized,
+        "name": user.display_name,
+        "role": crm_role,
+        "platform_role": platform_role
+    })
+
+    return TokenResponse(
+        access_token=token,
+        user_id=user.id,
+        display_name=user.display_name,
+        email=user.email_normalized,
+        role=crm_role,
+        platform_role=platform_role
+    )
+
+@router.get("/me")
+async def get_me(user: IdentityUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Returns current authenticated identity."""
+    stmt_m = select(TenantMembership, Tenant).join(Tenant, Tenant.id == TenantMembership.tenant_id).where(
+        TenantMembership.user_id == user.id,
+        TenantMembership.status == "active"
+    )
+    res_m = await db.execute(stmt_m)
+    memberships_data = []
+    for m, t in res_m.all():
+        memberships_data.append({
+            "membership_id": str(m.id),
+            "tenant_id": str(t.id),
+            "tenant_slug": t.slug,
+            "tenant_name": t.display_name,
+            "role": m.role
+        })
+
+    stmt_p = select(PlatformStaff).where(PlatformStaff.user_id == user.id, PlatformStaff.status == "active")
+    res_p = await db.execute(stmt_p)
+    p_staff = res_p.scalar_one_or_none()
+
+    return {
+        "user_id": str(user.id),
+        "email": user.email_normalized,
+        "display_name": user.display_name,
+        "crm_memberships": memberships_data,
+        "platform_role": p_staff.platform_role if p_staff else None
+    }
