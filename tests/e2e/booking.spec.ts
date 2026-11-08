@@ -257,6 +257,9 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await page.locator('button:has-text("Выбрать дату и время")').click();
     await expect(page.locator('h1')).toContainText('Выберите дату и время');
 
+    // Re-select tomorrow's date (Monday, shift working day) to load real available slots
+    await page.locator('button[data-date]').nth(1).click();
+
     // Ensure slots are loaded and select the confirmed slot
     const finalSlotBtn = page.locator('main button:has-text(":")').first();
     await finalSlotBtn.waitFor({ state: 'visible', timeout: 10000 });

@@ -122,7 +122,7 @@ export const App: React.FC = () => {
         setSelectedBranch(defaultBranch);
 
         if (defaultBranch) {
-          setSelectedDate(getLocalDateString(defaultBranch.timezone_iana));
+          setSelectedDate(current => current || getLocalDateString(defaultBranch.timezone_iana));
 
           // Load services
           const svcList = await api.getServices(defaultBranch.id);
