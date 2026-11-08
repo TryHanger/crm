@@ -413,6 +413,10 @@ export interface ReportsOverviewResponse {
   arrived_bookings: number;
   planned_revenue_minor: number;
   actual_revenue_minor: number;
+  completed_revenue_minor?: number;
+  paid_revenue_minor?: number;
+  payment_collection_enabled?: boolean;
+  revenue_semantics_note?: string;
   new_customers_count: number;
   occupied_minutes?: number;
   staff_stats: {
@@ -421,6 +425,7 @@ export interface ReportsOverviewResponse {
     bookings_count: number;
     revenue_minor: number;
     workload_pct: number;
+    booked_minutes?: number;
   }[];
 }
 

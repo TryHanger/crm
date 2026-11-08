@@ -541,3 +541,101 @@ async def test_crm_customer_privacy_and_cross_branch_schedule_isolation():
                 for d in range(1, 7)
             ]
         }, headers=mc_headers)
+
+
+@pytest.mark.asyncio
+async def test_crm_revenue_semantics_and_multi_branch_pricing_isolation():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # Login as Modern Cut owner
+        mc_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@moderncut.kz",
+            "password": "Password123!"
+        })
+        assert mc_login.status_code == 200
+        mc_token = mc_login.json()["access_token"]
+        mc_me = (await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {mc_token}"})).json()
+        mc_tenant_id = mc_me["crm_memberships"][0]["tenant_id"]
+        mc_headers = {"Authorization": f"Bearer {mc_token}", "X-Tenant-ID": mc_tenant_id}
+
+        # 1. Test Revenue Semantics in Reports Overview
+        rep = await client.get("/api/v1/business/reports/overview?from_date=2026-10-01&to_date=2026-11-30", headers=mc_headers)
+        assert rep.status_code == 200
+        data = rep.json()
+        assert "planned_revenue_minor" in data
+        assert "completed_revenue_minor" in data
+        assert "paid_revenue_minor" in data
+        assert data["paid_revenue_minor"] == 0, "Cash/ledger payment collection is not enabled on MVP"
+        assert data["payment_collection_enabled"] is False
+        assert "revenue_semantics_note" in data
+        assert "completed_revenue_minor" in data["revenue_semantics_note"]
+
+        # 2. Test Multi-Branch Pricing Overrides Isolation
+        branches = (await client.get("/api/v1/business/branches", headers=mc_headers)).json()
+        b1_id = branches[0]["id"]
+        if len(branches) >= 2:
+            b2_id = branches[1]["id"]
+        else:
+            b2_resp = await client.post("/api/v1/business/branches", json={
+                "name": "Modern Cut Юг",
+                "city": "Алматы",
+                "address": "ул. Сатпаева, 15",
+                "timezone_iana": "Asia/Almaty",
+                "phone": "+7 777 999 88 77"
+            }, headers=mc_headers)
+            assert b2_resp.status_code in (200, 201)
+            b2_id = b2_resp.json()["id"]
+
+        staff_all = (await client.get("/api/v1/business/staff", headers=mc_headers)).json()
+        staff_id = staff_all[0]["id"]
+
+        services = (await client.get("/api/v1/business/services", headers=mc_headers)).json()
+        svc_id = services[0]["id"]
+
+        # Set price in Branch 1 to 8 500 KZT
+        await client.put(f"/api/v1/business/staff/{staff_id}/services", json={
+            "offers": [{
+                "branch_id": b1_id,
+                "service_id": svc_id,
+                "price_override_minor": 850000,
+                "duration_override_minutes": 45,
+                "active": True,
+                "online_visible": True
+            }]
+        }, headers=mc_headers)
+
+        # Set price in Branch 2 to 12 000 KZT
+        await client.put(f"/api/v1/business/staff/{staff_id}/services", json={
+            "offers": [{
+                "branch_id": b2_id,
+                "service_id": svc_id,
+                "price_override_minor": 1200000,
+                "duration_override_minutes": 60,
+                "active": True,
+                "online_visible": True
+            }]
+        }, headers=mc_headers)
+
+        # Verify staff detail maintains branch-distinct pricing
+        detail = (await client.get(f"/api/v1/business/staff/{staff_id}", headers=mc_headers)).json()
+        offers = detail.get("offers", [])
+        b1_offer = next((o for o in offers if o["branch_id"] == b1_id and o["service_id"] == svc_id), None)
+        b2_offer = next((o for o in offers if o["branch_id"] == b2_id and o["service_id"] == svc_id), None)
+        assert b1_offer is not None, "Branch 1 offer must exist"
+        assert b2_offer is not None, "Branch 2 offer must exist"
+        assert b1_offer["price_override_minor"] == 850000
+        assert b2_offer["price_override_minor"] == 1200000
+        assert b1_offer["price_override_minor"] != b2_offer["price_override_minor"], "Pricing must be branch-isolated!"
+
+        # 3. Test Timezone Support on Branch
+        tz_resp = await client.patch(f"/api/v1/business/branches/{b2_id}", json={
+            "timezone_iana": "Europe/Berlin"
+        }, headers=mc_headers)
+        assert tz_resp.status_code == 200
+        b2_updated = (await client.get("/api/v1/business/branches", headers=mc_headers)).json()
+        b2_obj = next(b for b in b2_updated if b["id"] == b2_id)
+        assert b2_obj["timezone_iana"] == "Europe/Berlin"
+
+        # Restore timezone to Asia/Almaty
+        await client.patch(f"/api/v1/business/branches/{b2_id}", json={
+            "timezone_iana": "Asia/Almaty"
+        }, headers=mc_headers)

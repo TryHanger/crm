@@ -1,7 +1,7 @@
 import uuid
 import datetime
 import zoneinfo
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Union, Dict
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -848,12 +848,17 @@ async def create_staff(
 @router.put("/staff/{staff_id}/services")
 async def update_staff_services(
     staff_id: uuid.UUID,
-    offers: List[StaffServiceOfferUpdateRequest],
+    payload: Union[List[StaffServiceOfferUpdateRequest], Dict[str, Any]],
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
     """Sets master-specific price and duration overrides."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
+    raw_offers = payload.get("offers", []) if isinstance(payload, dict) else payload
+    offers: List[StaffServiceOfferUpdateRequest] = [
+        off if isinstance(off, StaffServiceOfferUpdateRequest) else StaffServiceOfferUpdateRequest(**off)
+        for off in raw_offers
+    ]
     for off in offers:
         stmt = select(StaffServiceOffer).where(
             StaffServiceOffer.tenant_id == crm_user.tenant_id,
@@ -1050,8 +1055,11 @@ async def get_reports_overview(
 
     # Planned revenue
     planned_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status != "cancelled")
-    # Actual revenue from completed visits
-    actual_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status == "completed")
+    # Completed visits value (service delivered, not confirmed payment)
+    completed_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status == "completed")
+    # Confirmed cash/ledger payments
+    paid_revenue_minor = 0
+    actual_revenue_minor = completed_revenue_minor
 
     # Occupied minutes from staff_occupancies
     stmt_occ = select(StaffOccupancy).where(
@@ -1125,8 +1133,14 @@ async def get_reports_overview(
         "arrived_bookings": arrived_count,
         "planned_revenue_minor": planned_revenue_minor,
         "planned_revenue_formatted": f"{planned_revenue_minor / 100:,.0f} ₸".replace(",", " "),
+        "completed_revenue_minor": completed_revenue_minor,
+        "completed_revenue_formatted": f"{completed_revenue_minor / 100:,.0f} ₸".replace(",", " "),
+        "paid_revenue_minor": paid_revenue_minor,
+        "paid_revenue_formatted": "0 ₸",
         "actual_revenue_minor": actual_revenue_minor,
         "actual_revenue_formatted": f"{actual_revenue_minor / 100:,.0f} ₸".replace(",", " "),
+        "payment_collection_enabled": False,
+        "revenue_semantics_note": "completed_revenue_minor отражает стоимость фактически оказанных услуг (завершенные визиты), а не подтвержденные кассовые поступления. Денежный эквайринг/ledger отключен.",
         "new_customers_count": new_customers_count,
         "occupied_minutes": int(occupied_minutes),
         "staff_stats": staff_stats

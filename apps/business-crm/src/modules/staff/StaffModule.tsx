@@ -31,6 +31,7 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
   const [addColor, setAddColor] = useState('#2563EB');
   const [addBranchId, setAddBranchId] = useState(branches[0]?.id || '');
   const [modalBranchId, setModalBranchId] = useState<string>(branches[0]?.id || '');
+  const [isLoadingBranchData, setIsLoadingBranchData] = useState(false);
 
   // Schedule state
   const [scheduleShifts, setScheduleShifts] = useState<any[]>([]);
@@ -59,16 +60,14 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
     fetchStaff();
   }, []);
 
-  // Open staff modal
-  const handleOpenStaffModal = async (id: string) => {
-    setSelectedStaffId(id);
-    setProfileTab('profile');
+  const loadBranchSpecificData = async (staffId: string, bId: string, currentDetail?: any) => {
+    setIsLoadingBranchData(true);
     try {
-      const detail = await api.getStaffDetail(id, token, tenantId);
-      setStaffDetail(detail);
+      const detail = currentDetail || (await api.getStaffDetail(staffId, token, tenantId));
+      if (!currentDetail) setStaffDetail(detail);
 
-      // Load schedule
-      const sched = await api.getStaffSchedule(id, token, tenantId);
+      // 1. Load schedule strictly for this branch
+      const sched = await api.getStaffSchedule(staffId, token, tenantId, bId);
       const days = [1, 2, 3, 4, 5, 6, 7];
       const fullSched = days.map(d => {
         const found = sched.find(s => s.weekday_iso === d);
@@ -82,19 +81,38 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
       });
       setScheduleShifts(fullSched);
 
-      // Load services
+      // 2. Load services
       const svcs = await api.getServices({}, token, tenantId);
       setAllServices(svcs || []);
 
+      // 3. Filter offers strictly for this branch
       const offersMap: Record<string, any> = {};
-      detail.offers?.forEach(off => {
-        offersMap[off.service_id] = {
-          price: off.price_override_minor ? String(off.price_override_minor / 100) : '',
-          duration: off.duration_override_minutes ? String(off.duration_override_minutes) : '',
-          active: off.active,
-        };
+      detail.offers?.forEach((off: any) => {
+        if (off.branch_id === bId) {
+          offersMap[off.service_id] = {
+            price: off.price_override_minor ? String(off.price_override_minor / 100) : '',
+            duration: off.duration_override_minutes ? String(off.duration_override_minutes) : '',
+            active: off.active,
+          };
+        }
       });
       setCustomOffers(offersMap);
+    } catch (err: any) {
+      console.error('Failed to load branch data for staff', err);
+    } finally {
+      setIsLoadingBranchData(false);
+    }
+  };
+
+  // Open staff modal
+  const handleOpenStaffModal = async (id: string) => {
+    setSelectedStaffId(id);
+    setProfileTab('profile');
+    const defaultBranchId = modalBranchId || branches[0]?.id || '';
+    try {
+      const detail = await api.getStaffDetail(id, token, tenantId);
+      setStaffDetail(detail);
+      await loadBranchSpecificData(id, defaultBranchId, detail);
     } catch (err: any) {
       alert(`Ошибка загрузки данных сотрудника: ${err.message || err}`);
     }
@@ -412,7 +430,11 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
                     <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>Филиал:</span>
                     <select
                       value={modalBranchId}
-                      onChange={e => setModalBranchId(e.target.value)}
+                      onChange={e => {
+                        const newBid = e.target.value;
+                        setModalBranchId(newBid);
+                        if (selectedStaffId) loadBranchSpecificData(selectedStaffId, newBid);
+                      }}
                       style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '13px' }}
                     >
                       {branches.map(b => (
@@ -501,6 +523,24 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
             {/* Tab: Weekly Schedule */}
             {profileTab === 'schedule' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {branches.length > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>Филиал:</span>
+                    <select
+                      value={modalBranchId}
+                      onChange={e => {
+                        const newBid = e.target.value;
+                        setModalBranchId(newBid);
+                        if (selectedStaffId) loadBranchSpecificData(selectedStaffId, newBid);
+                      }}
+                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                    >
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
                   Настройте рабочие часы и обеденные перерывы мастера по дням недели:
                 </p>

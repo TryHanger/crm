@@ -10,7 +10,10 @@ import {
   MapPin,
   Phone,
   Clock,
-  CreditCard
+  CreditCard,
+  Edit2,
+  CheckCircle,
+  ExternalLink
 } from 'lucide-react';
 import { BusinessCrmApiClient, BranchResponse, MembershipResponse } from '@crm/api-client';
 
@@ -58,38 +61,30 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const [branchTimezone, setBranchTimezone] = useState<string>('Asia/Almaty');
   const [branchSaving, setBranchSaving] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (activeSubTab && activeSubTab !== currentTab) {
-      setCurrentTab(activeSubTab);
-    }
-  }, [activeSubTab]);
-
   const handleTabSwitch = (tab: 'branches' | 'users' | 'company') => {
     setCurrentTab(tab);
     if (onSubTabChange) onSubTabChange(tab);
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const branchesData = await api.getBranches(token, tenantId);
-      setBranches(branchesData);
-
-      if (userRole === 'owner' || userRole === 'admin') {
-        const usersData = await api.getUsers(token, tenantId);
-        setUsers(usersData);
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Ошибка загрузки настроек');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [branchesData, usersData] = await Promise.all([
+          api.getBranches(token, tenantId),
+          api.getUsers(token, tenantId),
+        ]);
+        setBranches(branchesData);
+        setUsers(usersData);
+      } catch (err: any) {
+        setError(err?.message || 'Не удалось загрузить настройки');
+      } finally {
+        setLoading(false);
+      }
+    };
     loadData();
-  }, [userRole, token, tenantId]);
+  }, [token, tenantId, api]);
 
   const handleCreateInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,15 +94,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
     try {
       const res = await api.createInvite(
         {
-          email: inviteEmail.trim(),
+          email: inviteEmail,
           role: inviteRole,
         },
         token,
         tenantId
       );
-      setInviteResult(res);
-      if (onShowToast) onShowToast('Приглашение создано!');
-      // Refresh user list
+      setInviteResult({
+        invite_url: res.invite_url,
+        invite_token: res.invite_token,
+      });
+      if (onShowToast) onShowToast('Приглашение успешно создано');
       const usersData = await api.getUsers(token, tenantId);
       setUsers(usersData);
     } catch (err: any) {
@@ -162,17 +159,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
     setEditingBranch(null);
     setBranchName('');
     setBranchAddress('');
-    setBranchPhone('+7 701 ');
+    setBranchPhone('+7 (701) ');
     setBranchTimezone('Asia/Almaty');
     setShowBranchModal(true);
   };
 
   const openBranchEdit = (b: BranchResponse) => {
     setEditingBranch(b);
-    setBranchName(b.name);
+    setBranchName(b.name || '');
     setBranchAddress(b.address || '');
-    setBranchPhone(b.phone_number || (b as any).phone || '');
-    setBranchTimezone(b.timezone || (b as any).timezone_iana || 'Asia/Almaty');
+    setBranchPhone(b.phone || (b as any).phone_number || '');
+    setBranchTimezone(b.timezone_iana || (b as any).timezone || 'Asia/Almaty');
     setShowBranchModal(true);
   };
 
@@ -183,115 +180,190 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px', boxSizing: 'border-box' }}>
       {/* Header & Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Настройки бизнеса</h2>
-          <p className="text-sm text-neutral-400 mt-1">
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>
+            Настройки бизнеса
+          </h2>
+          <p style={{ fontSize: '13px', color: '#64748B', margin: '4px 0 0' }}>
             Управление филиалами, командой с разграничением ролей и тарифной подпиской
           </p>
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center bg-neutral-900 border border-neutral-800 rounded-xl p-1 self-start sm:self-auto">
+        <div style={{ display: 'flex', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '3px', gap: '4px' }}>
           <button
+            type="button"
             onClick={() => handleTabSwitch('branches')}
-            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              currentTab === 'branches'
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                : 'text-neutral-400 hover:text-white'
-            }`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              fontSize: '13px',
+              fontWeight: currentTab === 'branches' ? 600 : 500,
+              borderRadius: '8px',
+              border: 'none',
+              background: currentTab === 'branches' ? '#FFFFFF' : 'transparent',
+              color: currentTab === 'branches' ? '#2563EB' : '#64748B',
+              boxShadow: currentTab === 'branches' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              cursor: 'pointer',
+            }}
           >
-            <Building2 className="w-3.5 h-3.5" />
+            <Building2 style={{ width: '15px', height: '15px' }} />
             <span>Филиалы</span>
           </button>
           <button
+            type="button"
             onClick={() => handleTabSwitch('users')}
-            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              currentTab === 'users'
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                : 'text-neutral-400 hover:text-white'
-            }`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              fontSize: '13px',
+              fontWeight: currentTab === 'users' ? 600 : 500,
+              borderRadius: '8px',
+              border: 'none',
+              background: currentTab === 'users' ? '#FFFFFF' : 'transparent',
+              color: currentTab === 'users' ? '#2563EB' : '#64748B',
+              boxShadow: currentTab === 'users' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              cursor: 'pointer',
+            }}
           >
-            <Users className="w-3.5 h-3.5" />
+            <Users style={{ width: '15px', height: '15px' }} />
             <span>Пользователи и роли</span>
           </button>
           <button
+            type="button"
             onClick={() => handleTabSwitch('company')}
-            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              currentTab === 'company'
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                : 'text-neutral-400 hover:text-white'
-            }`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              fontSize: '13px',
+              fontWeight: currentTab === 'company' ? 600 : 500,
+              borderRadius: '8px',
+              border: 'none',
+              background: currentTab === 'company' ? '#FFFFFF' : 'transparent',
+              color: currentTab === 'company' ? '#2563EB' : '#64748B',
+              boxShadow: currentTab === 'company' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              cursor: 'pointer',
+            }}
           >
-            <CreditCard className="w-3.5 h-3.5" />
+            <CreditCard style={{ width: '15px', height: '15px' }} />
             <span>Компания и тариф</span>
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 shrink-0" />
+        <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '12px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px', color: '#DC2626', fontSize: '14px' }}>
+          <AlertCircle style={{ width: '18px', height: '18px', flexShrink: 0 }} />
           <span>{error}</span>
         </div>
       )}
 
       {/* TAB 1: BRANCHES */}
       {currentTab === 'branches' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Филиалы сети ({branches.length})</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+              Филиалы сети ({branches.length})
+            </h2>
             {userRole === 'owner' && (
               <button
+                type="button"
                 onClick={openBranchCreate}
-                className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-medium text-xs rounded-xl transition-colors shadow-lg shadow-amber-500/10"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 16px',
+                  background: '#2563EB',
+                  color: '#FFFFFF',
+                  borderRadius: '10px',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 4px rgba(37,99,235,0.15)',
+                }}
               >
-                <Plus className="w-4 h-4" />
-                <span>Добавить филиал</span>
+                <Plus style={{ width: '15px', height: '15px' }} />
+                <span>+ Добавить филиал</span>
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
             {branches.map((b) => (
               <div
                 key={b.id}
-                className="bg-neutral-900/80 border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between hover:border-neutral-700 transition-colors"
+                style={{
+                  background: '#FFFFFF',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '16px',
+                  padding: '20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                }}
               >
-                <div>
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <h3 className="font-semibold text-white text-base">{b.name}</h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      Активен
-                    </span>
-                  </div>
-
-                  <div className="space-y-2 text-xs text-neutral-400 mb-4">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                      <span>{b.address || 'Адрес не указан'}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Building2 style={{ width: '20px', height: '20px' }} />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                      <span>{b.phone_number || 'Телефон не указан'}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                      <span>{b.timezone || 'Asia/Almaty'}</span>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>{b.name}</h3>
+                      <span style={{ display: 'inline-block', marginTop: '2px', padding: '2px 8px', borderRadius: '4px', background: '#ECFDF5', color: '#059669', fontSize: '11px', fontWeight: 600 }}>
+                        Активен
+                      </span>
                     </div>
                   </div>
+                  {userRole === 'owner' && (
+                    <button
+                      type="button"
+                      onClick={() => openBranchEdit(b)}
+                      style={{
+                        padding: '6px 12px',
+                        background: '#F8FAFC',
+                        border: '1px solid #CBD5E1',
+                        borderRadius: '8px',
+                        color: '#475569',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <Edit2 style={{ width: '13px', height: '13px' }} />
+                      <span>Изменить</span>
+                    </button>
+                  )}
                 </div>
 
-                {userRole === 'owner' && (
-                  <button
-                    onClick={() => openBranchEdit(b)}
-                    className="w-full mt-2 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700/80 rounded-xl transition-colors border border-neutral-700/50"
-                  >
-                    Редактировать
-                  </button>
-                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', color: '#475569', borderTop: '1px solid #F1F5F9', paddingTop: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <MapPin style={{ width: '15px', height: '15px', color: '#94A3B8', flexShrink: 0 }} />
+                    <span>{b.address || 'Адрес не указан'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Phone style={{ width: '15px', height: '15px', color: '#94A3B8', flexShrink: 0 }} />
+                    <span>{b.phone || (b as any).phone_number || 'Телефон не указан'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Clock style={{ width: '15px', height: '15px', color: '#94A3B8', flexShrink: 0 }} />
+                    <span>{b.timezone_iana || (b as any).timezone || 'Asia/Almaty'}</span>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -300,79 +372,91 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
       {/* TAB 2: USERS & ROLES */}
       {currentTab === 'users' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 className="text-lg font-semibold text-white">Пользователи и права доступа</h2>
-              <p className="text-xs text-neutral-400 mt-0.5">
-                Строгая изоляция: сотрудники получают доступ только к назначенным данным
-              </p>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                Пользователи и права доступа ({users.length})
+              </h2>
+              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                Разграничение доступа для владельцев, управляющих и специалистов
+              </div>
             </div>
-            {(userRole === 'owner' || userRole === 'admin') && (
+            {['owner', 'admin'].includes(userRole) && (
               <button
+                type="button"
                 onClick={() => {
+                  setShowInviteModal(true);
                   setInviteResult(null);
                   setInviteEmail('');
-                  setShowInviteModal(true);
                 }}
-                className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-medium text-xs rounded-xl transition-colors shadow-lg shadow-amber-500/10"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 16px',
+                  background: '#2563EB',
+                  color: '#FFFFFF',
+                  borderRadius: '10px',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 4px rgba(37,99,235,0.15)',
+                }}
               >
-                <Plus className="w-4 h-4" />
+                <Plus style={{ width: '15px', height: '15px' }} />
                 <span>Пригласить сотрудника</span>
               </button>
             )}
           </div>
 
-          <div className="bg-neutral-900/80 border border-neutral-800/80 rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                 <thead>
-                  <tr className="bg-neutral-950/50 text-neutral-400 text-xs uppercase tracking-wider border-b border-neutral-800">
-                    <th className="py-3 px-5">Сотрудник</th>
-                    <th className="py-3 px-5">Email</th>
-                    <th className="py-3 px-5">Роль</th>
-                    <th className="py-3 px-5">Статус</th>
+                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', color: '#64748B', fontWeight: 600 }}>
+                    <th style={{ padding: '12px 20px' }}>Сотрудник</th>
+                    <th style={{ padding: '12px 16px' }}>Email</th>
+                    <th style={{ padding: '12px 16px' }}>Роль в компании</th>
+                    <th style={{ padding: '12px 16px' }}>Статус</th>
+                    <th style={{ padding: '12px 20px', textAlign: 'right' }}>Дата добавления</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-800/50">
+                <tbody>
                   {users.map((u) => {
-                    const roleBadge = () => {
-                      if (u.role === 'owner') {
-                        return (
-                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                            Владелец (owner)
-                          </span>
-                        );
-                      }
-                      if (u.role === 'admin') {
-                        return (
-                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                            Управляющий (admin)
-                          </span>
-                        );
-                      }
-                      return (
-                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-neutral-800 text-neutral-300 border border-neutral-700">
-                          Мастер (master)
-                        </span>
-                      );
-                    };
+                    const isOwner = u.role === 'owner';
+                    const isAdmin = u.role === 'admin';
+                    const roleLabel = isOwner ? 'Владелец' : isAdmin ? 'Управляющий' : 'Мастер';
+                    const roleBg = isOwner ? '#FEF3C7' : isAdmin ? '#EFF6FF' : '#F1F5F9';
+                    const roleColor = isOwner ? '#92400E' : isAdmin ? '#1D4ED8' : '#334155';
 
                     return (
-                      <tr key={u.id} className="hover:bg-neutral-800/30 transition-colors">
-                        <td className="py-3.5 px-5 font-medium text-white flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-xs font-semibold text-neutral-300">
-                            {(u.display_name || u.email || 'U')[0].toUpperCase()}
+                      <tr key={u.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                        <td style={{ padding: '12px 20px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: isOwner ? '#F59E0B' : '#2563EB', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '12px' }}>
+                              {(u.display_name || u.email || 'СП').slice(0, 2).toUpperCase()}
+                            </div>
+                            <span style={{ fontWeight: 600, color: '#0F172A' }}>{u.display_name || 'Без имени'}</span>
                           </div>
-                          <span>{u.display_name || 'Без имени'}</span>
                         </td>
-                        <td className="py-3.5 px-5 text-neutral-400 text-xs">{u.email}</td>
-                        <td className="py-3.5 px-5">{roleBadge()}</td>
-                        <td className="py-3.5 px-5">
-                          <span className="text-xs text-emerald-400 flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                            Активен
+                        <td style={{ padding: '12px 16px', color: '#475569' }}>
+                          {u.email}
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '6px', background: roleBg, color: roleColor, fontWeight: 600, fontSize: '11px' }}>
+                            {roleLabel}
                           </span>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: u.status === 'active' ? '#059669' : '#D97706', fontWeight: 500, fontSize: '12px' }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: u.status === 'active' ? '#059669' : '#D97706' }} />
+                            {u.status === 'active' ? 'Активен' : 'Ожидает'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 20px', textAlign: 'right', color: '#94A3B8', fontSize: '12px' }}>
+                          {u.created_at ? new Date(u.created_at).toLocaleDateString('ru-RU') : '—'}
                         </td>
                       </tr>
                     );
@@ -381,64 +465,76 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </table>
             </div>
           </div>
-
-          {/* Role explanation */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-            <div className="p-4 bg-neutral-900/40 border border-neutral-800 rounded-xl text-xs space-y-1">
-              <span className="font-semibold text-amber-300">Владелец (Owner)</span>
-              <p className="text-neutral-400">Полный контроль: тарифы, филиалы, удаление, финансовые отчеты и назначение управляющих.</p>
-            </div>
-            <div className="p-4 bg-neutral-900/40 border border-neutral-800 rounded-xl text-xs space-y-1">
-              <span className="font-semibold text-blue-300">Управляющий (Admin)</span>
-              <p className="text-neutral-400">Операционное управление: журнал записей, клиентская база, графики мастеров, прайс-лист.</p>
-            </div>
-            <div className="p-4 bg-neutral-900/40 border border-neutral-800 rounded-xl text-xs space-y-1">
-              <span className="font-semibold text-neutral-300">Мастер (Master)</span>
-              <p className="text-neutral-400">Личный кабинет: личный график, свои записи, отметка статусов визита. Чужие данные и финансы скрыты.</p>
-            </div>
-          </div>
         </div>
       )}
 
       {/* TAB 3: COMPANY & TARIFF */}
       {currentTab === 'company' && (
-        <div className="space-y-6">
-          <div className="bg-neutral-900/80 border border-neutral-800/80 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-white">Профиль компании</h3>
-                <p className="text-xs text-neutral-400 mt-0.5">Идентификатор и системные параметры компании</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
+          {/* Company Profile Card */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #F1F5F9', paddingBottom: '16px' }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#0F172A', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '16px' }}>
+                {tenantSlug ? tenantSlug.slice(0, 2).toUpperCase() : 'BH'}
               </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                Тариф Pro (Активен)
-              </span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Профиль компании</h3>
+                <div style={{ fontSize: '13px', color: '#64748B' }}>Идентификация бизнеса в экосистеме</div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
-              <div className="p-3.5 bg-neutral-950/60 rounded-xl border border-neutral-800/60">
-                <span className="text-[11px] uppercase tracking-wider text-neutral-500">Slug организации</span>
-                <p className="text-sm font-semibold text-white mt-1">{tenantSlug}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                <span style={{ color: '#64748B' }}>Субдомен онлайн-записи:</span>
+                <span style={{ fontWeight: 600, color: '#0F172A' }}>{tenantSlug}.localhost:3000</span>
               </div>
-              <div className="p-3.5 bg-neutral-950/60 rounded-xl border border-neutral-800/60">
-                <span className="text-[11px] uppercase tracking-wider text-neutral-500">Статус аккаунта</span>
-                <p className="text-sm font-semibold text-emerald-400 mt-1">Нормальный (Active)</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                <span style={{ color: '#64748B' }}>Идентификатор тенанта (ID):</span>
+                <span style={{ fontWeight: 500, color: '#475569', fontFamily: 'monospace', fontSize: '12px' }}>{tenantId}</span>
               </div>
-              <div className="p-3.5 bg-neutral-950/60 rounded-xl border border-neutral-800/60">
-                <span className="text-[11px] uppercase tracking-wider text-neutral-500">Филиалов по тарифу</span>
-                <p className="text-sm font-semibold text-white mt-1">{branches.length} из 3 доступных</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                <span style={{ color: '#64748B' }}>Основная валюта расчётов:</span>
+                <span style={{ fontWeight: 600, color: '#0F172A' }}>KZT (₸)</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+                <span style={{ color: '#64748B' }}>Статус аккаунта:</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#059669', fontWeight: 600 }}>
+                  <CheckCircle style={{ width: '15px', height: '15px' }} />
+                  Верифицирован
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Subscription & Safety */}
-          <div className="p-5 bg-gradient-to-r from-amber-500/10 via-neutral-900 to-neutral-900 border border-amber-500/20 rounded-2xl flex items-start gap-4">
-            <ShieldCheck className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <h4 className="text-sm font-semibold text-white">Изоляция данных и резервное копирование</h4>
-              <p className="text-xs text-neutral-400 mt-1">
-                Все клиентские записи, прайс-листы и контакты защищены строгой схемой Row Level Security PostgreSQL.
-                Доступ третьих лиц или других организаций полностью исключен на уровне ядра платформы.
-              </p>
+          {/* Subscription & Plan Card */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #F1F5F9', paddingBottom: '16px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Тариф Pro</h3>
+                <div style={{ fontSize: '13px', color: '#64748B' }}>План подписки и лимиты ресурсов</div>
+              </div>
+              <span style={{ padding: '4px 12px', borderRadius: '8px', background: '#FEF3C7', color: '#92400E', fontWeight: 700, fontSize: '12px' }}>
+                Активен
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                <span style={{ color: '#64748B' }}>Лимит филиалов:</span>
+                <span style={{ fontWeight: 600, color: '#0F172A' }}>До 3 филиалов (использовано: {branches.length})</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                <span style={{ color: '#64748B' }}>Лимит сотрудников:</span>
+                <span style={{ fontWeight: 600, color: '#0F172A' }}>До 10 мастеров</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                <span style={{ color: '#64748B' }}>Онлайн-запись и виджет:</span>
+                <span style={{ fontWeight: 600, color: '#059669' }}>Включено без ограничений</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+                <span style={{ color: '#64748B' }}>Период действия:</span>
+                <span style={{ fontWeight: 600, color: '#0F172A' }}>Бессрочный dev-доступ</span>
+              </div>
             </div>
           </div>
         </div>
@@ -446,201 +542,363 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
       {/* MODAL: INVITE USER */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
-              <h3 className="text-base font-semibold text-white">Пригласить сотрудника</h3>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: '20px',
+              padding: '28px',
+              width: '460px',
+              maxWidth: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+                Пригласить сотрудника
+              </h3>
               <button
+                type="button"
                 onClick={() => setShowInviteModal(false)}
-                className="text-neutral-400 hover:text-white text-sm"
+                style={{ border: 'none', background: 'transparent', fontSize: '18px', color: '#94A3B8', cursor: 'pointer' }}
               >
                 ✕
               </button>
             </div>
 
             {!inviteResult ? (
-              <form onSubmit={handleCreateInvite} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-400 mb-1.5">
+              <form onSubmit={handleCreateInvite} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
                     Email сотрудника
                   </label>
                   <input
                     type="email"
                     required
-                    placeholder="colleague@example.com"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                    placeholder="colleague@example.kz"
+                    style={{
+                      height: '42px',
+                      padding: '0 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '14px',
+                      outline: 'none',
+                    }}
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-neutral-400 mb-1.5">
-                    Роль в компании
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                    Назначаемая роль
                   </label>
                   <select
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as any)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 cursor-pointer"
+                    style={{
+                      height: '42px',
+                      padding: '0 12px',
+                      borderRadius: '10px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '14px',
+                      outline: 'none',
+                      background: '#FFFFFF',
+                    }}
                   >
-                    <option value="master">Мастер (только свои визиты и график)</option>
-                    <option value="admin">Управляющий (доступ ко всему филиалу)</option>
+                    <option value="master">Мастер (доступ только к своему графику и клиентам)</option>
+                    <option value="admin">Управляющий (полное управление филиалом и расписанием)</option>
                   </select>
                 </div>
 
-                <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 text-xs text-neutral-400">
-                  ⚠️ Для уже зарегистрированных пользователей ссылка привяжет роль без сброса пароля.
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                   <button
                     type="button"
                     onClick={() => setShowInviteModal(false)}
-                    className="px-4 py-2 text-xs font-medium text-neutral-400 hover:text-white rounded-xl bg-neutral-800 transition-colors"
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '10px',
+                      border: '1px solid #CBD5E1',
+                      background: '#FFFFFF',
+                      color: '#475569',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
                   >
                     Отмена
                   </button>
                   <button
                     type="submit"
                     disabled={inviteLoading}
-                    className="px-4 py-2 text-xs font-medium text-neutral-950 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 rounded-xl transition-colors shadow-lg shadow-amber-500/10"
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: '#2563EB',
+                      color: '#FFFFFF',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
                   >
-                    {inviteLoading ? 'Создание...' : 'Отправить приглашение'}
+                    {inviteLoading ? 'Генерация...' : 'Отправить приглашение'}
                   </button>
                 </div>
               </form>
             ) : (
-              <div className="space-y-4 py-2">
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs">
-                  ✓ Приглашение успешно сгенерировано!
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: '12px', padding: '14px', display: 'flex', alignItems: 'center', gap: '10px', color: '#065F46', fontSize: '13px' }}>
+                  <CheckCircle style={{ width: '18px', height: '18px', flexShrink: 0 }} />
+                  <span>Ссылка создана с безопасным SHA-256 хешированием.</span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-neutral-400 mb-1.5">
-                    Ссылка для активации:
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                    Ссылка для активации
                   </label>
-                  <div className="flex items-center gap-2">
+                  <div style={{ display: 'flex', gap: '8px' }}>
                     <input
                       type="text"
                       readOnly
-                      value={inviteResult.invite_url || `https://app.crm.com/accept-invite?token=${inviteResult.invite_token}`}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-300 font-mono"
+                      value={inviteResult.invite_url || ''}
+                      style={{
+                        flex: 1,
+                        height: '42px',
+                        padding: '0 12px',
+                        borderRadius: '10px',
+                        border: '1px solid #CBD5E1',
+                        fontSize: '13px',
+                        background: '#F8FAFC',
+                        color: '#0F172A',
+                      }}
                     />
                     <button
-                      onClick={() =>
-                        copyToClipboard(
-                          inviteResult.invite_url ||
-                            `https://app.crm.com/accept-invite?token=${inviteResult.invite_token}`
-                        )
-                      }
-                      className="p-2 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl hover:bg-amber-500/30 transition-colors shrink-0"
-                      title="Копировать"
+                      type="button"
+                      onClick={() => copyToClipboard(inviteResult.invite_url || '')}
+                      style={{
+                        padding: '0 16px',
+                        borderRadius: '10px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#0F172A',
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
                     >
-                      {inviteCopied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                      {inviteCopied ? <Check style={{ width: '16px', height: '16px', color: '#059669' }} /> : <Copy style={{ width: '16px', height: '16px' }} />}
+                      <span>{inviteCopied ? 'Скопировано' : 'Копировать'}</span>
                     </button>
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
-                  <button
-                    onClick={() => setShowInviteModal(false)}
-                    className="px-4 py-2 text-xs font-medium text-neutral-950 bg-amber-500 hover:bg-amber-400 rounded-xl transition-colors"
-                  >
-                    Готово
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowInviteModal(false)}
+                  style={{
+                    height: '42px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: '#2563EB',
+                    color: '#FFFFFF',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    marginTop: '8px',
+                  }}
+                >
+                  Готово
+                </button>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* MODAL: BRANCH ADD/EDIT */}
+      {/* MODAL: CREATE / EDIT BRANCH */}
       {showBranchModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
-              <h3 className="text-base font-semibold text-white">
-                {editingBranch ? 'Редактировать филиал' : 'Новый филиал'}
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: '20px',
+              padding: '28px',
+              width: '480px',
+              maxWidth: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+                {editingBranch ? 'Редактировать филиал' : 'Новый филиал сети'}
               </h3>
               <button
+                type="button"
                 onClick={() => setShowBranchModal(false)}
-                className="text-neutral-400 hover:text-white text-sm"
+                style={{ border: 'none', background: 'transparent', fontSize: '18px', color: '#94A3B8', cursor: 'pointer' }}
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveBranch} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-neutral-400 mb-1.5">
-                  Название филиала *
+            <form onSubmit={handleSaveBranch} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Название филиала
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Филиал Dostyk"
                   value={branchName}
                   onChange={(e) => setBranchName(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                  placeholder="Например: Barber House Астана (Достык)"
+                  style={{
+                    height: '42px',
+                    padding: '0 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '14px',
+                    outline: 'none',
+                  }}
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-neutral-400 mb-1.5">
-                  Адрес
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Фактический адрес
                 </label>
                 <input
                   type="text"
-                  placeholder="пр. Достык, 128"
                   value={branchAddress}
                   onChange={(e) => setBranchAddress(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                  placeholder="ул. Достык, 12, 1 этаж"
+                  style={{
+                    height: '42px',
+                    padding: '0 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '14px',
+                    outline: 'none',
+                  }}
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-neutral-400 mb-1.5">
-                  Номер телефона
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Контактный телефон
                 </label>
                 <input
                   type="text"
-                  placeholder="+7 701 555 12 34"
                   value={branchPhone}
                   onChange={(e) => setBranchPhone(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                  placeholder="+7 (701) 000-00-00"
+                  style={{
+                    height: '42px',
+                    padding: '0 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '14px',
+                    outline: 'none',
+                  }}
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-neutral-400 mb-1.5">
-                  Часовой пояс
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Часовой пояс филиала (IANA)
                 </label>
                 <select
                   value={branchTimezone}
                   onChange={(e) => setBranchTimezone(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 cursor-pointer"
+                  style={{
+                    height: '42px',
+                    padding: '0 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '14px',
+                    outline: 'none',
+                    background: '#FFFFFF',
+                  }}
                 >
-                  <option value="Asia/Almaty">Asia/Almaty (UTC+5)</option>
-                  <option value="Asia/Aqtau">Asia/Aqtau (UTC+5)</option>
-                  <option value="Europe/Moscow">Europe/Moscow (UTC+3)</option>
+                  <option value="Asia/Almaty">Asia/Almaty (UTC+5, Казахстан)</option>
+                  <option value="Europe/Berlin">Europe/Berlin (UTC+1 / UTC+2 DST, Германия)</option>
+                  <option value="America/New_York">America/New_York (UTC-5 / UTC-4 DST, США)</option>
+                  <option value="UTC">UTC (Универсальное скоординированное время)</option>
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                 <button
                   type="button"
                   onClick={() => setShowBranchModal(false)}
-                  className="px-4 py-2 text-xs font-medium text-neutral-400 hover:text-white rounded-xl bg-neutral-800 transition-colors"
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#475569',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
                 >
                   Отмена
                 </button>
                 <button
                   type="submit"
                   disabled={branchSaving}
-                  className="px-4 py-2 text-xs font-medium text-neutral-950 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 rounded-xl transition-colors shadow-lg shadow-amber-500/10"
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: '#2563EB',
+                    color: '#FFFFFF',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
                 >
-                  {branchSaving ? 'Сохранение...' : 'Сохранить'}
+                  {branchSaving ? 'Сохранение...' : 'Сохранить филиал'}
                 </button>
               </div>
             </form>

@@ -5,7 +5,9 @@ import {
   CalendarCheck,
   CreditCard,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Clock,
+  Info
 } from 'lucide-react';
 import { BusinessCrmApiClient, ReportsOverviewResponse } from '@crm/api-client';
 
@@ -33,7 +35,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
   // Date filters
   const todayStr = new Date().toISOString().split('T')[0];
   const [dateRangeType, setDateRangeType] = useState<'today' | 'week' | 'month' | 'custom'>('month');
-  
+
   const getInitialDates = () => {
     const d = new Date();
     const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
@@ -92,13 +94,13 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
 
   if (userRole === 'master') {
     return (
-      <div className="p-8 max-w-4xl mx-auto">
-        <div className="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-4">
-          <AlertCircle className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
+      <div style={{ padding: '32px', maxWidth: '800px', margin: '0 auto' }}>
+        <div style={{ padding: '24px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: '16px', display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+          <AlertCircle style={{ width: '24px', height: '24px', color: '#D97706', flexShrink: 0, marginTop: '2px' }} />
           <div>
-            <h3 className="text-lg font-medium text-white">Доступ ограничен</h3>
-            <p className="text-sm text-neutral-400 mt-1">
-              Просмотр общей финансовой аналитики и сводных отчетов филиала доступен только управляющим (admin) и владельцам бизнеса (owner).
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#92400E' }}>Доступ ограничен</h3>
+            <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#B45309' }}>
+              Просмотр общей финансовой аналитики и сводных отчетов доступен только управляющим (admin) и владельцам бизнеса (owner).
             </p>
           </div>
         </div>
@@ -111,51 +113,76 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px', boxSizing: 'border-box' }}>
       {/* Top Header & Range Selectors */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Отчёты и аналитика</h2>
-          <p className="text-sm text-neutral-400 mt-1">
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>
+            Отчёты и аналитика
+          </h2>
+          <p style={{ fontSize: '13px', color: '#64748B', margin: '4px 0 0' }}>
             Сводные операционные показатели и разграничение плановой стоимости и факт-оплат
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center bg-neutral-900 border border-neutral-800 rounded-xl p-1">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Preset Buttons */}
+          <div style={{ display: 'flex', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '3px', gap: '2px' }}>
             <button
+              type="button"
               onClick={() => setPresetRange('today')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                dateRangeType === 'today'
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: dateRangeType === 'today' ? 600 : 500,
+                borderRadius: '8px',
+                border: 'none',
+                background: dateRangeType === 'today' ? '#FFFFFF' : 'transparent',
+                color: dateRangeType === 'today' ? '#1D4ED8' : '#64748B',
+                boxShadow: dateRangeType === 'today' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                cursor: 'pointer',
+              }}
             >
               Сегодня
             </button>
             <button
+              type="button"
               onClick={() => setPresetRange('week')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                dateRangeType === 'week'
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: dateRangeType === 'week' ? 600 : 500,
+                borderRadius: '8px',
+                border: 'none',
+                background: dateRangeType === 'week' ? '#FFFFFF' : 'transparent',
+                color: dateRangeType === 'week' ? '#1D4ED8' : '#64748B',
+                boxShadow: dateRangeType === 'week' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                cursor: 'pointer',
+              }}
             >
               7 дней
             </button>
             <button
+              type="button"
               onClick={() => setPresetRange('month')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                dateRangeType === 'month'
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: dateRangeType === 'month' ? 600 : 500,
+                borderRadius: '8px',
+                border: 'none',
+                background: dateRangeType === 'month' ? '#FFFFFF' : 'transparent',
+                color: dateRangeType === 'month' ? '#1D4ED8' : '#64748B',
+                boxShadow: dateRangeType === 'month' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                cursor: 'pointer',
+              }}
             >
               Этот месяц
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-1.5">
+          {/* Date Picker Inputs */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '10px', padding: '4px 10px' }}>
             <input
               type="date"
               value={fromDate}
@@ -163,9 +190,9 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                 setDateRangeType('custom');
                 setFromDate(e.target.value);
               }}
-              className="bg-transparent text-xs text-white outline-none cursor-pointer"
+              style={{ border: 'none', outline: 'none', fontSize: '13px', color: '#0F172A', background: 'transparent', cursor: 'pointer' }}
             />
-            <span className="text-neutral-500 text-xs">—</span>
+            <span style={{ color: '#94A3B8', fontSize: '13px' }}>—</span>
             <input
               type="date"
               value={toDate}
@@ -173,165 +200,206 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                 setDateRangeType('custom');
                 setToDate(e.target.value);
               }}
-              className="bg-transparent text-xs text-white outline-none cursor-pointer"
+              style={{ border: 'none', outline: 'none', fontSize: '13px', color: '#0F172A', background: 'transparent', cursor: 'pointer' }}
             />
           </div>
 
+          {/* Refresh Button */}
           <button
+            type="button"
             onClick={fetchReports}
-            className="p-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded-xl transition-colors"
             title="Обновить отчет"
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#475569',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw style={{ width: '16px', height: '16px' }} />
           </button>
         </div>
       </div>
 
+      {/* Semantic Notification Banner */}
+      <div style={{ background: '#EFF6FF', border: '1px solid #DBEAFE', borderRadius: '12px', padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+        <Info style={{ width: '18px', height: '18px', color: '#2563EB', flexShrink: 0, marginTop: '2px' }} />
+        <div style={{ fontSize: '13px', color: '#1E40AF', lineHeight: '1.5' }}>
+          <b>Разграничение метрик:</b> Плановая стоимость отражает ожидаемую сумму всех активных броней в графике.
+          Стоимость завершённых визитов (Факт оказания) фиксирует факт предоставления услуг по закрытым записям.
+          Денежный эквайринг и кассовый учёт фактических оплат находятся на этапе подключения.
+        </div>
+      </div>
+
       {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 shrink-0" />
+        <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '12px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px', color: '#DC2626', fontSize: '14px' }}>
+          <AlertCircle style={{ width: '18px', height: '18px', flexShrink: 0 }} />
           <span>{error}</span>
         </div>
       )}
 
       {loading && !report ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-pulse">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-32 bg-neutral-900/60 rounded-2xl border border-neutral-800" />
+            <div key={i} style={{ height: '140px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', opacity: 0.6 }} />
           ))}
         </div>
       ) : report ? (
         <>
           {/* Key KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
             {/* 1. Total Bookings */}
-            <div className="bg-neutral-900/80 border border-neutral-800/80 rounded-2xl p-5 hover:border-neutral-700/80 transition-colors">
-              <div className="flex items-center justify-between text-neutral-400 mb-3">
-                <span className="text-xs font-medium uppercase tracking-wider">Всего записей</span>
-                <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
-                  <CalendarCheck className="w-4 h-4" />
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Всего записей
+                </span>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CalendarCheck style={{ width: '18px', height: '18px' }} />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-white">{report.total_bookings}</div>
-              <div className="flex items-center gap-3 text-xs text-neutral-400 mt-3 pt-3 border-t border-neutral-800/60">
-                <span className="text-emerald-400 font-medium">✓ {report.completed_bookings} завершено</span>
-                <span className="text-red-400 font-medium">✕ {report.cancelled_bookings} отменено</span>
+              <div style={{ fontSize: '32px', fontWeight: 800, color: '#0F172A', lineHeight: '1' }}>
+                {report.total_bookings}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
+                <span style={{ color: '#059669', fontWeight: 600 }}>✓ {report.completed_bookings} завершено</span>
+                <span style={{ color: '#DC2626', fontWeight: 600 }}>✕ {report.cancelled_bookings} отменено</span>
               </div>
             </div>
 
-            {/* 2. Actual Revenue */}
-            <div className="bg-neutral-900/80 border border-neutral-800/80 rounded-2xl p-5 hover:border-neutral-700/80 transition-colors">
-              <div className="flex items-center justify-between text-neutral-400 mb-3">
-                <span className="text-xs font-medium uppercase tracking-wider">Факт-выручка</span>
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
-                  <CreditCard className="w-4 h-4" />
+            {/* 2. Actual Revenue / Completed Visits Value */}
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <div>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Факт-выручка
+                  </span>
+                  <div style={{ fontSize: '11px', color: '#64748B' }}>Стоимость завершённых визитов</div>
+                </div>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#ECFDF5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CreditCard style={{ width: '18px', height: '18px' }} />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-emerald-400">
-                {formatCurrency(report.actual_revenue_minor || 0)}
+              <div style={{ fontSize: '30px', fontWeight: 800, color: '#059669', lineHeight: '1' }}>
+                {formatCurrency(report.completed_revenue_minor ?? report.actual_revenue_minor ?? 0)}
               </div>
-              <div className="text-xs text-neutral-400 mt-3 pt-3 border-t border-neutral-800/60">
-                Оплачено по завершенным визитам
+              <div style={{ fontSize: '11px', color: '#64748B', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
+                Оказанные услуги (кассовый приём оплат отключён)
               </div>
             </div>
 
             {/* 3. Planned Revenue */}
-            <div className="bg-neutral-900/80 border border-neutral-800/80 rounded-2xl p-5 hover:border-neutral-700/80 transition-colors">
-              <div className="flex items-center justify-between text-neutral-400 mb-3">
-                <span className="text-xs font-medium uppercase tracking-wider">Плановая стоимость</span>
-                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400">
-                  <TrendingUp className="w-4 h-4" />
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Плановая стоимость
+                </span>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#FFFBEB', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <TrendingUp style={{ width: '18px', height: '18px' }} />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-amber-300">
+              <div style={{ fontSize: '30px', fontWeight: 800, color: '#D97706', lineHeight: '1' }}>
                 {formatCurrency(report.planned_revenue_minor || 0)}
               </div>
-              <div className="text-xs text-neutral-400 mt-3 pt-3 border-t border-neutral-800/60">
-                Сумма всех активных записей
+              <div style={{ fontSize: '11px', color: '#64748B', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
+                Сумма всех активных записей в графике
               </div>
             </div>
 
-            {/* 4. New Customers & Workload */}
-            <div className="bg-neutral-900/80 border border-neutral-800/80 rounded-2xl p-5 hover:border-neutral-700/80 transition-colors">
-              <div className="flex items-center justify-between text-neutral-400 mb-3">
-                <span className="text-xs font-medium uppercase tracking-wider">Новые клиенты</span>
-                <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
-                  <Users className="w-4 h-4" />
+            {/* 4. Staff Utilization & Clients */}
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Выработка мастеров
+                </span>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#F5F3FF', color: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Users style={{ width: '18px', height: '18px' }} />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-purple-300">
-                +{report.new_customers_count || 0}
+              <div style={{ fontSize: '32px', fontWeight: 800, color: '#0F172A', lineHeight: '1' }}>
+                {report.new_customers_count}
               </div>
-              <div className="text-xs text-neutral-400 mt-3 pt-3 border-t border-neutral-800/60">
-                Занятость: {Math.round((report.occupied_minutes || 0) / 60)} ч. услуг
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#64748B', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
+                <Clock style={{ width: '14px', height: '14px' }} />
+                <span>{report.occupied_minutes || 0} мин занятого времени</span>
               </div>
             </div>
           </div>
 
-          {/* Revenue Clarity Notice */}
-          <div className="p-4 bg-neutral-900/40 border border-neutral-800 rounded-xl flex items-center justify-between text-xs text-neutral-400">
-            <span className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>
-                <strong>Разграничение метрик:</strong> Плановая стоимость отражает ожидаемую сумму броней в графике. Факт-выручка формируется исключительно после завершения визитов.
-              </span>
-            </span>
-            <span className="text-neutral-500 hidden sm:inline">
-              Часовой пояс: филиал (Asia/Almaty)
-            </span>
-          </div>
-
-          {/* Staff Performance Table */}
-          <div className="bg-neutral-900/80 border border-neutral-800/80 rounded-2xl overflow-hidden">
-            <div className="p-5 border-b border-neutral-800">
-              <h2 className="text-base font-semibold text-white">Выработка мастеров</h2>
-              <p className="text-xs text-neutral-400 mt-0.5">
-                Количество визитов и фактический доход по каждому специалисту
-              </p>
+          {/* Master Utilization & Performance Table */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
+                  Выработка специалистов и занятость
+                </h3>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                  Соотношение времени обслуживания к продолжительности рабочих смен филиала
+                </div>
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                 <thead>
-                  <tr className="bg-neutral-950/50 text-neutral-400 text-xs uppercase tracking-wider border-b border-neutral-800">
-                    <th className="py-3 px-5">Мастер</th>
-                    <th className="py-3 px-5">Записей</th>
-                    <th className="py-3 px-5">Факт-выручка</th>
-                    <th className="py-3 px-5">Загрузка</th>
+                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', color: '#64748B', fontWeight: 600 }}>
+                    <th style={{ padding: '12px 20px' }}>Специалист</th>
+                    <th style={{ padding: '12px 16px' }}>Записей</th>
+                    <th style={{ padding: '12px 16px' }}>Отработано (мин)</th>
+                    <th style={{ padding: '12px 16px' }}>Загрузка смены</th>
+                    <th style={{ padding: '12px 20px', textAlign: 'right' }}>Факт-выручка</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-800/50">
+                <tbody>
                   {report.staff_stats && report.staff_stats.length > 0 ? (
-                    report.staff_stats.map((st) => (
-                      <tr key={st.staff_id} className="hover:bg-neutral-800/30 transition-colors">
-                        <td className="py-3.5 px-5 font-medium text-white">
-                          {st.staff_name}
+                    report.staff_stats.map((s, idx) => (
+                      <tr key={s.staff_id || idx} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                        <td style={{ padding: '12px 20px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#2563EB', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '12px' }}>
+                              {(s.staff_name || 'СП').slice(0, 2).toUpperCase()}
+                            </div>
+                            <span style={{ fontWeight: 600, color: '#0F172A' }}>{s.staff_name}</span>
+                          </div>
                         </td>
-                        <td className="py-3.5 px-5 text-neutral-300">
-                          {st.bookings_count} визитов
+                        <td style={{ padding: '12px 16px', color: '#334155' }}>
+                          {s.bookings_count} шт.
                         </td>
-                        <td className="py-3.5 px-5 font-semibold text-emerald-400">
-                          {formatCurrency(st.revenue_minor)}
+                        <td style={{ padding: '12px 16px', color: '#334155' }}>
+                          {s.booked_minutes} мин
                         </td>
-                        <td className="py-3.5 px-5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-24 bg-neutral-800 rounded-full h-2 overflow-hidden">
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '100px', height: '6px', background: '#E2E8F0', borderRadius: '3px', overflow: 'hidden' }}>
                               <div
-                                className="bg-amber-500 h-2 rounded-full"
-                                style={{ width: `${Math.min(100, st.workload_pct || 0)}%` }}
+                                style={{
+                                  width: `${Math.min(100, Math.max(0, s.workload_pct || 0))}%`,
+                                  height: '100%',
+                                  background: (s.workload_pct || 0) > 80 ? '#D97706' : '#2563EB',
+                                  borderRadius: '3px',
+                                }}
                               />
                             </div>
-                            <span className="text-xs text-neutral-400 w-8">
-                              {st.workload_pct || 0}%
+                            <span style={{ fontWeight: 600, fontSize: '12px', color: '#0F172A' }}>
+                              {s.workload_pct || 0}%
                             </span>
                           </div>
+                        </td>
+                        <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: '#059669' }}>
+                          {formatCurrency(s.revenue_minor || 0)}
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={4} className="py-8 text-center text-neutral-500 text-xs">
-                        Нет данных о работе мастеров за выбранный период
+                      <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#94A3B8' }}>
+                        Нет данных о выработке специалистов за выбранный период
                       </td>
                     </tr>
                   )}

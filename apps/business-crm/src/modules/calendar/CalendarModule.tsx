@@ -3,42 +3,93 @@ import { CalendarBooking, CalendarStaff, CalendarBlockItem } from '../../types';
 import { BusinessCrmApiClient } from '@crm/api-client';
 
 export function localToUtcIso(dateStr: string, timeStr: string, timeZone: string = 'Asia/Almaty'): string {
-  try {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const [hour, min] = timeStr.split(':').map(Number);
-    const guessUtc = Date.UTC(year, month - 1, day, hour, min, 0);
-
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
-
-    const getParts = (d: Date): number => {
-      const parts = formatter.formatToParts(d);
-      const m: Record<string, string> = {};
-      for (const p of parts) m[p.type] = p.value;
-      let h = Number(m.hour);
-      if (h === 24) h = 0;
-      return Date.UTC(Number(m.year), Number(m.month) - 1, Number(m.day), h, Number(m.minute), Number(m.second));
-    };
-
-    const guessWall = getParts(new Date(guessUtc));
-    const diffMs = guessUtc - guessWall;
-    const targetUtcMs = guessUtc + diffMs;
-
-    const refinedWall = getParts(new Date(targetUtcMs));
-    const finalDiffMs = guessUtc - refinedWall;
-    return new Date(targetUtcMs + finalDiffMs).toISOString();
-  } catch (err) {
-    console.error('Timezone conversion error, falling back to UTC string', err);
-    return `${dateStr}T${timeStr}:00Z`;
+  if (!dateStr || !timeStr) {
+    throw new Error(`Missing dateStr or timeStr in localToUtcIso: dateStr='${dateStr}', timeStr='${timeStr}'`);
   }
+  const cleanTime = timeStr.length === 5 ? `${timeStr}:00` : timeStr;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, min, sec] = cleanTime.split(':').map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(min)) {
+    throw new Error(`Invalid numeric parts in localToUtcIso: dateStr='${dateStr}', timeStr='${timeStr}'`);
+  }
+
+  const targetWallMs = Date.UTC(year, month - 1, day, hour, min, sec || 0);
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false,
+  });
+
+  const getWallMs = (utcDate: Date): number => {
+    const parts = formatter.formatToParts(utcDate);
+    const m: Record<string, string> = {};
+    for (const p of parts) m[p.type] = p.value;
+    let h = Number(m.hour);
+    if (h === 24) h = 0;
+    return Date.UTC(Number(m.year), Number(m.month) - 1, Number(m.day), h, Number(m.minute), Number(m.second));
+  };
+
+  let guessUtcMs = targetWallMs;
+  let wallMs = getWallMs(new Date(guessUtcMs));
+  let diff = targetWallMs - wallMs;
+  guessUtcMs += diff;
+
+  wallMs = getWallMs(new Date(guessUtcMs));
+  diff = targetWallMs - wallMs;
+  guessUtcMs += diff;
+
+  return new Date(guessUtcMs).toISOString();
+}
+
+export function getLocalHourAndMinute(date: Date | string, timeZone: string): { hour: number; minute: number } {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(d);
+  let hour = 0;
+  let minute = 0;
+  for (const p of parts) {
+    if (p.type === 'hour') hour = parseInt(p.value, 10);
+    if (p.type === 'minute') minute = parseInt(p.value, 10);
+  }
+  if (hour === 24) hour = 0;
+  return { hour, minute };
+}
+
+export function formatTimeInZone(date: Date | string, timeZone: string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone,
+  });
+}
+
+export function getWeekDates(dateStr: string): string[] {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const dayOfWeek = targetDate.getUTCDay();
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(targetDate);
+  monday.setUTCDate(targetDate.getUTCDate() + diffToMonday);
+
+  const dates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const cur = new Date(monday);
+    cur.setUTCDate(monday.getUTCDate() + i);
+    dates.push(cur.toISOString().split('T')[0]);
+  }
+  return dates;
 }
 
 
@@ -76,6 +127,53 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   timezoneIana = 'Asia/Almaty',
 }) => {
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'list'>('day');
+  const [weekData, setWeekData] = useState<Record<string, CalendarBooking[]>>({});
+  const [isLoadingWeek, setIsLoadingWeek] = useState(false);
+
+  const weekDates = getWeekDates(currentDate);
+
+  const loadWeekBookings = React.useCallback(async (dates: string[]) => {
+    if (!branchId || !token || !tenantId) return;
+    setIsLoadingWeek(true);
+    try {
+      const results = await Promise.all(
+        dates.map(async (d) => {
+          try {
+            const cal = await api.getCalendar({ date: d, branch_id: branchId }, token, tenantId);
+            const mapped: CalendarBooking[] = (cal.bookings || []).map((b: any) => ({
+              id: b.id,
+              starts_at_utc: b.starts_at_utc,
+              service_ends_at_utc: b.service_ends_at_utc,
+              customer_name: b.customer_name || 'Клиент',
+              customer_phone: b.customer_phone || '',
+              staff_id: b.staff_id,
+              status: b.status,
+              amount_minor: b.amount_minor,
+              public_ref: b.public_ref,
+              services: b.services || ['Визит'],
+            }));
+            return { date: d, bookings: mapped };
+          } catch {
+            return { date: d, bookings: [] };
+          }
+        })
+      );
+      const map: Record<string, CalendarBooking[]> = {};
+      for (const r of results) {
+        map[r.date] = r.bookings;
+      }
+      setWeekData(map);
+    } finally {
+      setIsLoadingWeek(false);
+    }
+  }, [api, branchId, token, tenantId]);
+
+  React.useEffect(() => {
+    if (viewMode === 'week') {
+      const dates = getWeekDates(currentDate);
+      loadWeekBookings(dates);
+    }
+  }, [viewMode, currentDate, branchId, loadWeekBookings]);
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('all');
   const [selectedBooking, setSelectedBooking] = useState<CalendarBooking | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -636,10 +734,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   {staffBookings.map(b => {
                     const startDate = new Date(b.starts_at_utc);
                     const endDate = new Date(b.service_ends_at_utc);
-                    const startH = startDate.getUTCHours() + 5; // local UTC+5
-                    const startM = startDate.getUTCMinutes();
-                    const endH = endDate.getUTCHours() + 5;
-                    const endM = endDate.getUTCMinutes();
+                    const { hour: startH, minute: startM } = getLocalHourAndMinute(startDate, timezoneIana);
+                    const { hour: endH, minute: endM } = getLocalHourAndMinute(endDate, timezoneIana);
 
                     const top = (startH - 9) * 80 + (startM / 60) * 80 + 54;
                     const durationM = (endH - startH) * 60 + (endM - startM);
@@ -675,7 +771,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span style={{ fontSize: '12px', fontWeight: 700, color: '#1E293B' }}>
-                            {startDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Almaty' })}
+                            {startDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: timezoneIana })}
                           </span>
                           <span
                             style={{
@@ -705,55 +801,149 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           </div>
         )}
 
-        {/* 2. Week View */}
+        {/* 2. Real Week View */}
         {viewMode === 'week' && (
-          <div style={{ flex: 1, padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>
-              Недельный обзор расписания команды
-            </h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '12px' }}>
-              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dayName, idx) => (
-                <div
-                  key={dayName}
-                  style={{
-                    background: '#FFFFFF',
-                    border: '1px solid #E2E8F0',
-                    borderRadius: '12px',
-                    padding: '12px',
-                    minHeight: '260px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '6px' }}>
-                    {dayName}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748B' }}>
-                    Записей: {idx === 0 ? bookings.length : 0}
-                  </div>
-                  {idx === 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {bookings.map(b => (
-                        <div
-                          key={b.id}
-                          onClick={() => setSelectedBooking(b)}
-                          style={{
-                            padding: '6px',
-                            background: '#EFF6FF',
-                            borderRadius: '6px',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <b>{b.customer_name}</b> ({b.services[0] || 'Визит'})
-                        </div>
-                      ))}
-                    </div>
-                  )}
+          <div style={{ flex: 1, padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#0F172A' }}>
+                  Недельный обзор расписания ({weekDates[0]} – {weekDates[6]})
+                </h2>
+                <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>
+                  Часовой пояс филиала: {timezoneIana}
                 </div>
-              ))}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prevMon = new Date(weekDates[0]);
+                    prevMon.setDate(prevMon.getDate() - 7);
+                    onDateChange(prevMon.toISOString().split('T')[0]);
+                  }}
+                  style={{ padding: '6px 14px', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                >
+                  ← Предыдущая неделя
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextMon = new Date(weekDates[0]);
+                    nextMon.setDate(nextMon.getDate() + 7);
+                    onDateChange(nextMon.toISOString().split('T')[0]);
+                  }}
+                  style={{ padding: '6px 14px', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                >
+                  Следующая неделя →
+                </button>
+              </div>
             </div>
+
+            {isLoadingWeek ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#64748B', fontSize: '14px' }}>
+                Загрузка недельного расписания команды...
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+                {weekDates.map((dateStr, idx) => {
+                  const dayBookings = (weekData[dateStr] || []).filter(b => {
+                    if (selectedStaffFilter === 'all') return true;
+                    return b.staff_id === selectedStaffFilter;
+                  });
+                  const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                  const [y, m, d] = dateStr.split('-').map(Number);
+                  const isCurrent = dateStr === currentDate;
+                  const isToday = dateStr === new Date().toISOString().split('T')[0];
+
+                  return (
+                    <div
+                      key={dateStr}
+                      data-date={dateStr}
+                      style={{
+                        background: isCurrent ? '#F8FAFC' : '#FFFFFF',
+                        border: isCurrent ? '2px solid #2563EB' : '1px solid #E2E8F0',
+                        borderRadius: '12px',
+                        padding: '12px',
+                        minHeight: '320px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                      }}
+                    >
+                      <div
+                        onClick={() => onDateChange(dateStr)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          borderBottom: '1px solid #F1F5F9',
+                          paddingBottom: '8px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontWeight: 700, fontSize: '14px', color: '#0F172A' }}>{dayNames[idx]}</span>
+                          <span style={{ fontSize: '12px', color: '#64748B' }}>{d}</span>
+                        </div>
+                        {isToday && (
+                          <span style={{ fontSize: '10px', fontWeight: 700, background: '#EFF6FF', color: '#2563EB', padding: '2px 6px', borderRadius: '4px' }}>
+                            Сегодня
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: dayBookings.length > 0 ? '#2563EB' : '#94A3B8' }}>
+                        Записей: {dayBookings.length}
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1 }}>
+                        {dayBookings.map(b => {
+                          const badge = getStatusBadge(b.status);
+                          const startTime = formatTimeInZone(b.starts_at_utc, timezoneIana);
+                          const endTime = formatTimeInZone(b.service_ends_at_utc, timezoneIana);
+                          const staff = staffList.find(s => s.id === b.staff_id);
+
+                          return (
+                            <div
+                              key={b.id}
+                              data-booking-id={b.id}
+                              data-public-ref={b.public_ref}
+                              onClick={() => setSelectedBooking(b)}
+                              style={{
+                                padding: '8px',
+                                background: '#FFFFFF',
+                                border: '1px solid #CBD5E1',
+                                borderLeft: `3px solid ${staff?.color || '#2563EB'}`,
+                                borderRadius: '8px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                cursor: 'pointer',
+                                transition: 'box-shadow 0.15s',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                                <span style={{ fontWeight: 700, color: '#0F172A' }}>{startTime}–{endTime}</span>
+                                <span style={{ fontSize: '9px', fontWeight: 600, padding: '1px 4px', borderRadius: '3px', background: badge.bg, color: badge.text }}>
+                                  {badge.label}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {b.customer_name}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {b.services[0] || 'Визит'} · {staff?.name || 'Мастер'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -792,7 +982,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       >
                         <td style={{ padding: '12px', fontWeight: 600 }}>{b.public_ref}</td>
                         <td style={{ padding: '12px' }}>
-                          {new Date(b.starts_at_utc).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Almaty' })}
+                          {new Date(b.starts_at_utc).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: timezoneIana })}
                         </td>
                         <td style={{ padding: '12px', fontWeight: 600 }}>{b.customer_name}</td>
                         <td style={{ padding: '12px' }}>{b.customer_phone}</td>

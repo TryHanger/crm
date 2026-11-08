@@ -168,4 +168,46 @@ test.describe('CRM Full Business Modules & Workflows', () => {
     await page.screenshot({ path: 'docs/screenshots/crm-14-settings-company.png', fullPage: true });
   });
 
+
+  test('CRM Calendar: Week View Grid, 7 Days Multi-Day Display & Navigation', async ({ page }) => {
+    // Navigate to calendar
+    await page.click('nav a:has-text("Календарь"), aside button:has-text("Календарь")');
+    await expect(page.locator('h1')).toContainText('Календарь записей');
+
+    // Switch view to "Неделя"
+    await page.click('button:has-text("Неделя")');
+    
+    // Verify week navigation is present
+    await expect(page.locator('button:has-text("Предыдущая неделя")')).toBeVisible();
+    await expect(page.locator('button:has-text("Следующая неделя")')).toBeVisible();
+
+    // Verify 7 day columns exist (Пн, Вт, Ср, Чт, Пт, Сб, Вс)
+    const dayHeaders = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    for (const dh of dayHeaders) {
+      await expect(page.locator(`text=${dh}`).first()).toBeVisible();
+    }
+
+    // Capture week view screenshot
+    await page.screenshot({ path: 'docs/screenshots/crm-15-calendar-week-view.png', fullPage: true });
+
+    // Click next week and verify
+    await page.click('button:has-text("Следующая неделя")');
+    // Click prev week to return
+    await page.click('button:has-text("Предыдущая неделя")');
+  });
+
+  test('CRM Online Booking: QR Code Verification & Responsive Rendering', async ({ page }) => {
+    // Navigate to online booking
+    await page.click('nav a:has-text("Онлайн-запись"), aside button:has-text("Онлайн-запись")');
+    await page.click('button:has-text("Публикация и QR-код")');
+    
+    // Verify QR code image is rendered with a real data:image/png;base64 URL
+    const qrImage = page.locator('img[alt*="QR"]').first();
+    await expect(qrImage).toBeVisible({ timeout: 10000 });
+    const qrSrc = await qrImage.getAttribute('src');
+    expect(qrSrc).toBeTruthy();
+    expect(qrSrc?.startsWith('data:image/png;base64,')).toBe(true);
+    
+    await page.screenshot({ path: 'docs/screenshots/crm-16-booking-qr-code.png' });
+  });
 });
