@@ -97,6 +97,7 @@ async def test_parallel_booking_concurrency_race():
         async with factory() as db:
             await set_tenant_context(db, tenant_id)
             try:
+                _, prc, _ = await BookingEngine.calculate_quote_for_staff(db, tenant_id, branch_id, staff_id, service_ids)
                 booking, token, raw_tok = await BookingEngine.create_booking(
                     db=db,
                     tenant_id=tenant_id,
@@ -106,7 +107,8 @@ async def test_parallel_booking_concurrency_race():
                     starts_at_utc=target_start,
                     customer_name=client_name,
                     customer_phone_e164=client_phone,
-                    source="public"
+                    source="public",
+                    expected_price_minor=prc
                 )
                 return "SUCCESS", booking.id
             except BookingEngineError as e:
@@ -208,6 +210,7 @@ async def test_reschedule_and_cancel_lifecycle(db_session: AsyncSession):
     slot1 = datetime.datetime.combine(target_day, datetime.time(11, 0), tzinfo=datetime.timezone.utc)
 
     # 1. Create Booking
+    _, prc, _ = await BookingEngine.calculate_quote_for_staff(db_session, tenant.id, branch.id, staff.id, [service.id])
     booking, token, raw_tok = await BookingEngine.create_booking(
         db=db_session,
         tenant_id=tenant.id,
@@ -217,7 +220,8 @@ async def test_reschedule_and_cancel_lifecycle(db_session: AsyncSession):
         starts_at_utc=slot1,
         customer_name="Жизненный Цикл",
         customer_phone_e164="+77028889900",
-        source="public"
+        source="public",
+        expected_price_minor=prc
     )
     assert booking.status == "confirmed"
     assert booking.version == 1

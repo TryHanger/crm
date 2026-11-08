@@ -134,7 +134,7 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
           Запись подтверждена!
         </h1>
         <p style={{ margin: 0, fontSize: '16px', color: '#64748B' }}>
-          Мы ждем вас в назначенное время. Ссылка на управление визитом отправлена на указанный телефон.
+          Мы ждем вас в назначенное время. Сохраните ссылку для управления визитом: вы сможете перенести или отменить запись в любое время.
         </p>
       </div>
 
@@ -162,6 +162,9 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
             Номер визита
           </span>
           <span
+            data-public-ref={booking.public_ref}
+            data-booking-id={booking.booking_id}
+            data-management-token={booking.management_token}
             style={{
               fontSize: '18px',
               fontWeight: 700,
@@ -301,6 +304,28 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
             <line x1="3" y1="10" x2="21" y2="10" />
           </svg>
           {calDownloaded ? 'Календарь скачан (.ics)' : 'Добавить в календарь'}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            const url = `${window.location.origin}/manage/${booking.management_token}`;
+            navigator.clipboard?.writeText(url);
+            alert('Ссылка на управление записью скопирована!');
+          }}
+          style={{
+            minHeight: '48px',
+            padding: '0 18px',
+            borderRadius: '12px',
+            border: '1px solid #CBD5E1',
+            background: '#F8FAFC',
+            color: '#0F172A',
+            fontSize: '15px',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Скопировать ссылку управления визитом
         </button>
 
         <button

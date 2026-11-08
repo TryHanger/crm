@@ -68,7 +68,7 @@ async def test_public_booking_flow_and_management():
         # 4. Search Availability
         import random
         today = datetime.datetime.now(datetime.timezone.utc).date()
-        offset_day = random.randint(10, 35)
+        offset_day = random.randint(2, 10)
         search_req = {
             "branch_id": branch_id,
             "service_ids": [service_id],

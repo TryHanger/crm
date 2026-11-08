@@ -54,10 +54,10 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
     ctaLabel = selectedStaff ? 'Выбрать время' : 'Выбрать специалиста';
     canProceed = selectedServices.length > 0;
   } else if (currentStep === 'staff') {
-    ctaLabel = 'Выбрать дату и время';
+    ctaLabel = selectedServices.length > 0 ? 'Выбрать дату и время' : 'Выбрать услуги';
     canProceed = selectedStaff !== null;
   } else if (currentStep === 'datetime') {
-    ctaLabel = 'Указать контакты';
+    ctaLabel = selectedServices.length > 0 ? 'Указать контакты' : 'Выбрать услуги';
     canProceed = selectedSlot !== null;
   } else if (currentStep === 'confirm') {
     ctaLabel = 'Подтвердить запись';

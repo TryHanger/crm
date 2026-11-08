@@ -240,15 +240,26 @@ async def test_idempotent_replay_preserves_valid_management_link():
         target_day = today + datetime.timedelta(days=10)
         while target_day.isoweekday() not in (1, 2, 3, 4, 5):
             target_day += datetime.timedelta(days=1)
-        # 16:00 Almaty (11:00 UTC) - outside 14:00-15:00 break
-        slot_utc = datetime.datetime.combine(target_day, datetime.time(11, 0), tzinfo=datetime.timezone.utc)
-        idem_key = f"key-replay-{uuid.uuid4()}"
 
-        payload = {
+        slots_resp = await client.post("/api/v1/public/availability/search", json={
             "branch_id": b_id,
             "staff_id": staff_id,
             "service_ids": [s_id],
-            "starts_at_utc": slot_utc.isoformat(),
+            "from_date": target_day.isoformat(),
+            "to_date": target_day.isoformat()
+        }, headers=headers)
+        slots = slots_resp.json().get("slots", [])
+        assert len(slots) > 0
+        slot_iso = slots[0]["starts_at_utc"]
+        quote_id = slots[0]["quote_id"]
+        idem_key = f"key-replay-{uuid.uuid4()}"
+
+        payload = {
+            "quote_id": quote_id,
+            "branch_id": b_id,
+            "staff_id": staff_id,
+            "service_ids": [s_id],
+            "starts_at_utc": slot_iso,
             "customer_name": "Клиент Повтора",
             "customer_phone": "+77078887766"
         }
@@ -400,15 +411,28 @@ async def test_idempotency_key_reuse_rejection_on_payload_mismatch():
         target_day = today + datetime.timedelta(days=18)
         while target_day.isoweekday() not in (1, 2, 3, 4, 5):
             target_day += datetime.timedelta(days=1)
-        slot1_utc = datetime.datetime.combine(target_day, datetime.time(11, 0), tzinfo=datetime.timezone.utc)
-        slot2_utc = datetime.datetime.combine(target_day, datetime.time(12, 0), tzinfo=datetime.timezone.utc)
-        idem_key = f"key-test-mismatch-{uuid.uuid4()}"
 
-        payload1 = {
+        slots_resp = await client.post("/api/v1/public/availability/search", json={
             "branch_id": b_id,
             "staff_id": staff_id,
             "service_ids": [s_id],
-            "starts_at_utc": slot1_utc.isoformat(),
+            "from_date": target_day.isoformat(),
+            "to_date": target_day.isoformat()
+        }, headers=headers)
+        slots = slots_resp.json().get("slots", [])
+        assert len(slots) >= 2
+        slot1_iso = slots[0]["starts_at_utc"]
+        quote1_id = slots[0]["quote_id"]
+        slot2_iso = slots[1]["starts_at_utc"]
+        quote2_id = slots[1]["quote_id"]
+        idem_key = f"key-test-mismatch-{uuid.uuid4()}"
+
+        payload1 = {
+            "quote_id": quote1_id,
+            "branch_id": b_id,
+            "staff_id": staff_id,
+            "service_ids": [s_id],
+            "starts_at_utc": slot1_iso,
             "customer_name": "Идемпотентный Клиент",
             "customer_phone": "+77081112233"
         }
@@ -423,7 +447,7 @@ async def test_idempotency_key_reuse_rejection_on_payload_mismatch():
         assert resp2.json()["public_ref"] == resp1.json()["public_ref"]
 
         # Request 3: different payload (different slot time!) with same key -> 409 IDEMPOTENCY_KEY_REUSED
-        payload3 = {**payload1, "starts_at_utc": slot2_utc.isoformat()}
+        payload3 = {**payload1, "quote_id": quote2_id, "starts_at_utc": slot2_iso}
         resp3 = await client.post("/api/v1/public/bookings", json=payload3, headers={**headers, "Idempotency-Key": idem_key})
         assert resp3.status_code == 409
         err = resp3.json()
@@ -618,3 +642,98 @@ async def test_quote_strict_binding_and_search_limits():
         }, headers=headers)
         assert mismatch_resp.status_code == 409
         assert "QUOTE_MISMATCH" in mismatch_resp.text
+
+
+@pytest.mark.asyncio
+async def test_tenant_specific_public_ref_prefixes():
+    """Validates that public booking reference prefix is tenant-specific (BH- for Barber House, MC- for Modern Cut)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        target_day = today + datetime.timedelta(days=2)
+
+        # 1. Barber House
+        bh_headers = {"Host": "barberhouse.book.example.kz"}
+        bh_branches = (await client.get("/api/v1/public/branches", headers=bh_headers)).json()
+        bh_b_id = bh_branches[0]["id"]
+        bh_services = (await client.get("/api/v1/public/services", headers=bh_headers)).json()
+        bh_s_id = bh_services[0]["id"]
+
+        bh_slots = (await client.post("/api/v1/public/availability/search", json={
+            "branch_id": bh_b_id,
+            "service_ids": [bh_s_id],
+            "from_date": target_day.isoformat(),
+            "to_date": (target_day + datetime.timedelta(days=4)).isoformat()
+        }, headers=bh_headers)).json().get("slots", [])
+        assert len(bh_slots) > 0
+
+        bh_resp = await client.post("/api/v1/public/bookings", json={
+            "quote_id": bh_slots[0]["quote_id"],
+            "branch_id": bh_b_id,
+            "staff_id": bh_slots[0]["staff_id"],
+            "service_ids": [bh_s_id],
+            "starts_at_utc": bh_slots[0]["starts_at_utc"],
+            "customer_name": "Барбер Клиент",
+            "customer_phone": "+77011119911"
+        }, headers=bh_headers)
+        assert bh_resp.status_code == 201
+        assert bh_resp.json()["public_ref"].startswith("BH-")
+
+        # 2. Modern Cut
+        mc_headers = {"Host": "moderncut.book.example.kz"}
+        mc_branches = (await client.get("/api/v1/public/branches", headers=mc_headers)).json()
+        mc_b_id = mc_branches[0]["id"]
+        mc_services = (await client.get("/api/v1/public/services", headers=mc_headers)).json()
+        mc_s_id = mc_services[0]["id"]
+
+        mc_slots = (await client.post("/api/v1/public/availability/search", json={
+            "branch_id": mc_b_id,
+            "service_ids": [mc_s_id],
+            "from_date": target_day.isoformat(),
+            "to_date": (target_day + datetime.timedelta(days=4)).isoformat()
+        }, headers=mc_headers)).json().get("slots", [])
+        assert len(mc_slots) > 0
+
+        mc_resp = await client.post("/api/v1/public/bookings", json={
+            "quote_id": mc_slots[0]["quote_id"],
+            "branch_id": mc_b_id,
+            "staff_id": mc_slots[0]["staff_id"],
+            "service_ids": [mc_s_id],
+            "starts_at_utc": mc_slots[0]["starts_at_utc"],
+            "customer_name": "Модерн Клиент",
+            "customer_phone": "+77022229922"
+        }, headers=mc_headers)
+        assert mc_resp.status_code == 201
+        assert mc_resp.json()["public_ref"].startswith("MC-")
+
+
+@pytest.mark.asyncio
+async def test_public_booking_requires_quote_or_price_ack():
+    """Validates that public bookings require authoritative quote or explicit expected price acknowledgement."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        headers = {"Host": "barberhouse.book.example.kz"}
+        branches = (await client.get("/api/v1/public/branches", headers=headers)).json()
+        b_id = branches[0]["id"]
+        services = (await client.get("/api/v1/public/services", headers=headers)).json()
+        s_id = services[0]["id"]
+        staff_list = (await client.get(f"/api/v1/public/staff?branch_id={b_id}&service_ids={s_id}", headers=headers)).json()
+        staff_id = staff_list[0]["id"]
+
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        target_day = today + datetime.timedelta(days=7)
+        while target_day.isoweekday() not in (1, 2, 3, 4, 5):
+            target_day += datetime.timedelta(days=1)
+        slot_utc = datetime.datetime.combine(target_day, datetime.time(11, 0), tzinfo=datetime.timezone.utc)
+
+        # Attempt public booking without quote_id and without expected_price_minor -> 400 QUOTE_REQUIRED
+        resp_no_quote = await client.post("/api/v1/public/bookings", json={
+            "branch_id": b_id,
+            "staff_id": staff_id,
+            "service_ids": [s_id],
+            "starts_at_utc": slot_utc.isoformat(),
+            "customer_name": "Тест Без Котировки",
+            "customer_phone": "+77019991122"
+        }, headers=headers)
+        assert resp_no_quote.status_code == 400
+        assert "QUOTE_REQUIRED" in resp_no_quote.text

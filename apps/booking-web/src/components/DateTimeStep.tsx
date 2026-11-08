@@ -40,22 +40,51 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
     return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Almaty' });
   };
 
-  // Group slots into Morning, Afternoon, Evening based on local hour
-  const morningSlots: SlotResponse[] = [];
-  const afternoonSlots: SlotResponse[] = [];
-  const eveningSlots: SlotResponse[] = [];
+  interface GroupedTimeSlot {
+    timeKey: string;
+    startsAtUtc: string;
+    minPriceMinor: number;
+    maxPriceMinor: number;
+    bestSlot: SlotResponse;
+    allSlots: SlotResponse[];
+  }
 
+  // Deduplicate slots by local time (HH:MM)
+  const timeMap = new Map<string, SlotResponse[]>();
   availableSlots.forEach(s => {
-    const d = new Date(s.starts_at_utc);
-    // Almaty is UTC+5 (or use local getHours if converted)
-    const hour = (d.getUTCHours() + 5) % 24;
-    if (hour < 12) {
-      morningSlots.push(s);
-    } else if (hour < 17) {
-      afternoonSlots.push(s);
-    } else {
-      eveningSlots.push(s);
+    const timeKey = formatSlotTime(s.starts_at_utc);
+    if (!timeMap.has(timeKey)) {
+      timeMap.set(timeKey, []);
     }
+    timeMap.get(timeKey)!.push(s);
+  });
+
+  const groupedAll: GroupedTimeSlot[] = [];
+  timeMap.forEach((list, timeKey) => {
+    list.sort((a, b) => a.price_minor - b.price_minor);
+    groupedAll.push({
+      timeKey,
+      startsAtUtc: list[0].starts_at_utc,
+      minPriceMinor: list[0].price_minor,
+      maxPriceMinor: list[list.length - 1].price_minor,
+      bestSlot: list[0],
+      allSlots: list,
+    });
+  });
+
+  groupedAll.sort((a, b) => new Date(a.startsAtUtc).getTime() - new Date(b.startsAtUtc).getTime());
+
+  const morningSlots = groupedAll.filter(g => {
+    const hour = parseInt(g.timeKey.split(':')[0], 10);
+    return hour < 12;
+  });
+  const afternoonSlots = groupedAll.filter(g => {
+    const hour = parseInt(g.timeKey.split(':')[0], 10);
+    return hour >= 12 && hour < 17;
+  });
+  const eveningSlots = groupedAll.filter(g => {
+    const hour = parseInt(g.timeKey.split(':')[0], 10);
+    return hour >= 17;
   });
 
   return (
@@ -86,6 +115,7 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
             return (
               <button
                 key={d.dateStr}
+                data-date={d.dateStr}
                 type="button"
                 onClick={() => onSelectDate(d.dateStr)}
                 style={{
@@ -199,107 +229,96 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* Morning */}
-            {morningSlots.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' }}>
-                  Утро (до 12:00)
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '10px' }}>
-                  {morningSlots.map(s => {
-                    const isSelected = selectedSlot?.quote_id === s.quote_id;
-                    const timeLabel = formatSlotTime(s.starts_at_utc);
-                    return (
-                      <button
-                        key={s.quote_id}
-                        type="button"
-                        onClick={() => onSelectSlot(s)}
-                        style={{
-                          height: '46px',
-                          borderRadius: '10px',
-                          border: `1px solid ${isSelected ? accentColor : '#CBD5E1'}`,
-                          background: isSelected ? accentColor : '#FFFFFF',
-                          color: isSelected ? '#FFFFFF' : '#0F172A',
-                          fontSize: '16px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        {timeLabel}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {/* Slot Groups: Morning, Afternoon, Evening */}
+            {[
+              { title: 'Утро (до 12:00)', slots: morningSlots },
+              { title: 'День (12:00 - 17:00)', slots: afternoonSlots },
+              { title: 'Вечер (после 17:00)', slots: eveningSlots },
+            ].map(sec => {
+              if (sec.slots.length === 0) return null;
+              return (
+                <div key={sec.title} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' }}>
+                    {sec.title}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '10px' }}>
+                    {sec.slots.map(g => {
+                      const isSelected = selectedSlot && formatSlotTime(selectedSlot.starts_at_utc) === g.timeKey;
+                      const hasMultiple = g.allSlots.length > 1;
+                      const priceLabel = hasMultiple && g.minPriceMinor !== g.maxPriceMinor
+                        ? `от ${(g.minPriceMinor / 100).toLocaleString('ru-RU')} ₸`
+                        : `${(g.minPriceMinor / 100).toLocaleString('ru-RU')} ₸`;
 
-            {/* Afternoon */}
-            {afternoonSlots.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' }}>
-                  День (12:00 - 17:00)
+                      return (
+                        <button
+                          key={g.timeKey}
+                          type="button"
+                          onClick={() => {
+                            // If currently selected slot is one of the masters for this time, retain it; otherwise pick bestSlot
+                            const activeInGroup = g.allSlots.find(s => s.quote_id === selectedSlot?.quote_id);
+                            onSelectSlot(activeInGroup || g.bestSlot);
+                          }}
+                          style={{
+                            minHeight: '48px',
+                            padding: '6px 8px',
+                            borderRadius: '10px',
+                            border: `1px solid ${isSelected ? accentColor : '#CBD5E1'}`,
+                            background: isSelected ? accentColor : '#FFFFFF',
+                            color: isSelected ? '#FFFFFF' : '#0F172A',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '2px',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <span style={{ fontSize: '16px', fontWeight: 700, lineHeight: 1 }}>{g.timeKey}</span>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 500,
+                              color: isSelected ? 'rgba(255,255,255,0.9)' : '#64748B',
+                              lineHeight: 1,
+                            }}
+                          >
+                            {priceLabel}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '10px' }}>
-                  {afternoonSlots.map(s => {
-                    const isSelected = selectedSlot?.quote_id === s.quote_id;
-                    const timeLabel = formatSlotTime(s.starts_at_utc);
-                    return (
-                      <button
-                        key={s.quote_id}
-                        type="button"
-                        onClick={() => onSelectSlot(s)}
-                        style={{
-                          height: '46px',
-                          borderRadius: '10px',
-                          border: `1px solid ${isSelected ? accentColor : '#CBD5E1'}`,
-                          background: isSelected ? accentColor : '#FFFFFF',
-                          color: isSelected ? '#FFFFFF' : '#0F172A',
-                          fontSize: '16px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        {timeLabel}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+              );
+            })}
 
-            {/* Evening */}
-            {eveningSlots.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' }}>
-                  Вечер (после 17:00)
+            {/* Selected slot master confirmation badge */}
+            {selectedSlot && (
+              <div
+                style={{
+                  marginTop: '8px',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  background: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                  color: '#166534',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                }}
+              >
+                <div>
+                  Выбран слот на <strong>{formatSlotTime(selectedSlot.starts_at_utc)}</strong>
+                  {selectedSlot.staff_name && (
+                    <span> · Мастер: <strong>{selectedSlot.staff_name}</strong></span>
+                  )}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '10px' }}>
-                  {eveningSlots.map(s => {
-                    const isSelected = selectedSlot?.quote_id === s.quote_id;
-                    const timeLabel = formatSlotTime(s.starts_at_utc);
-                    return (
-                      <button
-                        key={s.quote_id}
-                        type="button"
-                        onClick={() => onSelectSlot(s)}
-                        style={{
-                          height: '46px',
-                          borderRadius: '10px',
-                          border: `1px solid ${isSelected ? accentColor : '#CBD5E1'}`,
-                          background: isSelected ? accentColor : '#FFFFFF',
-                          color: isSelected ? '#FFFFFF' : '#0F172A',
-                          fontSize: '16px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        {timeLabel}
-                      </button>
-                    );
-                  })}
+                <div style={{ fontWeight: 700 }}>
+                  Итоговая стоимость: {(selectedSlot.price_minor / 100).toLocaleString('ru-RU')} ₸
                 </div>
               </div>
             )}

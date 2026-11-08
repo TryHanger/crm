@@ -589,7 +589,29 @@ class BookingEngine:
             db, tenant_id, branch_id, staff_id, service_ids
         )
 
+        # 3. Comprehensive Authoritative Validation (past slot, min advance, shifts, breaks)
+        branch, staff, policy = await cls.validate_slot_and_policies(
+            db=db,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            staff_id=staff_id,
+            service_ids=service_ids,
+            starts_at_utc=starts_at_utc,
+            duration_minutes=duration_mins,
+            is_client=(source == "public")
+        )
+
+        ends_at_utc = starts_at_utc + datetime.timedelta(minutes=duration_mins)
+
+        # 4. Authoritative Quote Binding (mandatory for public booking)
         now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if source == "public" and not quote_id and expected_price_minor is None:
+            raise BookingEngineError(
+                "QUOTE_REQUIRED",
+                "Authoritative booking quote (quote_id) or price confirmation (expected_price_minor) is required for public bookings",
+                status_code=400
+            )
+
         if quote_id:
             stmt_q = select(BookingQuote).where(
                 BookingQuote.id == quote_id,
@@ -631,6 +653,15 @@ class BookingEngine:
                 )
             quote.used_at = now_utc
 
+            # Clean up old expired quotes (> 1h)
+            one_hour_ago = now_utc - datetime.timedelta(hours=1)
+            await db.execute(
+                delete(BookingQuote).where(
+                    BookingQuote.tenant_id == tenant_id,
+                    BookingQuote.expires_at < one_hour_ago
+                )
+            )
+
         if expected_price_minor is not None and expected_price_minor != actual_price_minor:
             raise BookingEngineError(
                 "QUOTE_CHANGED",
@@ -638,20 +669,6 @@ class BookingEngine:
                 status_code=409,
                 details={"new_price_minor": actual_price_minor, "duration_minutes": duration_mins}
             )
-
-        # 3. Comprehensive Authoritative Validation
-        branch, staff, policy = await cls.validate_slot_and_policies(
-            db=db,
-            tenant_id=tenant_id,
-            branch_id=branch_id,
-            staff_id=staff_id,
-            service_ids=service_ids,
-            starts_at_utc=starts_at_utc,
-            duration_minutes=duration_mins,
-            is_client=(source == "public")
-        )
-
-        ends_at_utc = starts_at_utc + datetime.timedelta(minutes=duration_mins)
 
         # 4. Customer resolution or creation (tenant scoped)
         phone_digits = "".join(filter(str.isdigit, customer_phone_e164))
@@ -677,7 +694,18 @@ class BookingEngine:
             await db.flush()
 
         # 5. Generate public reference
-        ref_code = f"BH-{secrets.randbelow(900000) + 100000}"
+        # 5. Generate public reference with tenant-specific prefix
+        stmt_t = select(Tenant.slug).where(Tenant.id == tenant_id)
+        res_t = await db.execute(stmt_t)
+        t_slug = res_t.scalar_one_or_none() or "BK"
+        if "modern" in t_slug.lower():
+            prefix = "MC"
+        elif "barber" in t_slug.lower():
+            prefix = "BH"
+        else:
+            clean_slug = "".join(filter(str.isalnum, t_slug)).upper()
+            prefix = clean_slug[:2] if len(clean_slug) >= 2 else "BK"
+        ref_code = f"{prefix}-{secrets.randbelow(900000) + 100000}"
 
         # 6. Insert Booking
         booking = Booking(

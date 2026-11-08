@@ -181,7 +181,35 @@ export const App: React.FC = () => {
   useEffect(() => {
     let isCancelled = false;
 
-    if (!selectedBranch || selectedServices.length === 0 || step !== 'datetime') {
+    if (!selectedBranch || step !== 'datetime') {
+      return;
+    }
+
+    if (selectedServices.length === 0) {
+      if (flow === 'time-first') {
+        const previewTimes = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+        const previewSlots: SlotResponse[] = previewTimes.map(t => {
+          const [h, m] = t.split(':');
+          const d = new Date(`${selectedDate}T00:00:00Z`);
+          d.setUTCHours(parseInt(h, 10) - 5, parseInt(m, 10), 0, 0);
+          const ends = new Date(d.getTime() + 60 * 60 * 1000);
+          return {
+            quote_id: `pref_${t}`,
+            starts_at_utc: d.toISOString(),
+            ends_at_utc: ends.toISOString(),
+            service_ends_at_utc: ends.toISOString(),
+            duration_minutes: 60,
+            price_minor: 0,
+            price_formatted: 'Выбор услуг на след. шаге',
+            currency: 'KZT',
+            quote_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+            staff_id: '',
+            staff_name: 'Любой мастер',
+            staff_role: 'Мастер',
+          };
+        });
+        setAvailableSlots(previewSlots);
+      }
       return;
     }
 
@@ -204,9 +232,15 @@ export const App: React.FC = () => {
 
         if (isCancelled) return;
 
-        setAvailableSlots(res.slots || []);
-        // Invalidate selected slot if not in the new results
-        if (selectedSlot && !res.slots.some(s => s.quote_id === selectedSlot.quote_id)) {
+        const returnedSlots = res.slots || [];
+        setAvailableSlots(returnedSlots);
+
+        // If user had selected a preferred preview slot, auto-select matching or first real slot
+        if (selectedSlot?.quote_id?.startsWith('pref_') && returnedSlots.length > 0) {
+          const targetTime = selectedSlot.starts_at_utc;
+          const match = returnedSlots.find(s => s.starts_at_utc === targetTime) || returnedSlots[0];
+          setSelectedSlot(match);
+        } else if (selectedSlot && !returnedSlots.some(s => s.quote_id === selectedSlot.quote_id)) {
           setSelectedSlot(null);
         }
       } catch (err: any) {
@@ -225,7 +259,7 @@ export const App: React.FC = () => {
     return () => {
       isCancelled = true;
     };
-  }, [selectedBranch, selectedServices, selectedStaff, selectedDate, step, api]);
+  }, [selectedBranch, selectedServices, selectedStaff, selectedDate, step, flow, api]);
 
   // Handle flow switching from tabs
   const handleChangeFlow = (newFlow: BookingFlow) => {
@@ -330,15 +364,16 @@ export const App: React.FC = () => {
     } else if (step === 'staff') {
       if (flow === 'master-first') {
         setStep('services');
-      } else if (flow === 'service-first' || flow === 'time-first') {
-        setStep(flow === 'time-first' ? 'confirm' : 'datetime');
+      } else if (flow === 'service-first') {
+        setStep('datetime');
+      } else if (flow === 'time-first') {
+        setStep('datetime'); // return to datetime with real services & staff to confirm actual slot!
       }
     } else if (step === 'datetime') {
-      if (flow === 'time-first') {
+      if (flow === 'time-first' && selectedServices.length === 0) {
         setStep('services');
       } else {
         setStep('confirm');
-        // Generate stable idempotency key for this intent
         if (!bookingIntentKey) {
           setBookingIntentKey(`bk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
         }
@@ -348,9 +383,11 @@ export const App: React.FC = () => {
 
   const handleBack = () => {
     if (step === 'confirm') {
-      setStep(flow === 'time-first' ? 'staff' : 'datetime');
+      setStep('datetime');
     } else if (step === 'datetime') {
-      if (flow === 'master-first') {
+      if (flow === 'time-first' && selectedServices.length > 0) {
+        setStep('staff');
+      } else if (flow === 'master-first') {
         setStep('services');
       } else if (flow === 'service-first') {
         setStep('staff');

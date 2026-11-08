@@ -63,7 +63,7 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
           Контактные данные
         </h1>
         <p style={{ margin: 0, color: '#475569', fontSize: '16px' }}>
-          Укажите телефон для SMS-напоминания и ссылки на управление записью
+          Укажите контактные данные для связи и подтверждения бронирования
         </p>
       </div>
 

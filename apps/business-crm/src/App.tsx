@@ -48,6 +48,11 @@ export const App: React.FC = () => {
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState<string>(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const dateParam = searchParams.get('date');
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      return dateParam;
+    }
     return new Date().toISOString().split('T')[0];
   });
   const [staffList, setStaffList] = useState<CalendarStaff[]>([]);
@@ -138,25 +143,27 @@ export const App: React.FC = () => {
         activeMembership.tenant_id
       );
 
-      const mappedStaff: CalendarStaff[] = (data.masters || []).map((m: any) => ({
-        id: m.staff_id,
-        name: m.name,
-        role_title: m.role_title,
-        color: m.color || '#3B82F6',
+      const rawStaff = data.staff || data.masters || [];
+      const mappedStaff: CalendarStaff[] = rawStaff.map((s: any) => ({
+        id: s.id || s.staff_id,
+        name: s.display_name || s.name || 'Мастер',
+        role_title: s.role_title,
+        color: s.color || '#3B82F6',
       }));
       setStaffList(mappedStaff);
 
-      const mappedBookings: CalendarBooking[] = (data.appointments || []).map((a: any) => ({
-        id: a.booking_id,
-        public_ref: a.public_ref,
-        staff_id: a.staff_id,
-        customer_name: a.customer_name,
-        customer_phone: a.customer_phone,
-        status: a.status,
-        starts_at_utc: a.starts_at_utc,
-        service_ends_at_utc: a.service_ends_at_utc,
-        amount_minor: a.amount_minor,
-        services: a.services || [],
+      const rawBookings = data.bookings || data.appointments || [];
+      const mappedBookings: CalendarBooking[] = rawBookings.map((b: any) => ({
+        id: b.id || b.booking_id,
+        public_ref: b.public_ref,
+        staff_id: b.staff_id,
+        customer_name: b.customer_name,
+        customer_phone: b.customer_phone,
+        status: b.status,
+        starts_at_utc: b.starts_at_utc,
+        service_ends_at_utc: b.service_ends_at_utc,
+        amount_minor: b.amount_minor ?? b.total_amount_minor ?? 0,
+        services: b.services || b.service_names || [],
       }));
       setBookings(mappedBookings);
     } catch (err: any) {
@@ -581,21 +588,88 @@ export const App: React.FC = () => {
             <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
               Календарь записей
             </h1>
-            <input
-              type="date"
-              value={currentDate}
-              onChange={e => setCurrentDate(e.target.value)}
-              style={{
-                height: '38px',
-                padding: '0 12px',
-                borderRadius: '8px',
-                border: '1px solid #CBD5E1',
-                background: '#FFFFFF',
-                fontSize: '14px',
-                fontWeight: 600,
-                color: '#0F172A',
-              }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                type="button"
+                aria-label="Предыдущий день"
+                onClick={() => {
+                  const d = new Date(currentDate);
+                  d.setDate(d.getDate() - 1);
+                  setCurrentDate(d.toISOString().split('T')[0]);
+                }}
+                style={{
+                  height: '38px',
+                  width: '38px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                ‹
+              </button>
+              <input
+                type="date"
+                value={currentDate}
+                onChange={e => setCurrentDate(e.target.value)}
+                style={{
+                  height: '38px',
+                  padding: '0 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: '#0F172A',
+                }}
+              />
+              <button
+                type="button"
+                aria-label="Следующий день"
+                onClick={() => {
+                  const d = new Date(currentDate);
+                  d.setDate(d.getDate() + 1);
+                  setCurrentDate(d.toISOString().split('T')[0]);
+                }}
+                style={{
+                  height: '38px',
+                  width: '38px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                ›
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentDate(new Date().toISOString().split('T')[0])}
+                style={{
+                  height: '38px',
+                  padding: '0 10px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: '#F8FAFC',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: '#334155',
+                  cursor: 'pointer',
+                }}
+              >
+                Сегодня
+              </button>
+            </div>
             <button
               type="button"
               onClick={fetchCalendar}
@@ -709,13 +783,18 @@ export const App: React.FC = () => {
 
                     {/* Master Slot Cells */}
                     {staffList.map(st => {
-                      // Find bookings starting within this hour for this master
+                      const activeBranch = branches.find(br => br.id === selectedBranchId);
+                      const tz = activeBranch?.timezone_iana || 'Asia/Almaty';
                       const cellBookings = bookings.filter(b => {
                         if (b.staff_id !== st.id) return false;
                         const startD = new Date(b.starts_at_utc);
-                        // Convert to branch timezone or local hour
-                        const almatyHour = (startD.getUTCHours() + 5) % 24;
-                        return almatyHour === hour;
+                        const hourStr = new Intl.DateTimeFormat('en-US', {
+                          timeZone: tz,
+                          hour: 'numeric',
+                          hourCycle: 'h23',
+                        }).format(startD);
+                        const localHour = parseInt(hourStr, 10);
+                        return localHour === hour;
                       });
 
                       return (
@@ -736,12 +815,14 @@ export const App: React.FC = () => {
                             const timeStr = startD.toLocaleTimeString('ru-RU', {
                               hour: '2-digit',
                               minute: '2-digit',
-                              timeZone: 'Asia/Almaty',
+                              timeZone: activeBranch?.timezone_iana || 'Asia/Almaty',
                             });
 
                             return (
                               <div
                                 key={b.id}
+                                data-booking-id={b.id}
+                                data-public-ref={b.public_ref}
                                 onClick={() => setSelectedBooking(b)}
                                 style={{
                                   padding: '8px 10px',
