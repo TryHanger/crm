@@ -1,0 +1,16 @@
+
+Running 11 tests using 1 worker
+
+  ok  1 [desktop-chrome] › tests\e2e\platform.spec.ts:7:3 › Platform Console V1 E2E Suite › P1: Platform Authentication & CRM User Rejection (2.9s)
+  ok  2 [desktop-chrome] › tests\e2e\platform.spec.ts:31:3 › Platform Console V1 E2E Suite › P2: Overview KPIs, Non-MRR Disclaimer & Urgent Attention Items (2.7s)
+  ok  3 [desktop-chrome] › tests\e2e\platform.spec.ts:53:3 › Platform Console V1 E2E Suite › P3: Companies Repertoire & 4-Step Onboarding Wizard (4.7s)
+  ok  4 [desktop-chrome] › tests\e2e\platform.spec.ts:102:3 › Platform Console V1 E2E Suite › P4: Tenant Detail 7 Tabs, Entitlement Override & Lifecycle Suspension (6.7s)
+  ok  5 [desktop-chrome] › tests\e2e\platform.spec.ts:176:3 › Platform Console V1 E2E Suite › P5: Subscriptions & Billing Ledger Manual Payment Recording (3.5s)
+  ok  6 [desktop-chrome] › tests\e2e\platform.spec.ts:212:3 › Platform Console V1 E2E Suite › P6: Plans Catalog & Plan Versioning (2.9s)
+  ok  7 [desktop-chrome] › tests\e2e\platform.spec.ts:239:3 › Platform Console V1 E2E Suite › P7: Support Diagnosis & Real Owner-Approval Flow (P0-02) (9.2s)
+  ok  8 [desktop-chrome] › tests\e2e\platform.spec.ts:328:3 › Platform Console V1 E2E Suite › P8: Audit Trail Diff & Platform Settings RBAC (P0-03) (3.7s)
+  ok  9 [desktop-chrome] › tests\e2e\platform.spec.ts:368:3 › Platform Console V1 E2E Suite › P9: Role Restrictions Enforcement (Direct HTTP 403 checks) (3.3s)
+  ok 10 [desktop-chrome] › tests\e2e\platform.spec.ts:401:3 › Platform Console V1 E2E Suite › P10: Responsive Mobile Viewport (390px) & Navigation (P0-05) (6.3s)
+  ok 11 [desktop-chrome] › tests\e2e\platform.spec.ts:450:1 › Platform Console V1 E2E Suite › P11: Operator Activation Page UI Flow (FC-P0-02) (6.3s)
+
+  11 passed (54.9s)

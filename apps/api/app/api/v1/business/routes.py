@@ -1274,6 +1274,75 @@ async def deny_support_access(
     return {"message": "Запрос доступа отклонён", "status": "denied"}
 
 
+@router.get("/access-sessions/active")
+async def get_active_support_sessions(
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lists currently active support sessions for this tenant."""
+    from apps.api.app.infrastructure.db.models import SupportAccessSession, IdentityUser
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    stmt = select(SupportAccessSession, IdentityUser).join(
+        IdentityUser, IdentityUser.id == SupportAccessSession.staff_id
+    ).where(
+        SupportAccessSession.tenant_id == crm_user.tenant_id,
+        SupportAccessSession.status == "active",
+        SupportAccessSession.expires_at > now_utc
+    ).order_by(SupportAccessSession.starts_at.desc())
+    rows = (await db.execute(stmt)).all()
+    results = []
+    for sess, u in rows:
+        exp = sess.expires_at.replace(tzinfo=datetime.timezone.utc) if sess.expires_at.tzinfo is None else sess.expires_at
+        mins_left = max(0, int((exp - now_utc).total_seconds() / 60))
+        results.append({
+            "id": str(sess.id),
+            "staff_id": str(sess.staff_id),
+            "staff_name": u.display_name or u.email_normalized,
+            "staff_email": u.email_normalized,
+            "starts_at": sess.starts_at.isoformat(),
+            "expires_at": sess.expires_at.isoformat(),
+            "minutes_left": mins_left,
+            "status": "active"
+        })
+    return results
+
+
+@router.post("/access-sessions/{session_id}/revoke")
+async def revoke_support_access_session(
+    session_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Business Owner revokes an active support access session immediately."""
+    from apps.api.app.infrastructure.db.models import SupportAccessSession
+    stmt = select(SupportAccessSession).where(SupportAccessSession.id == session_id)
+    res = await db.execute(stmt)
+    sess = res.scalar_one_or_none()
+    if not sess:
+        raise HTTPException(status_code=404, detail="Support session not found")
+    if sess.tenant_id != crm_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session belongs to another company")
+    if sess.status != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Session is already {sess.status}")
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    sess.status = "revoked"
+
+    from apps.api.app.api.v1.platform.routes import record_audit_event
+    await record_audit_event(
+        db=db,
+        actor_id=crm_user.user.id,
+        actor_email=crm_user.user.email_normalized,
+        action="support.session_revoked_by_owner",
+        object_type="support_access_session",
+        target_tenant_id=crm_user.tenant_id,
+        object_id=str(sess.id),
+        reason="Owner terminated diagnostic support access session"
+    )
+    await db.commit()
+    return {"message": "Сеанс поддержки успешно отозван", "status": "revoked"}
+
+
 # =========================================================================
 # FULL CRM EXPANDED ENDPOINTS (CRM-0 .. CRM-3)
 # =========================================================================

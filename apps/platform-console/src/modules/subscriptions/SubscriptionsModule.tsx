@@ -43,6 +43,8 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
 
   // Modal: Record Payment for Charge
   const [selectedCharge, setSelectedCharge] = useState<PlatformChargeItem | null>(null);
+  const [paymentIdempotencyKey, setPaymentIdempotencyKey] = useState<string>('');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentEvidence, setPaymentEvidence] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
@@ -139,6 +141,9 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
     setPaymentEvidence('');
     setPaymentMethod('bank_transfer');
     setPaymentNote('Оплата по выставленному счёту');
+    const stableKey = `pmt_${ch.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setPaymentIdempotencyKey(stableKey);
+    setPaymentError(null);
   };
 
   const handleSubmitPayment = async (e: React.FormEvent) => {
@@ -148,8 +153,12 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
       return;
     }
     setIsSubmittingPayment(true);
+    setPaymentError(null);
     try {
-      const idempotencyKey = `pmt_${selectedCharge.id}_${Date.now()}`;
+      const idempotencyKey = paymentIdempotencyKey || `pmt_${selectedCharge.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      if (!paymentIdempotencyKey) {
+        setPaymentIdempotencyKey(idempotencyKey);
+      }
       await api.recordPayment(
         selectedCharge.id,
         {
@@ -163,9 +172,13 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
       );
       showToast(`Платёж на ${(paymentAmount).toLocaleString('ru-RU')} ₸ успешно зафиксирован`);
       setSelectedCharge(null);
+      setPaymentIdempotencyKey('');
+      setPaymentError(null);
       await loadCharges();
     } catch (err: any) {
-      showToast(err.message || 'Ошибка фиксации платежа');
+      const msg = err.message || 'Ошибка фиксации платежа';
+      setPaymentError(msg);
+      showToast(msg);
     } finally {
       setIsSubmittingPayment(false);
     }
@@ -672,6 +685,34 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
             </p>
 
             <form onSubmit={handleSubmitPayment} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div data-testid="payment-idempotency-key" style={{ fontSize: '11px', color: '#64748B', fontFamily: 'monospace' }}>
+                Ключ операции: {paymentIdempotencyKey}
+              </div>
+
+              {paymentError && (
+                <div data-testid="payment-error-banner" style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#991B1B', padding: '10px 14px', borderRadius: '6px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div>{paymentError}</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      data-testid="retry-payment-same-key-btn"
+                      onClick={handleSubmitPayment}
+                      disabled={isSubmittingPayment}
+                      style={{ padding: '6px 12px', background: '#DC2626', color: '#FFFFFF', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Повторить с тем же ключом
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="refresh-ledger-btn"
+                      onClick={() => loadCharges()}
+                      style={{ padding: '6px 12px', background: '#FFFFFF', color: '#374151', border: '1px solid #D1D5DB', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      Обновить журнал начислений
+                    </button>
+                  </div>
+                </div>
+              )}
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
                   Сумма вносимого платежа (₸):

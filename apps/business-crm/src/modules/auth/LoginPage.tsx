@@ -120,6 +120,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ api, onSuccess }) => {
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="owner@barberhouse.kz"
+              data-testid="crm-login-email-input"
               required
               style={{
                 height: '44px',
@@ -139,6 +140,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ api, onSuccess }) => {
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
+              data-testid="crm-login-password-input"
               required
               style={{
                 height: '44px',
@@ -153,6 +155,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ api, onSuccess }) => {
 
           <button
             type="submit"
+            data-testid="crm-login-submit-btn"
             disabled={isLoading}
             style={{
               height: '46px',

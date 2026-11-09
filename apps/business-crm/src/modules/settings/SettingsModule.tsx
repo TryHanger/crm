@@ -15,7 +15,13 @@ import {
   CheckCircle,
   ExternalLink
 } from 'lucide-react';
-import { BusinessCrmApiClient, BranchResponse, MembershipResponse } from '@crm/api-client';
+import {
+  BusinessCrmApiClient,
+  BranchResponse,
+  MembershipResponse,
+  BusinessPendingSupportRequest,
+  BusinessActiveSupportSession
+} from '@crm/api-client';
 
 interface SettingsModuleProps {
   api: BusinessCrmApiClient;
@@ -23,8 +29,8 @@ interface SettingsModuleProps {
   tenantId: string;
   tenantSlug: string;
   userRole: string;
-  activeSubTab?: 'branches' | 'users' | 'company';
-  onSubTabChange?: (tab: 'branches' | 'users' | 'company') => void;
+  activeSubTab?: 'branches' | 'users' | 'company' | 'security';
+  onSubTabChange?: (tab: 'branches' | 'users' | 'company' | 'security') => void;
   onShowToast?: (msg: string) => void;
 }
 
@@ -38,7 +44,73 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   onSubTabChange,
   onShowToast,
 }) => {
-  const [currentTab, setCurrentTab] = useState<'branches' | 'users' | 'company'>(activeSubTab);
+  const [currentTab, setCurrentTab] = useState<'branches' | 'users' | 'company' | 'security'>(activeSubTab);
+  const [supportRequests, setSupportRequests] = useState<BusinessPendingSupportRequest[]>([]);
+  const [activeSupportSessions, setActiveSupportSessions] = useState<BusinessActiveSupportSession[]>([]);
+  const [supportLoading, setSupportLoading] = useState<boolean>(false);
+  const [supportActionLoading, setSupportActionLoading] = useState<string | null>(null);
+
+  const loadSupportData = async () => {
+    if (userRole !== 'owner') return;
+    setSupportLoading(true);
+    try {
+      const [reqs, sess] = await Promise.all([
+        api.getPendingSupportAccessRequests(token, tenantId),
+        api.getActiveSupportSessions(token, tenantId),
+      ]);
+      setSupportRequests(reqs);
+      setActiveSupportSessions(sess);
+    } catch (err: any) {
+      console.error('Failed to load support access data', err);
+    } finally {
+      setSupportLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (userRole === 'owner') {
+      loadSupportData();
+    }
+  }, [currentTab, userRole, token, tenantId]);
+
+  const handleApproveSupport = async (requestId: string) => {
+    setSupportActionLoading(requestId);
+    try {
+      await api.approveTenantSupportAccess(requestId, token, tenantId);
+      if (onShowToast) onShowToast('Доступ поддержки одобрен на 30 минут');
+      await loadSupportData();
+    } catch (err: any) {
+      if (onShowToast) onShowToast(err?.message || 'Ошибка одобрения доступа');
+    } finally {
+      setSupportActionLoading(null);
+    }
+  };
+
+  const handleDenySupport = async (requestId: string) => {
+    setSupportActionLoading(requestId);
+    try {
+      await api.denyTenantSupportAccess(requestId, token, tenantId);
+      if (onShowToast) onShowToast('Запрос поддержки отклонён');
+      await loadSupportData();
+    } catch (err: any) {
+      if (onShowToast) onShowToast(err?.message || 'Ошибка отклонения запроса');
+    } finally {
+      setSupportActionLoading(null);
+    }
+  };
+
+  const handleRevokeSession = async (sessionId: string) => {
+    setSupportActionLoading(sessionId);
+    try {
+      await api.revokeTenantSupportSession(sessionId, token, tenantId);
+      if (onShowToast) onShowToast('Сеанс поддержки досрочно отозван');
+      await loadSupportData();
+    } catch (err: any) {
+      if (onShowToast) onShowToast(err?.message || 'Ошибка отзыва сеанса');
+    } finally {
+      setSupportActionLoading(null);
+    }
+  };
   const [branches, setBranches] = useState<BranchResponse[]>([]);
   const [users, setUsers] = useState<MembershipResponse[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -61,7 +133,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const [branchTimezone, setBranchTimezone] = useState<string>('Asia/Almaty');
   const [branchSaving, setBranchSaving] = useState<boolean>(false);
 
-  const handleTabSwitch = (tab: 'branches' | 'users' | 'company') => {
+  const handleTabSwitch = (tab: 'branches' | 'users' | 'company' | 'security') => {
     setCurrentTab(tab);
     if (onSubTabChange) onSubTabChange(tab);
   };
@@ -256,6 +328,33 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           >
             <CreditCard style={{ width: '15px', height: '15px' }} />
             <span>Компания и тариф</span>
+          </button>
+          <button
+            type="button"
+            data-testid="settings-tab-security"
+            onClick={() => handleTabSwitch('security')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              fontSize: '13px',
+              fontWeight: currentTab === 'security' ? 600 : 500,
+              borderRadius: '8px',
+              border: 'none',
+              background: currentTab === 'security' ? '#FFFFFF' : 'transparent',
+              color: currentTab === 'security' ? '#2563EB' : '#64748B',
+              boxShadow: currentTab === 'security' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <ShieldCheck style={{ width: '15px', height: '15px' }} />
+            <span>Доступ поддержки</span>
+            {userRole === 'owner' && supportRequests.length > 0 && (
+              <span style={{ background: '#EF4444', color: '#FFFFFF', borderRadius: '10px', padding: '1px 6px', fontSize: '11px', fontWeight: 700 }}>
+                {supportRequests.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -537,6 +636,227 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* SECURITY TAB: SUPPORT ACCESS CONSENT */}
+      {currentTab === 'security' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {userRole !== 'owner' ? (
+            <div
+              data-testid="security-owner-only-note"
+              style={{
+                background: '#FFFBEB',
+                border: '1px solid #FDE68A',
+                borderRadius: '12px',
+                padding: '24px',
+                color: '#92400E',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+              }}
+            >
+              <AlertCircle style={{ width: '24px', height: '24px', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>Ограничение доступа</div>
+                <div style={{ fontSize: '13px', marginTop: '4px' }}>
+                  Раздел доступен только владельцу компании (Owner). Администратор и мастер не имеют права предоставления доступа службе поддержки платформы.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Active Support Sessions Section */}
+              <div
+                data-testid="active-support-sessions-section"
+                style={{
+                  background: '#FFFFFF',
+                  borderRadius: '16px',
+                  padding: '24px',
+                  border: '1px solid #E2E8F0',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldCheck style={{ width: '18px', height: '18px', color: '#16A34A' }} />
+                    Активные сеансы диагностики поддержки
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={loadSupportData}
+                    disabled={supportLoading}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: '8px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      color: '#475569',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {supportLoading ? 'Обновление...' : 'Обновить'}
+                  </button>
+                </div>
+
+                {activeSupportSessions.length === 0 ? (
+                  <div data-testid="no-active-support-sessions" style={{ padding: '16px', background: '#F8FAFC', borderRadius: '10px', color: '#64748B', fontSize: '13px', textAlign: 'center' }}>
+                    Активных сеансов поддержки нет. Платформенные операторы не имеют доступа к вашей CRM.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {activeSupportSessions.map((sess) => (
+                      <div
+                        key={sess.id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '14px 16px',
+                          borderRadius: '10px',
+                          background: '#F0FDF4',
+                          border: '1px solid #BBF7D0',
+                          flexWrap: 'wrap',
+                          gap: '12px',
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span data-testid="active-session-badge" style={{ background: '#16A34A', color: '#FFFFFF', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600 }}>
+                              Сеанс активен
+                            </span>
+                            <span data-testid="active-session-staff" style={{ fontWeight: 600, color: '#0F172A', fontSize: '14px' }}>
+                              {sess.staff_name} ({sess.staff_email})
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
+                            Действует до {new Date(sess.expires_at).toLocaleTimeString('ru-RU')} ·{' '}
+                            <span data-testid="active-session-time-left" style={{ fontWeight: 600, color: '#15803D' }}>
+                              {sess.minutes_left} мин. осталось
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          data-testid="revoke-support-session-btn"
+                          disabled={supportActionLoading === sess.id}
+                          onClick={() => handleRevokeSession(sess.id)}
+                          style={{
+                            padding: '8px 16px',
+                            background: '#DC2626',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {supportActionLoading === sess.id ? 'Отзыв...' : 'Отозвать досрочно'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Pending Support Requests Section */}
+              <div
+                style={{
+                  background: '#FFFFFF',
+                  borderRadius: '16px',
+                  padding: '24px',
+                  border: '1px solid #E2E8F0',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                }}
+              >
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+                  Ожидающие запросы на разовый доступ (30 минут)
+                </h3>
+                <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748B' }}>
+                  Инженер поддержки платформы сможет просмотреть диагностическую информацию только после вашего явного подтверждения.
+                </p>
+
+                {supportRequests.length === 0 ? (
+                  <div data-testid="no-support-requests" style={{ padding: '24px', background: '#F8FAFC', borderRadius: '10px', color: '#64748B', fontSize: '13px', textAlign: 'center' }}>
+                    Нет активных запросов поддержки
+                  </div>
+                ) : (
+                  <div data-testid="pending-support-requests-table" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {supportRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        style={{
+                          border: '1px solid #CBD5E1',
+                          borderRadius: '12px',
+                          padding: '16px 20px',
+                          background: '#F8FAFC',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A' }}>
+                              Запрос от: <span data-testid="request-email">{req.requester_email}</span> ({req.requester_name})
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#334155', marginTop: '4px' }}>
+                              <b>Причина обращения:</b> <span data-testid="request-reason">{req.reason}</span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                              Область доступа: <span data-testid="request-scope">{req.requested_scope}</span> · Длительность: <b>30 минут</b> · Запрошен: {new Date(req.created_at).toLocaleString('ru-RU')}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '10px', alignSelf: 'center' }}>
+                            <button
+                              type="button"
+                              data-testid={`deny-support-btn-${req.id}`}
+                              disabled={supportActionLoading === req.id}
+                              onClick={() => handleDenySupport(req.id)}
+                              style={{
+                                padding: '8px 16px',
+                                background: '#FFFFFF',
+                                border: '1px solid #CBD5E1',
+                                color: '#475569',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {supportActionLoading === req.id ? 'Отклонение...' : 'Отклонить'}
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`approve-support-btn-${req.id}`}
+                              disabled={supportActionLoading === req.id}
+                              onClick={() => handleApproveSupport(req.id)}
+                              style={{
+                                padding: '8px 18px',
+                                background: '#16A34A',
+                                border: 'none',
+                                color: '#FFFFFF',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                              }}
+                            >
+                              {supportActionLoading === req.id ? 'Одобрение...' : 'Одобрить (30 мин)'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

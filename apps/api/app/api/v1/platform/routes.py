@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.core.config import settings
 from apps.api.app.infrastructure.db.session import get_db
-from apps.api.app.infrastructure.security.jwt import get_password_hash
+from apps.api.app.infrastructure.security.jwt import get_password_hash, verify_password
 from apps.api.app.infrastructure.security.auth import (
     get_current_platform_staff, require_platform_roles, AuthenticatedPlatformStaff
 )
@@ -438,21 +438,28 @@ async def get_tenant_users(
     """Returns company members and active pending invites for the 'Доступы' tab."""
     stmt_m = select(TenantMembership, IdentityUser).join(
         IdentityUser, IdentityUser.id == TenantMembership.user_id
-    ).where(TenantMembership.tenant_id == tenant_id)
+    ).where(TenantMembership.tenant_id == tenant_id).order_by(TenantMembership.joined_at.desc())
     res_m = await db.execute(stmt_m)
     members_data = []
     for m, u in res_m.all():
+        joined_str = m.joined_at.isoformat() if m.joined_at else None
         members_data.append({
             "membership_id": str(m.id),
             "user_id": str(u.id),
             "email": u.email_normalized,
-            "display_name": u.display_name,
+            "display_name": u.display_name or u.email_normalized,
             "role": m.role,
             "status": m.status,
-            "created_at": m.created_at
+            "joined_at": joined_str,
+            "created_at": joined_str
         })
 
-    stmt_inv = select(Invite).where(Invite.tenant_id == tenant_id, Invite.accepted_at == None).order_by(Invite.sent_at.desc())
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    stmt_inv = select(Invite).where(
+        Invite.tenant_id == tenant_id,
+        Invite.consumed_at.is_(None),
+        Invite.expires_at > now_utc
+    ).order_by(Invite.sent_at.desc())
     res_inv = await db.execute(stmt_inv)
     invites_data = []
     for inv in res_inv.scalars().all():
@@ -461,8 +468,9 @@ async def get_tenant_users(
             "email": inv.email,
             "role": inv.role,
             "invite_type": inv.invite_type,
-            "sent_at": inv.sent_at,
-            "expires_at": inv.expires_at
+            "status": "pending",
+            "sent_at": inv.sent_at.isoformat() if inv.sent_at else None,
+            "expires_at": inv.expires_at.isoformat() if inv.expires_at else None
         })
 
     return {
@@ -1951,7 +1959,28 @@ async def activate_platform_staff(
     if not user:
         raise HTTPException(status_code=404, detail="User account not found")
 
-    user.password_hash = get_password_hash(req.password)
+    # FC-P0-03: Distinguish between brand new platform staff account and existing CRM user identity
+    stmt_m = select(TenantMembership).where(TenantMembership.user_id == user.id)
+    crm_memberships = (await db.execute(stmt_m)).scalars().all()
+
+    if crm_memberships:
+        # Existing CRM account: MUST NOT overwrite existing password!
+        # Requires authenticated confirmation with current password to prove user agreement.
+        if not req.current_password or not verify_password(req.current_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Activating platform role for an existing CRM user requires confirmation with their current password. The existing account password cannot be overwritten via staff invitation."
+            )
+        # CRUCIAL: user.password_hash is NOT modified! Existing password is preserved.
+    else:
+        # Brand new platform account: require setting a secure password (>= 8 chars)
+        if not req.password or len(req.password) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Password must be at least 8 characters long for new platform operator activation."
+            )
+        user.password_hash = get_password_hash(req.password)
+
     if req.display_name:
         user.display_name = req.display_name
 

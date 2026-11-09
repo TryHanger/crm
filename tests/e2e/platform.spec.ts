@@ -108,7 +108,7 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await expect(page.locator('[data-testid="tenants-table"]')).toBeVisible();
 
     // Open Barber House
-    await page.click('[data-testid="open-tenant-detail-cutco"]');
+    await page.click('[data-testid="open-tenant-detail-barberhouse"]');
     await expect(page.locator('[data-testid="tenant-detail-view"]')).toBeVisible();
     await expect(page.locator('[data-testid="tenant-detail-status-pill"]')).toContainText('Активна');
 
@@ -132,13 +132,18 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await page.click('[data-testid="confirm-save-override-btn"]');
     await expect(page.locator('text=Открытие дополнительного филиала по заявке #490').first()).toBeVisible();
 
-    // Tab 4: Users & Access
+    // Tab 4: Users & Access (FC-P0-01)
     await page.click('[data-testid="tenant-tab-users"]');
     await expect(page.locator('text=Пользователи с активным доступом')).toBeVisible();
+    await expect(page.locator('[data-testid="tenant-members-table"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tenant-members-table"]')).toContainText('owner@barberhouse.kz');
+    await expect(page.locator('[data-testid="users-error-banner"]')).not.toBeVisible();
+    // Re-capture platform-03-tenant-card-tabs.png with loaded members table (FC-P0-01)
+    await page.screenshot({ path: 'docs/screenshots/platform-03-tenant-card-tabs.png', fullPage: true });
 
     // Tab 5: Domains
     await page.click('[data-testid="tenant-tab-domains"]');
-    await expect(page.locator('text=cutco.book.example.kz').first()).toBeVisible();
+    await expect(page.locator('text=barberhouse.book.example.kz').first()).toBeVisible();
 
     // Tab 6: Activity
     await page.click('[data-testid="tenant-tab-activity"]');
@@ -194,6 +199,9 @@ test.describe('Platform Console V1 E2E Suite', () => {
     // Open Payment Modal for first charge
     await page.click('button:has-text("Зафиксировать оплату")');
     await expect(page.locator('[data-testid="record-payment-modal"]')).toBeVisible();
+    await expect(page.locator('[data-testid="payment-idempotency-key"]')).toBeVisible();
+    const pmtKey = await page.textContent('[data-testid="payment-idempotency-key"]');
+    expect(pmtKey).toContain('pmt_');
 
     // Fill valid external evidence reference (no fabricated numbers!)
     await page.fill('[data-testid="payment-evidence-input"]', 'Kaspi Pay Чек №948201');
@@ -278,15 +286,34 @@ test.describe('Platform Console V1 E2E Suite', () => {
     });
     expect(selfApproveResp.status()).toBe(403);
 
-    // UNCONDITIONAL ASSERTION 3: Exact Tenant Owner (Barber House) approves via Business CRM endpoint!
-    const ownerLogin = await request.post(`${API_URL}/api/v1/auth/login`, {
-      data: { email: 'owner@barberhouse.kz', password: 'Password123!' },
-    });
-    const oToken = (await ownerLogin.json()).access_token;
-    const ownerApproveResp = await request.post(`${API_URL}/api/v1/business/access-requests/${reqId}/approve`, {
-      headers: { Authorization: `Bearer ${oToken}` },
-    });
-    expect(ownerApproveResp.status()).toBe(200);
+    // UNCONDITIONAL ASSERTION 3: Real browser interaction in Business CRM for Owner Approval (FC-P1-01)
+    const browser = page.context().browser();
+    const ownerContext = await browser!.newContext();
+    const ownerPage = await ownerContext.newPage();
+    await ownerPage.goto('http://127.0.0.1:3001');
+
+    // Login as Barber House owner in Business CRM
+    await ownerPage.fill('[data-testid="crm-login-email-input"]', 'owner@barberhouse.kz');
+    await ownerPage.fill('[data-testid="crm-login-password-input"]', 'Password123!');
+    await ownerPage.click('[data-testid="crm-login-submit-btn"]');
+
+    // Navigate to Settings -> Security tab
+    await ownerPage.click('[data-testid="nav-settings"]');
+    await expect(ownerPage.locator('[data-testid="settings-tab-security"]')).toBeVisible();
+    await ownerPage.click('[data-testid="settings-tab-security"]');
+
+    // Pending requests table visible with uniqueReason
+    await expect(ownerPage.locator('[data-testid="pending-support-requests-table"]')).toBeVisible();
+    await expect(ownerPage.locator(`text=${uniqueReason}`).first()).toBeVisible();
+
+    // Capture screenshot crm-17-owner-support-approval.png
+    await ownerPage.screenshot({ path: 'docs/screenshots/crm-17-owner-support-approval.png', fullPage: true });
+
+    // Owner approves support access via browser UI button
+    await ownerPage.click(`[data-testid="approve-support-btn-${reqId}"]`);
+    await expect(ownerPage.locator('[data-testid="active-support-sessions-section"]')).toBeVisible();
+    await expect(ownerPage.locator('[data-testid="active-session-badge"]')).toBeVisible();
+    await ownerContext.close();
 
     // Reload Platform Console: active support session banner appears!
     await page.reload();
@@ -419,5 +446,70 @@ test.describe('Platform Console V1 E2E Suite', () => {
     // Test mobile logout
     await page.click('[data-testid="platform-mobile-logout-btn"]');
     await expect(page.locator('[data-testid="platform-login-submit-btn"]')).toBeVisible();
+  });
+test('P11: Operator Activation Page UI Flow (FC-P0-02)', async ({ page }) => {
+    // 1. Platform Owner invites new operator staff
+    await page.goto(PLATFORM_URL);
+    await page.click('[data-testid="quick-login-owner"]');
+    await page.click('[data-testid="platform-login-submit-btn"]');
+    await page.click('[data-testid="platform-nav-settings"]');
+    await expect(page.locator('[data-testid="platform-staff-table"]')).toBeVisible();
+
+    await page.click('[data-testid="add-staff-open-modal-btn"]');
+    await expect(page.locator('[data-testid="add-staff-modal"]')).toBeVisible();
+    const testStaffEmail = `op_act_${Date.now()}@platform.example.kz`;
+    await page.fill('[data-testid="staff-email-input"]', testStaffEmail);
+    await page.fill('[data-testid="staff-name-input"]', 'Оператор Активации');
+    await page.click('[data-testid="confirm-add-staff-btn"]');
+
+    // 2. Obtain absolute activation link
+    await expect(page.locator('[data-testid="activation-url-modal"]')).toBeVisible();
+    const actUrl = await page.inputValue('[data-testid="activation-url-display"]');
+    expect(actUrl).toContain('/activate-platform?token=');
+    await page.click('[data-testid="close-activation-modal-btn"]');
+
+    // Logout from owner session
+    await page.click('[data-testid="platform-logout-btn"]');
+    await expect(page.locator('[data-testid="platform-login-submit-btn"]')).toBeVisible();
+
+    // 3. Open activation page via URL
+    await page.goto(actUrl);
+    await expect(page.locator('[data-testid="operator-activation-page"]')).toBeVisible();
+
+    // Capture screenshot platform-12-operator-activation.png
+    await page.screenshot({ path: 'docs/screenshots/platform-12-operator-activation.png', fullPage: true });
+
+    // 4. Fill password mismatch -> displays error
+    await page.fill('[data-testid="activation-password-input"]', 'SecurePass2026!');
+    await page.fill('[data-testid="activation-confirm-password-input"]', 'MismatchPass999!');
+    await page.click('[data-testid="activation-submit-btn"]');
+    await expect(page.locator('[data-testid="activation-error"]')).toContainText('Пароли не совпадают');
+
+    // 5. Fill matching secure password -> submit
+    await page.fill('[data-testid="activation-confirm-password-input"]', 'SecurePass2026!');
+    await page.click('[data-testid="activation-submit-btn"]');
+
+    // 6. Verify activation success
+    await expect(page.locator('[data-testid="activation-success"]')).toBeVisible();
+    await page.click('[data-testid="go-to-login-btn"]');
+
+    // 7. Login with newly activated credentials
+    await page.fill('[data-testid="platform-login-email-input"]', testStaffEmail);
+    await page.fill('[data-testid="platform-login-password-input"]', 'SecurePass2026!');
+    await page.click('[data-testid="platform-login-submit-btn"]');
+    await expect(page.locator('[data-testid="platform-user-role-badge"]')).toBeVisible();
+    await expect(page.locator('[data-testid="platform-user-role-badge"]')).toContainText('Аналитик / Наблюдатель');
+
+    // 8. Re-opening consumed token and attempting activation again shows error (409 / already consumed)
+    await page.goto(actUrl);
+    await expect(page.locator('[data-testid="operator-activation-page"]')).toBeVisible();
+    await page.fill('[data-testid="activation-password-input"]', 'AnotherPass123!');
+    await page.fill('[data-testid="activation-confirm-password-input"]', 'AnotherPass123!');
+    await page.click('[data-testid="activation-submit-btn"]');
+    await expect(page.locator('[data-testid="activation-error"]')).toBeVisible();
+
+    // 9. Verify sensitive token is never stored in localStorage
+    const localActivationToken = await page.evaluate(() => localStorage.getItem('activation_token') || localStorage.getItem('token'));
+    expect(localActivationToken).toBeNull();
   });
 });

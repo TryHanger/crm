@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PlatformApiClient, PlatformActiveSessionResponse } from '@crm/api-client';
 import { PlatformNavigationSection, PlatformUser } from './types';
 import { PlatformLoginPage } from './modules/auth/PlatformLoginPage';
+import { OperatorActivationPage } from './modules/auth/OperatorActivationPage';
 import { PlatformLayout } from './layouts/PlatformLayout';
 import { OverviewModule } from './modules/overview/OverviewModule';
 import { CompaniesModule } from './modules/companies/CompaniesModule';
@@ -37,6 +38,23 @@ export const App: React.FC = () => {
 
   // Toast State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Operator Activation Route
+  const [isActivationRoute, setIsActivationRoute] = useState(() => {
+    return window.location.pathname === '/activate-platform' || window.location.hash.startsWith('#activate');
+  });
+
+  useEffect(() => {
+    const checkRoute = () => {
+      setIsActivationRoute(window.location.pathname === '/activate-platform' || window.location.hash.startsWith('#activate'));
+    };
+    window.addEventListener('popstate', checkRoute);
+    window.addEventListener('hashchange', checkRoute);
+    return () => {
+      window.removeEventListener('popstate', checkRoute);
+      window.removeEventListener('hashchange', checkRoute);
+    };
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -126,6 +144,20 @@ export const App: React.FC = () => {
       showToast(err.message || 'Ошибка завершения сеанса');
     }
   };
+
+  if (isActivationRoute) {
+    return (
+      <OperatorActivationPage
+        api={api}
+        onNavigateToLogin={() => {
+          window.history.pushState({}, '', '/login');
+          window.location.hash = '';
+          setIsActivationRoute(false);
+        }}
+        showToast={showToast}
+      />
+    );
+  }
 
   if (isVerifyingAuth) {
     return (

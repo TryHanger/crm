@@ -312,7 +312,8 @@ class PlatformStaffCreateRequest(BaseModel):
 
 class PlatformStaffActivateRequest(BaseModel):
     activation_token: str = Field(min_length=16)
-    password: str = Field(min_length=8, max_length=128)
+    password: Optional[str] = Field(default=None, max_length=128)
+    current_password: Optional[str] = Field(default=None, max_length=128)
     display_name: Optional[str] = None
 
 class PlatformSettingUpdateRequest(BaseModel):

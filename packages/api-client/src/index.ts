@@ -49,7 +49,9 @@ import {
   PlatformActiveSessionResponse,
   PlatformAuditEventItem,
   PlatformStaffItem,
-  PlatformSettingsResponse
+  PlatformSettingsResponse,
+  BusinessPendingSupportRequest,
+  BusinessActiveSupportSession
 } from './types';
 
 export * from './types';
@@ -785,8 +787,48 @@ export class BusinessCrmApiClient {
     });
     return handleResponse<any>(res);
   }
-}
 
+  // --- SUPPORT ACCESS (OWNER APPROVAL) ---
+  async getPendingSupportAccessRequests(token: string, tenantId: string): Promise<BusinessPendingSupportRequest[]> {
+    const res = await fetch(this.baseUrl + '/api/v1/business/access-requests/pending', {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<BusinessPendingSupportRequest[]>(res);
+  }
+
+  async approveTenantSupportAccess(requestId: string, token: string, tenantId: string): Promise<any> {
+    const res = await fetch(this.baseUrl + '/api/v1/business/access-requests/' + encodeURIComponent(requestId) + '/approve', {
+      method: 'POST',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async denyTenantSupportAccess(requestId: string, token: string, tenantId: string): Promise<any> {
+    const res = await fetch(this.baseUrl + '/api/v1/business/access-requests/' + encodeURIComponent(requestId) + '/deny', {
+      method: 'POST',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getActiveSupportSessions(token: string, tenantId: string): Promise<BusinessActiveSupportSession[]> {
+    const res = await fetch(this.baseUrl + '/api/v1/business/access-sessions/active', {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<BusinessActiveSupportSession[]>(res);
+  }
+
+  async revokeTenantSupportSession(sessionId: string, token: string, tenantId: string): Promise<any> {
+    const res = await fetch(this.baseUrl + '/api/v1/business/access-sessions/' + encodeURIComponent(sessionId) + '/revoke', {
+      method: 'POST',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<any>(res);
+  }
+}
 
 export class PlatformApiClient {
   private baseUrl: string;
@@ -1246,7 +1288,7 @@ export class PlatformApiClient {
   }
 
   async activateStaff(
-    payload: { activation_token: string; password: string; display_name?: string }
+    payload: { activation_token: string; password?: string; current_password?: string; display_name?: string }
   ): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/v1/platform/staff/activate`, {
       method: 'POST',

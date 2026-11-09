@@ -1,0 +1,20 @@
+
+Running 15 tests using 2 workers
+
+  ok  2 [desktop-chrome] › tests\e2e\crm_full.spec.ts:17:3 › CRM Full Business Modules & Workflows › CRM Customers: List, Create Customer, View Profile & Add Note (5.1s)
+  ok  3 [desktop-chrome] › tests\e2e\crm_full.spec.ts:57:3 › CRM Full Business Modules & Workflows › CRM Staff: Team Roster, Service Overrides & Weekly Schedule (5.4s)
+  ok  1 [desktop-chrome] › tests\e2e\booking.spec.ts:5:3 › SaaS Booking Web & CRM Integration › Desktop Booking Flow - Barber House (11.9s)
+  ok  4 [desktop-chrome] › tests\e2e\crm_full.spec.ts:83:3 › CRM Full Business Modules & Workflows › CRM Services: Categories, Pricing & Online Availability Editor (4.2s)
+  ok  5 [desktop-chrome] › tests\e2e\booking.spec.ts:76:3 › SaaS Booking Web & CRM Integration › Mobile Booking Flow - Modern Cut (MC- Prefix) (5.5s)
+  ok  6 [desktop-chrome] › tests\e2e\crm_full.spec.ts:102:3 › CRM Full Business Modules & Workflows › CRM Online Booking: Rules, Appearance Mockup & Public URL (3.7s)
+  ok  8 [desktop-chrome] › tests\e2e\crm_full.spec.ts:123:3 › CRM Full Business Modules & Workflows › CRM Reports: Fact vs Planned Revenue & Master Utilization (4.3s)
+  ok  9 [desktop-chrome] › tests\e2e\crm_full.spec.ts:137:3 › CRM Full Business Modules & Workflows › CRM Settings: Branches, Team Access & Invite Generation (4.8s)
+  ok  7 [desktop-chrome] › tests\e2e\booking.spec.ts:130:3 › SaaS Booking Web & CRM Integration › Cross-App Vertical Slice: Booking -> CRM Calendar Strict Presence, PATCH Status, Page Reload & Multi-Tenant Isolation (15.4s)
+  ok 10 [desktop-chrome] › tests\e2e\crm_full.spec.ts:172:3 › CRM Full Business Modules & Workflows › CRM Calendar: Week View Grid, 7 Days Multi-Day Display & Navigation (5.9s)
+  ok 12 [desktop-chrome] › tests\e2e\crm_full.spec.ts:199:3 › CRM Full Business Modules & Workflows › CRM Online Booking: QR Code Verification & Responsive Rendering (3.7s)
+  ok 11 [desktop-chrome] › tests\e2e\booking.spec.ts:227:3 › SaaS Booking Web & CRM Integration › Time-First Booking Flow (Date/Time -> Services -> Specialist -> Confirm) (5.8s)
+  ok 13 [desktop-chrome] › tests\e2e\booking.spec.ts:280:3 › SaaS Booking Web & CRM Integration › Master-First Booking Flow with Override Pricing (4.2s)
+  ok 14 [desktop-chrome] › tests\e2e\booking.spec.ts:318:3 › SaaS Booking Web & CRM Integration › Management Deep-Link (Isolated Context, Masked Phone, Reschedule & Cancel) (9.6s)
+  ok 15 [desktop-chrome] › tests\e2e\booking.spec.ts:400:3 › SaaS Booking Web & CRM Integration › Multi-Viewport Layout Integrity (320px, 360px, 390px, 1280px) (2.7s)
+
+  15 passed (59.2s)

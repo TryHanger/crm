@@ -562,15 +562,17 @@ export interface PlatformTenantUsersResponse {
     display_name: string;
     role: string;
     status: string;
-    created_at: string;
+    joined_at?: string;
+    created_at?: string;
   }[];
   invites: {
     id: string;
     email: string;
     role: string;
     invite_type: string;
+    status?: string;
     sent_at: string;
-    expires_at: string;
+    expires_at?: string;
   }[];
 }
 
@@ -762,4 +764,26 @@ export interface PlatformSettingsResponse {
     description?: string;
     updated_at: string;
   }[];
+}
+
+export interface BusinessPendingSupportRequest {
+  id: string;
+  requester_id: string;
+  requester_name: string;
+  requester_email: string;
+  reason: string;
+  requested_scope: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface BusinessActiveSupportSession {
+  id: string;
+  staff_id: string;
+  staff_name: string;
+  staff_email: string;
+  starts_at: string;
+  expires_at: string;
+  minutes_left: number;
+  status: string;
 }

@@ -81,8 +81,9 @@ export const PlatformSettingsModule: React.FC<PlatformSettingsModuleProps> = ({
         token
       );
       showToast(`Оператор ${newStaffName} (${newStaffRole}) успешно приглашён`);
-      const fullUrl = `${window.location.origin}/activate-platform?token=${res.activation_token}`;
-      setCreatedActivationUrl(res.activation_url || fullUrl);
+      const targetPath = res.activation_url || ('/activate-platform?token=' + encodeURIComponent(res.activation_token));
+      const fullUrl = new URL(targetPath, window.location.origin).href;
+      setCreatedActivationUrl(fullUrl);
       setShowAddStaffModal(false);
       setNewStaffEmail('');
       setNewStaffName('');

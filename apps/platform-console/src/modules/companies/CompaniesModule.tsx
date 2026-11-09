@@ -47,6 +47,7 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
 
   // Sub-resource states for Detail Tabs
   const [usersData, setUsersData] = useState<PlatformTenantUsersResponse | null>(null);
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [entitlementsData, setEntitlementsData] = useState<PlatformTenantEntitlement[]>([]);
   const [activityData, setActivityData] = useState<PlatformAuditEventItem[]>([]);
 
@@ -122,14 +123,21 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
       const d = await api.getTenantDetails(tenantId, token);
       setDetail(d);
 
-      // Load sub-resources concurrently
-      const [u, ent, act] = await Promise.all([
-        api.getTenantUsers(tenantId, token).catch(() => null),
+      // Load sub-resources concurrently with explicit error tracking
+      setUsersError(null);
+      const [uRes, ent, act] = await Promise.all([
+        api.getTenantUsers(tenantId, token).then(res => ({ ok: true as const, data: res })).catch(err => ({ ok: false as const, error: err.message || 'Ошибка загрузки пользователей' })),
         api.getTenantEntitlements(tenantId, token).catch(() => []),
         api.getTenantActivity(tenantId, token).catch(() => []),
       ]);
 
-      setUsersData(u);
+      if (uRes.ok) {
+        setUsersData(uRes.data);
+        setUsersError(null);
+      } else {
+        setUsersError(uRes.error);
+        setUsersData(null);
+      }
       setEntitlementsData(ent);
       setActivityData(act);
     } catch (err: any) {
@@ -744,7 +752,15 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
               <div style={{ fontSize: '13px', fontWeight: 700, color: '#475569', marginBottom: '8px' }}>
                 Пользователи с активным доступом:
               </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+              {usersError && (
+                <div data-testid="users-load-error" style={{ padding: '12px', background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#991B1B', borderRadius: '8px', marginBottom: '14px', fontSize: '13px' }}>
+                  {usersError}
+                  <button onClick={() => loadTenantDetail(activeTenantId!)} style={{ marginLeft: '12px', padding: '4px 10px', background: '#EF4444', color: '#FFF', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                    Повторить
+                  </button>
+                </div>
+              )}
+              <table data-testid="tenant-members-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #E2E8F0', color: '#64748B' }}>
                     <th style={{ padding: '8px 12px' }}>ФИО</th>
@@ -779,7 +795,7 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
               {usersData?.invites.length === 0 ? (
                 <div style={{ color: '#94A3B8', fontSize: '13px' }}>Нет активных ожидающих приглашений.</div>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                <table data-testid="tenant-invites-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E2E8F0', color: '#64748B' }}>
                       <th style={{ padding: '8px 12px' }}>Email</th>
@@ -794,7 +810,7 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
                         <td style={{ padding: '10px 12px', fontWeight: 600 }}>{inv.email}</td>
                         <td style={{ padding: '10px 12px' }}>{inv.role}</td>
                         <td style={{ padding: '10px 12px', color: '#64748B' }}>
-                          до {new Date(inv.expires_at).toLocaleString('ru-RU')}
+                          до {inv.expires_at ? new Date(inv.expires_at).toLocaleString('ru-RU') : '—'}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                           <button

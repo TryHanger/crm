@@ -281,6 +281,7 @@ export const CrmLayout: React.FC<CrmLayoutProps> = ({
               <button
                 key={item.id}
                 type="button"
+                data-testid={`nav-${item.id}`}
                 onClick={() => onNavigate(item.id)}
                 style={{
                   display: 'flex',
