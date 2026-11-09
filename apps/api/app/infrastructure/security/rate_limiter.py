@@ -1,4 +1,5 @@
 import time
+import ipaddress
 import collections
 from typing import Dict, List, Tuple, Callable
 from fastapi import Request, HTTPException, status
@@ -36,17 +37,53 @@ class SlidingWindowRateLimiter:
 
 limiter = SlidingWindowRateLimiter()
 
+def is_trusted_peer(host: str) -> bool:
+    """Checks if the direct peer is a trusted proxy or loopback."""
+    if not host:
+        return False
+    if host in ("127.0.0.1", "::1", "localhost", "testclient"):
+        return True
+    if host in settings.TRUSTED_PROXIES:
+        return True
+    try:
+        parsed = ipaddress.ip_address(host)
+        for tp in settings.TRUSTED_PROXIES:
+            try:
+                if parsed in ipaddress.ip_network(tp, strict=False):
+                    return True
+            except ValueError:
+                if host == tp:
+                    return True
+    except ValueError:
+        pass
+    return False
+
 def get_client_ip(request: Request) -> str:
-    """Extracts client IP, respecting trusted proxies."""
+    """
+    Extracts validated client IP, defending against header spoofing.
+    Only trusts proxy headers if the connecting peer is in TRUSTED_PROXIES.
+    """
     client_host = request.client.host if request.client else "127.0.0.1"
-    is_trusted = (
-        client_host in settings.TRUSTED_PROXIES or
-        client_host in ("127.0.0.1", "::1", "localhost", "testclient")
-    )
-    if is_trusted and "x-forwarded-for" in request.headers:
-        forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if forwarded:
-            return forwarded
+
+    if not is_trusted_peer(client_host):
+        # Peer is not trusted; ignore any client-supplied forwarded headers
+        return client_host
+
+    # When connected through a trusted proxy, prefer X-Real-IP set by Nginx ($remote_addr)
+    real_ip = request.headers.get("x-real-ip", "").strip()
+    if real_ip:
+        return real_ip
+
+    # If X-Forwarded-For is provided, walk right-to-left stopping at the first untrusted IP
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        ips = [ip.strip() for ip in forwarded.split(",") if ip.strip()]
+        for candidate in reversed(ips):
+            if not is_trusted_peer(candidate):
+                return candidate
+        if ips:
+            return ips[0]
+
     return client_host
 
 def rate_limit(max_requests: int, window_seconds: int = 60, group: str = "default"):

@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Full CI Suite (PostgreSQL 17, Pytest 26+ Tests, Frontend Build, Playwright E2E)
+    name: Full CI Suite (PostgreSQL 17, Pytest 42+ Tests, Frontend Build, Playwright E2E)
     runs-on: ubuntu-latest
 
     services:
@@ -42,10 +42,15 @@ jobs:
           node-version: 20
           cache: "npm"
 
-      - name: Install System Dependencies
+      - name: Install PostgreSQL 17 Client & System Dependencies
         run: |
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y libpq-dev postgresql-client
+          sudo apt-get install -y libpq-dev postgresql-client-17
+          pg_dump --version
+          psql --version
 
       - name: Install Python Dependencies
         run: |
@@ -91,19 +96,23 @@ jobs:
 
       - name: Validate Staging Docker Compose Configuration
         run: |
-          docker compose -f docker-compose.staging.yml config
+          cp .env.staging.example .env.staging
+          docker compose --env-file .env.staging -f docker-compose.staging.yml config
 
       - name: Verify PostgreSQL Backup & Restore DR Pipeline
         env:
           ADMIN_DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/saas_crm_test
           ADMIN_DB_USER: postgres
           ADMIN_DB_PASSWORD: postgrespassword
+          DB_USER: crm_app_user
+          DB_PASSWORD: crm_app_secret
           DB_HOST: localhost
           DB_PORT: 5432
           DB_NAME: saas_crm_test
         run: |
-          python scripts/backup_db.py --dir backups
-          python scripts/restore_db.py --target saas_crm_ci_restore_test --report backups/ci_restore_report.json
+          python scripts/backup_db.py --output-dir backups --database saas_crm_test --verbose
+          python scripts/restore_db.py --target-db saas_crm_ci_restore_test --report backups/ci_restore_report.json --verbose
+          cat backups/ci_restore_report.json
 
       - name: Install Frontend Dependencies
         run: |

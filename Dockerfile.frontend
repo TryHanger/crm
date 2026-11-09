@@ -14,24 +14,22 @@ COPY apps/ ./apps/
 RUN npm ci && npm run build --workspaces
 
 # ==========================================
-# Stage 2: Production Non-Root Nginx Runner
+# Stage 2: Production Non-Root Asset Sync Runner
 # ==========================================
 FROM nginx:1.27-alpine AS runner
 
-# Create directory structure for the 3 SPAs
-RUN mkdir -p /var/www/booking-web \
+RUN mkdir -p /opt/static/booking-web \
+             /opt/static/business-crm \
+             /opt/static/platform-console \
+             /var/www/booking-web \
              /var/www/business-crm \
-             /var/www/platform-console \
-             /var/cache/nginx /var/run /var/log/nginx && \
-    chown -R nginx:nginx /var/www /var/cache/nginx /var/run /var/log/nginx
+             /var/www/platform-console && \
+    chown -R nginx:nginx /opt/static /var/www
 
-# Copy build artifacts from builder stage
-COPY --from=builder --chown=nginx:nginx /build/apps/booking-web/dist /var/www/booking-web
-COPY --from=builder --chown=nginx:nginx /build/apps/business-crm/dist /var/www/business-crm
-COPY --from=builder --chown=nginx:nginx /build/apps/platform-console/dist /var/www/platform-console
+COPY --from=builder --chown=nginx:nginx /build/apps/booking-web/dist /opt/static/booking-web
+COPY --from=builder --chown=nginx:nginx /build/apps/business-crm/dist /opt/static/business-crm
+COPY --from=builder --chown=nginx:nginx /build/apps/platform-console/dist /opt/static/platform-console
 
 USER nginx
 
-EXPOSE 8080
-
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["sh", "-c", "cp -a /opt/static/booking-web/. /var/www/booking-web/ && cp -a /opt/static/business-crm/. /var/www/business-crm/ && cp -a /opt/static/platform-console/. /var/www/platform-console/ && echo 'Frontend assets synchronized' && sleep infinity"]

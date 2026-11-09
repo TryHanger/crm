@@ -1,13 +1,44 @@
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
 .coverage
 htmlcov/
-.git
-.gitignore
-.env
-pgdata/
-ОТЧЕТЫ/
+.tox/
+.venv/
+env/
+venv/
+
+# Environment files and credentials
+.env*
+!.env.example
+!.env.staging.example
+
+# Backups, dumps and disaster recovery artifacts
+backups/
+*.sql
 *.dump
+*.tar
+*.gz
+pgdata/
+
+# Logs and runtime data
+logs/
+*.log
+
+# Test results and temporary files
+test-results/
+playwright-report/
+blob-report/
+
+# Version control
+.git/
+.gitignore
+
+# Dependencies
+node_modules/
+
+# Local build artifacts
+apps/*/dist/
+packages/*/dist/

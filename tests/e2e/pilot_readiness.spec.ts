@@ -2,10 +2,10 @@ import { test, expect } from '@playwright/test';
 
 test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
   test.describe.configure({ mode: 'serial' });
-  const PLATFORM_URL = 'http://127.0.0.1:3002';
-  const CRM_URL = 'http://127.0.0.1:3001';
-  const BOOKING_URL = 'http://127.0.0.1:3000';
-  const API_URL = 'http://127.0.0.1:8000';
+  const PLATFORM_URL = process.env.PLATFORM_URL || 'http://127.0.0.1:3002';
+  const CRM_URL = process.env.CRM_URL || 'http://127.0.0.1:3001';
+  const BOOKING_URL = process.env.BOOKING_URL || 'http://127.0.0.1:3000';
+  const API_URL = process.env.API_URL || 'http://127.0.0.1:8000';
 
   const runId = Date.now().toString().slice(-5);
   const pilotSlug = `pilot${runId}`;
@@ -105,8 +105,8 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
       await emailInput.fill(pilotOwnerEmail);
       await page.fill('input[type="password"]', pilotPassword);
       await page.click('button[type="submit"]');
-      await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
     }
+    await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
 
     // 2. Setup First Branch in Settings -> Branches
     await page.click('nav a:has-text("Настройки"), aside button:has-text("Настройки")');
@@ -129,7 +129,7 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
     await page.click('form button:has-text("Добавить")');
     await expect(page.locator(`text=${masterName}`)).toBeVisible({ timeout: 10000 });
 
-    // 3. Add Service
+    // 4. Add Service
     await page.click('nav a:has-text("Услуги"), aside button:has-text("Услуги")');
     await expect(page.locator('h1')).toContainText('Услуги и цены');
 
@@ -140,18 +140,18 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
     await page.click('form button:has-text("Добавить")');
     await expect(page.locator(`text=${serviceTitle}`)).toBeVisible({ timeout: 10000 });
 
-    // 4. Verify & Enable Online Booking Publication
+    // 5. Verify & Enable Online Booking Publication
     await page.click('nav a:has-text("Онлайн-запись"), aside button:has-text("Онлайн-запись")');
     await expect(page.locator('h1')).toContainText('Настройки онлайн-записи');
+    await page.click('button:has-text("Публикация и QR-код")');
     await page.screenshot({ path: 'docs/screenshots/pilot-03-booking-settings.png', fullPage: true });
 
-    const publishToggle = page.locator('button:has-text("Опубликовать"), button:has-text("Опубликовано"), button[role="switch"]');
-    if (await publishToggle.isVisible()) {
-      const text = await publishToggle.textContent();
-      if (text?.includes('Опубликовать') && !text?.includes('Опубликовано')) {
-        await publishToggle.click();
-        await expect(page.locator('text=Опубликовано')).toBeVisible({ timeout: 5000 });
-      }
+    const publishToggle = page.locator('button:has-text("Опубликовать"), button:has-text("Приостановить")');
+    await expect(publishToggle).toBeVisible({ timeout: 10000 });
+    const text = await publishToggle.textContent();
+    if (text?.includes('Опубликовать')) {
+      await publishToggle.click();
+      await expect(page.locator('button:has-text("Приостановить")')).toBeVisible({ timeout: 10000 });
     }
   });
 
@@ -164,8 +164,9 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
     await expect(page.locator('header')).toContainText(new RegExp(pilotName, 'i'));
     await expect(page.locator('h1')).toContainText('Выберите услуги');
 
-    // 2. Select service
+    // Wait for services to be loaded
     const firstServiceBtn = page.locator('button[aria-pressed]').first();
+    await firstServiceBtn.waitFor({ state: 'visible', timeout: 15000 });
     await firstServiceBtn.click();
     await expect(firstServiceBtn).toHaveAttribute('aria-pressed', 'true');
 
@@ -210,8 +211,8 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
       await emailInput.fill(pilotOwnerEmail);
       await page.fill('input[type="password"]', pilotPassword);
       await page.click('button[type="submit"]');
-      await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
     }
+    await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
 
     // Assert booking card is visible with exact public reference
     const bookingCard = page.locator(`[data-public-ref="${bookedPublicRef}"]`);
@@ -244,23 +245,27 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
     expect(loginResp.ok()).toBeTruthy();
     const { access_token } = await loginResp.json();
 
-    // Direct HTTP request to /api/v1/business/customers with cross-tenant header or query must not leak Pilot's customer
+    // 3. Direct API cross-tenant tampering attempt: Modern Cut token attempting to fetch Pilot Tenant's ID must fail with 403 Forbidden
     const crossResp = await request.get(`${API_URL}/api/v1/business/customers?search=Ерлан`, {
       headers: {
         Authorization: `Bearer ${access_token}`,
-        'X-Tenant-ID': '4dce3056-a4a1-4f6a-9ce5-e04be389bb46', // Barberhouse/Pilot ID
+        'X-Tenant-ID': '4dce3056-a4a1-4f6a-9ce5-e04be389bb46',
       },
     });
-    // Either 403 Forbidden or empty results under Modern Cut RLS context
-    if (crossResp.ok()) {
-      const customers = await crossResp.json();
-      expect(customers.length).toBe(0);
-    } else {
-      expect([403, 404]).toContain(crossResp.status());
-    }
+    expect(crossResp.status()).toBe(403);
+
+    // 4. Query under own tenant context must return 200 with 0 results (never leaking Pilot's customer)
+    const ownResp = await request.get(`${API_URL}/api/v1/business/customers?search=Ерлан`, {
+      headers: {
+        Authorization: `Bearer ${access_token}`,
+      },
+    });
+    expect(ownResp.status()).toBe(200);
+    const ownCustomers = await ownResp.json();
+    expect(ownCustomers.length).toBe(0);
   });
 
-  test('PR-5.6: Support Request, Owner Approval & Revocation Lifecycle (FC-P1-01)', async ({ page, request }) => {
+  test('PR-5.6: Support Request, Owner Approval & Revocation Lifecycle (FC-P1-01)', async ({ page }) => {
     // 1. Support Operator logs in to Platform Console and requests access
     await page.goto(PLATFORM_URL);
     await page.evaluate(() => localStorage.clear());
@@ -311,22 +316,27 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
   });
 
   test('PR-5.7: Responsive Mobile Viewport Integrity (320px, 390px, 1280px)', async ({ page }) => {
-    // Test 320px on Booking Web
+    // 1. Test 320px on Booking Web: wait for real content (no skeletons!) and verify no horizontal scroll
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto(`http://${pilotSlug}.localhost:3000`);
     await expect(page.locator('header')).toBeVisible();
+    await page.locator('button[aria-pressed]').first().waitFor({ state: 'visible', timeout: 15000 });
+    const hasHorizontalOverflow320 = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(hasHorizontalOverflow320).toBe(false);
     await page.screenshot({ path: 'docs/screenshots/pilot-07-mobile-320px-booking.png' });
 
-    // Test 390px on Business CRM
+    // 2. Test 390px on Business CRM
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(CRM_URL);
-    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('h1, [data-testid="accept-invite-page"]')).toBeVisible({ timeout: 10000 });
+    const hasHorizontalOverflow390 = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(hasHorizontalOverflow390).toBe(false);
     await page.screenshot({ path: 'docs/screenshots/pilot-08-mobile-390px-crm.png' });
 
-    // Test 1280px on Platform Console
+    // 3. Test 1280px on Platform Console
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(PLATFORM_URL);
-    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('h1, [data-testid="platform-login-form"]')).toBeVisible({ timeout: 10000 });
     await page.screenshot({ path: 'docs/screenshots/pilot-09-desktop-1280px-console.png' });
   });
 });

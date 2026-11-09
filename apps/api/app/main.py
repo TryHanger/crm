@@ -29,23 +29,23 @@ from apps.api.app.api.v1.public.routes import router as public_router
 from apps.api.app.api.v1.business.routes import router as business_router
 
 from apps.api.app.api.v1.platform.routes import router as platform_router
+from apps.api.app.infrastructure.security.ip_filter import enforce_platform_ip_allowlist
+from fastapi import Depends
+
+docs_url = "/docs" if settings.ENVIRONMENT in ("development", "test") or getattr(settings, "ENABLE_API_DOCS", False) else None
+redoc_url = "/redoc" if settings.ENVIRONMENT in ("development", "test") or getattr(settings, "ENABLE_API_DOCS", False) else None
+openapi_url = "/openapi.json" if settings.ENVIRONMENT in ("development", "test") or getattr(settings, "ENABLE_API_DOCS", False) else None
+
 
 
 
 app = FastAPI(
-
     title=settings.PROJECT_NAME,
-
     description="Multi-tenant SaaS Backend for Online Booking, CRM, and Platform Console",
-
     version="1.0.0",
-
-    docs_url="/docs",
-
-    redoc_url="/redoc",
-
-    openapi_url="/openapi.json"
-
+    docs_url=docs_url,
+    redoc_url=redoc_url,
+    openapi_url=openapi_url
 )
 
 
@@ -241,5 +241,5 @@ app.include_router(public_router, prefix=settings.API_V1_STR)
 
 app.include_router(business_router, prefix=settings.API_V1_STR)
 
-app.include_router(platform_router, prefix=settings.API_V1_STR)
+app.include_router(platform_router, prefix=settings.API_V1_STR, dependencies=[Depends(enforce_platform_ip_allowlist)])
 

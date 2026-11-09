@@ -1,0 +1,12 @@
+{
+  "timestamp_utc": "20261109_120358Z",
+  "database_name": "saas_crm_test",
+  "dump_file": "backup_saas_crm_test_20261109_120358Z.sql",
+  "dump_path": "C:\\Users\\Nikita\\Desktop\\CRM\\backups\\backup_saas_crm_test_20261109_120358Z.sql",
+  "file_size_bytes": 458007,
+  "sha256_checksum": "a9aec8f592e9eeff945405c1316d09cc9333db4f9f999792ebfbb4812392b1f7",
+  "duration_seconds": 1.887,
+  "pg_dump_version": "Docker container (crm-test-pg)",
+  "created_by": "scripts/backup_db.py",
+  "status": "SUCCESS"
+}
