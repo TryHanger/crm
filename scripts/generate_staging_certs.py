@@ -6,10 +6,14 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-def generate_staging_certificates(output_dir: str = "nginx/certs"):
+def generate_staging_certificates(output_dir: str = "nginx/certs", force: bool = False):
     os.makedirs(output_dir, exist_ok=True)
     privkey_path = os.path.join(output_dir, "privkey.pem")
     cert_path = os.path.join(output_dir, "fullchain.pem")
+
+    if not force and os.path.exists(privkey_path) and os.path.exists(cert_path):
+        print(f"[+] Reusing existing TLS certificates in {output_dir}")
+        return privkey_path, cert_path
 
     # Generate RSA private key (2048-bit)
     key = rsa.generate_private_key(
@@ -62,7 +66,7 @@ def generate_staging_certificates(output_dir: str = "nginx/certs"):
             critical=False,
         )
         .add_extension(
-            x509.BasicConstraints(ca=False, path_length=None),
+            x509.BasicConstraints(ca=True, path_length=None),
             critical=True,
         )
         .sign(key, hashes.SHA256())

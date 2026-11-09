@@ -84,8 +84,8 @@ async def resolve_public_tenant(
     res = await db.execute(stmt)
     row = res.first()
 
-    # Fallback: extract subdomain prefix (e.g. 'pilotstudio' from 'pilotstudio.localhost' or 'pilotstudio.book.staging.crm.internal')
-    if not row:
+    # Fallback ONLY for explicit local development/test environments on .localhost
+    if not row and settings.ENVIRONMENT in ("development", "test") and is_local_host:
         subdomain = hostname.split(".")[0]
         if subdomain and subdomain not in ("localhost", "api", "console", "app", "www", "testserver"):
             stmt_slug = (

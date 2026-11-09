@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Full CI Suite (PostgreSQL 17, Pytest 42+ Tests, Frontend Build, Playwright E2E)
+    name: Full CI Suite (PostgreSQL 17, Pytest 48 Tests, Staging Container Deployment, Playwright E2E)
     runs-on: ubuntu-latest
 
     services:
@@ -96,10 +96,18 @@ jobs:
         run: |
           python -m pytest apps/api/tests/ -v --durations=10
 
-      - name: Validate Staging Docker Compose Configuration
+      - name: Verify Real Containerized Staging Deployment (Docker Compose + Nginx TLS Smoke Probes)
         run: |
-          cp .env.staging.example .env.staging
-          docker compose --env-file .env.staging -f docker-compose.staging.yml config
+          python scripts/verify_staging_deployment.py --report staging_deployment_report.json --teardown
+          cat staging_deployment_report.json
+
+      - name: Upload Staging Deployment Verification Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-deployment-report
+          path: staging_deployment_report.json
+          retention-days: 7
 
       - name: Verify PostgreSQL Backup & Restore DR Pipeline
         env:
@@ -115,6 +123,14 @@ jobs:
           python scripts/backup_db.py --output-dir backups --database saas_crm_test --verbose
           python scripts/restore_db.py --target-db saas_crm_ci_restore_test --report backups/ci_restore_report.json --verbose
           cat backups/ci_restore_report.json
+
+      - name: Upload Disaster Recovery Verification Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disaster-recovery-report
+          path: backups/ci_restore_report.json
+          retention-days: 7
 
       - name: Install Frontend Dependencies
         run: |
@@ -160,10 +176,12 @@ jobs:
           curl -s http://127.0.0.1:8000/api/v1/public/site -H "Host: barberhouse.book.example.kz"
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
-      - name: Upload Playwright Test Results
-        if: failure()
+      - name: Upload Playwright Test Results & Screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results
-          path: test-results/
+          name: playwright-artifacts
+          path: |
+            docs/screenshots/
+            test-results/
           retention-days: 7

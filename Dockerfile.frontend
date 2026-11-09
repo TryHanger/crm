@@ -30,6 +30,4 @@ COPY --from=builder --chown=nginx:nginx /build/apps/booking-web/dist /opt/static
 COPY --from=builder --chown=nginx:nginx /build/apps/business-crm/dist /opt/static/business-crm
 COPY --from=builder --chown=nginx:nginx /build/apps/platform-console/dist /opt/static/platform-console
 
-USER nginx
-
-CMD ["sh", "-c", "cp -a /opt/static/booking-web/. /var/www/booking-web/ && cp -a /opt/static/business-crm/. /var/www/business-crm/ && cp -a /opt/static/platform-console/. /var/www/platform-console/ && echo 'Frontend assets synchronized' && sleep infinity"]
+CMD ["sh", "-c", "cp -a /opt/static/booking-web/. /var/www/booking-web/ && cp -a /opt/static/business-crm/. /var/www/business-crm/ && cp -a /opt/static/platform-console/. /var/www/platform-console/ && chown -R nginx:nginx /var/www && echo 'Frontend assets synchronized' && sleep infinity"]

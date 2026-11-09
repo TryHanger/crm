@@ -195,5 +195,5 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f pro
 
 ### Важные архитектурные гарантии Staging:
 1. **API без администраторских привилегий (`PROCESS_ROLE=api`)**: Контейнер `api` не имеет доступа к `ADMIN_DB_PASSWORD` и подключается исключительно через роль `crm_app_user`.
-2. **Верификация доверенных прокси**: `TRUSTED_PROXIES` включает как сетевую подсеть моста `172.28.0.0/16`, так и имена docker-сервисов (`proxy`, `nginx`), предотвращая подделку `X-Forwarded-For`.
+2. **Строго суженное доверие к Nginx Proxy**: `TRUSTED_PROXIES` сужено до точного адреса Nginx `172.28.0.10` (а также `127.0.0.1`, `::1`, `proxy`, `nginx`). Широкая подсеть моста удалена для защиты от спуфинга заголовков из других контейнеров.
 3. **Единый контракт управления онлайн-записью**: Переключение статуса публикации (`PATCH /api/v1/business/booking-publication` с `is_published: false`) немедленно отключает публичную запись, возвращая HTTP 404 `SITE_NOT_PUBLISHED`.

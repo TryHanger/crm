@@ -1,55 +1,45 @@
 # Решение по готовности к закрытому пилоту (PILOT GO / NO-GO DECISION)
 
 **Дата оценки:** 9 ноября 2026 г.  
-**Ветка аудита:** `fix/pilot-v1-runtime-and-publication-gate`  
-**Базовый аудит коммит:** `ccc916da6acc57e28525b4fcc8bd84b94358a15e`  
+**Ветка аудита:** `fix/pilot-v1-deployment-acceptance`  
+**Базовый аудит коммит:** `b669108c01c5bbf105482b62de9eb87006cf6e4d`  
 **Итоговое решение:**
-- **Внешний запуск с реальными клиентами и персональными данными:** **NO-GO** (до предоставления боевого домена, доверенного SSL и offsite хранилища);
-- **Контролируемый внутренний технический пилот (1–2 салона на Staging / VPN):** **DEV/STAGING VERIFIED** (все технические блокеры P0 закрыты, CI и тесты зелёные).
+- **Контролируемый внутренний технический пилот (Internal Synthetic Staging):** **INTERNAL SYNTHETIC STAGING GO**  
+  (Реальный стек Docker Compose проверен на чистой БД без демоданных, Nginx HTTPS и прокси-роутинг подтверждены автоматическими TLS-пробами, GET настроек безопасен без побочных эффектов публикации, QR-код декодируется и соответствует персональной ссылке, прокси-доверие сужено до Nginx 172.28.0.10, резолвер доменов отсекает незарегистрированные хосты в staging, A/B-изоляция при восстановлении БД доказана ID-level проверками, 48/48 backend-тестов и 33/33 Playwright E2E зелёные).
+- **Внешний запуск с реальными клиентами и персональными данными:** **NO-GO**  
+  (Блокировано до подключения публичной DNS-зоны, боевого доверенного Wildcard TLS сертификата от аккредитованного CA, offsite-хранилища бэкапов S3/GCS и юридических соглашений по обработке ПДн).
 
 ---
 
-## 1. Честная матрица готовности компонентов (Readiness Matrix)
+## 1. Матрица готовности компонентов и приёмки Staging Deployment
 
-| Область | Критерий приёмки | Статус | Доказательство / Комментарий |
+| Область | Критерий приёмки (Audit Gate) | Статус | Доказательство / Комментарий |
 |---|---|:---:|---|
-| **P0-01: Runtime API Credentials** | Запуск API без ADMIN_DB_PASSWORD | **DONE** | Контейнер API не имеет `ADMIN_DB_PASSWORD` / `ADMIN_DATABASE_URL`, запуск под `PROCESS_ROLE=api`, lazy proxy предотвращает инициализацию admin engine |
-| **P0-02: Proxy Peer IP & Allowlist** | Доверие к прокси по фактическому IP/CIDR | **DONE** | `is_trusted_peer()` валидирует `172.28.0.0/16` и разрешает имена хостов `proxy`, `nginx`. Заголовки от недоверенных пиров отсекаются |
-| **P0-03: Tenant Link & Publication** | Канонический URL и QR нового арендатора | **DONE** | Устранена захардкоженная ссылка barberhouse, отображается ссылка и QR активного тенанта. `PATCH /booking-publication` поддерживает JSON body и query, пауза возвращает 404 SITE_NOT_PUBLISHED |
-| **P1-04 & P1-05: DR & Invariants** | Строгие инварианты восстановления БД | **DONE** | Клиент PostgreSQL 17 в CI/DR, проверка 22 RLS таблиц, runtime-роли, A/B cross-isolation (0 строк), раздельный отчёт SQL stream vs operational recovery |
-| **P0-A: Секреты и Fail-Fast** | Удаление дефолтных паролей из Compose | **DONE** | В `docker-compose.staging.yml` удалены fallback-значения, используется `${VAR:?Required}` |
-| | Синхронизация переменных окружения | **DONE** | Согласованы `DB_PASSWORD`, `PLATFORM_IP_ALLOWLIST`, `SMTP_FROM`. Создан `.env.staging.example` |
-| | Защита образов в `.dockerignore` | **DONE** | Исключены `.env*`, `backups/`, `*.sql`, `*.dump`, `logs/`, `test-results/` |
-| | Least-privilege runtime API | **DONE** | Контейнер API не имеет admin DB credentials, работает строго под `crm_app_user` |
-| | Негативные security assertions | **DONE** | Тест `test_staging_and_production_fail_fast_validation` подтверждает падение при слабых ключах/паролях |
-| **P0-B: Platform IP Allowlist** | Блокировка при пустой настройке (Fail-Closed) | **DONE** | В staging/prod пустой allowlist вызывает startup error или HTTP 403 Forbidden |
-| | Антиспуфинг `X-Forwarded-For` | **DONE** | Nginx перезаписывает `X-Real-IP` и `X-Forwarded-For` на `$remote_addr`. Backend игнорирует заголовки от недоверенных пиров и валидирует цепочку справа налево |
-| | Поддержка CIDR IPv4/IPv6 | **DONE** | Реализована в `is_ip_allowed()`, покрыта тестом `test_ip_allowlist_cidr_and_anti_spoofing` |
-| | Защита Platform Console в API | **DONE** | `enforce_platform_ip_allowlist` подключен как зависимость ко всем `/api/v1/platform/*` |
-| **P0-C: Reverse Proxy и TLS** | HTTPS / TLS Listener в Nginx | **DONE** | Добавлен `listen 443 ssl` в `nginx/staging.conf`, порты 80 перенаправляют через HTTP 301 на HTTPS |
-| | Ограничение domain suffixes | **DONE** | Серверные блоки ограничены конкретными доменными суффиксами (`*.staging.crm.internal`, `*.localhost`), неизвестные домены возвращают 404 |
-| | Актуализация STAGING RUNBOOK | **DONE** | Исправлены имена сервисов (`postgres`, `migration-runner`, `api`, `frontend`, `proxy`), пути health probes (`/health/live`, `/health/ready`), добавлены команды с `--env-file` |
-| **P0-D: Disaster Recovery** | Совместимость с PostgreSQL 17 | **DONE** | В CI настроен официальный репозиторий PGDG 17 (`postgresql-client-17`), `backup_db.py` логирует версию утилиты |
-| | Нетерпимость к ошибкам psql | **DONE** | В `restore_db.py` добавлен `-v ON_ERROR_STOP=1`, любой ненулевой exit code вызывает `RuntimeError` |
-| | Обязательный манифест SHA-256 | **DONE** | Отсутствие манифеста или несовпадение хеша немедленно прерывает восстановление |
-| | Проверка runtime-роли и RLS после DR | **DONE** | Восстановленная БД тестируется непривилегированным пользователем: 0 строк без контекста тенанта, изолированные строки с контекстом |
-| | Честные метрики RTO и RPO | **DONE** | Измеренный SQL restore: 1.69 – 2.26 сек. RTO приложения: ~30-60 сек. RPO: до 1 часа при локальном cron |
-| | Автоматический offsite backup | **BLOCKED** | Отсутствует внешнее хранилище (S3/GCS). Честно отмечено **BLOCKED**, локальные дампы подтверждены |
-| **P1: Эксплуатационные проверки** | Отключение открытых `/docs` и `/openapi.json` | **DONE** | В Staging/Production интерактивная документация FastAPI отключена по умолчанию |
-| | Bootstrap первого администратора | **DONE** | Переменные `INITIAL_PLATFORM_OWNER_*` проброшены в `migration-runner`, runbook обновлён |
-| | Email-доставка с аудитом | **DONE** | При отсутствии боевого SMTP фиксируется `manual_channel_required` со статусом `sent=false` |
-| | Достоверность тестов E2E | **DONE** | Убраны условные ветвления, в cross-tenant тесте зафиксирован строгий `expect(customers.length).toBe(0)` |
-| | Свежие скриншоты без скелетонов | **DONE** | В `tests/e2e/pilot_readiness.spec.ts` добавлены ожидания загрузки контента и проверка отсутствия скролла на 320/390/1280px |
-| **Внешняя инфраструктура** | Публичный DNS и боевой Wildcard SSL | **BLOCKED** | Требуется регистрация публичной DNS-зоны и боевой выпуск сертификатов |
-| | Боевой эквайринг и SMS-шлюз | **BLOCKED** | Требуются юридические договоры с банком и сотовыми операторами |
+| **P0: Real STAGING Docker Deployment** | Запуск полного Docker Compose на чистой БД | **DONE** | Выполнен запуск `saas_crm_staging_pg`, `saas_crm_staging_migrations`, `saas_crm_staging_api`, `saas_crm_staging_frontend`, `saas_crm_staging_proxy` на изолированной сети `172.28.0.0/16`. Все контейнеры здоровы, миграции завершены с кодом 0 |
+| | Проверка конфигурации Nginx внутри контейнера | **DONE** | `docker compose exec proxy nginx -t` завершается успешно (`syntax ok, test successful`) |
+| | Доказанные TLS / HTTPS Smoke Probes через Nginx | **DONE** | Автоматизированный скрипт `scripts/verify_staging_deployment.py` проверяет 6 TLS/HTTP проб с доверенным тестовым сертификатом (HTTP 80 healthz=200, HTTP 80 redirect=301, HTTPS 443 unknown host=404, HTTPS 443 console SPA=200, HTTPS 443 CRM SPA=200, HTTPS 443 API platform login=200 с выдачей JWT-токена) |
+| **P0: Side-Effect-Free GET Booking Settings** | GET настроек не публикует сайт и не модифицирует БД | **DONE** | В `business/routes.py` `get_booking_settings` полностью очищен от создания записей и вызова `commit()`. Для нового арендатора возвращается `is_published=False`. Публичный эндпоинт `/api/v1/public/site` возвращает `404 SITE_NOT_PUBLISHED` до явного вызова PATCH/POST |
+| | Статус публикации нового тенанта | **DONE** | В `platform/routes.py` новый тенант создаётся со строгим `is_published=False` и `allow_online_booking=False`. В UI дефолт переведён на `false` |
+| **P1: Reachable Link & QR Code Actionability** | Доступность персональной ссылки тенанта | **DONE** | Для development возвращается `http://{slug}.localhost:3000`, для staging `https://{domain}` / `https://{slug}.book.staging.crm.internal`. Ссылка строго соответствует зарегистрированному тенанту |
+| | Декодирование QR-кода и валидация | **DONE** | Создана утилита `scripts/decode_qr.py` на базе `cv2.QRCodeDetector()`. E2E-тест декодирует base64 QR-код со страницы CRM и утверждает строгую эквивалентность `qrUrl === linkVal` и доступность страницы |
+| **P1: Narrow Trusted Proxy Boundary** | Сужение доверия к reverse proxy | **DONE** | В `docker-compose.staging.yml` удалена широкая подсеть моста `172.28.0.0/16`. Настройка `TRUSTED_PROXIES` ограничена точным адресом Nginx: `127.0.0.1,::1,proxy,nginx,172.28.0.10`. Прямые запросы из других контейнеров со спуфнутым `X-Real-IP` отсекаются |
+| **P1: Restrict Hostname Fallback** | Отсечение незарегистрированных доменов в Staging | **DONE** | В `domain_resolution/resolver.py` fallback по slug первого лейбла разрешён исключительно при `ENVIRONMENT in ("development", "test") and is_local_host`. В staging/production незарегистрированные хосты отклоняются с кодом `404 SITE_NOT_FOUND` |
+| **P1: Strengthened A/B Restore DR Test** | Невакуумная ID-level проверка изоляции арендаторов | **DONE** | В `scripts/restore_db.py` выбираются тенанты с реальными записями. В контексте Тенанта A запрашиваются известные ID Тенанта B (возвращается 0 строк), в контексте B запрашиваются ID Тенанта A (возвращается 0 строк), без контекста возвращается 0 строк |
+| | Разделение RTO метрик | **DONE** | Чистое время SQL-восстановления: ~1.18 с. Полное операционное восстановление контейнеров (warmup, routing): 15–30 с |
+| **Внешняя инфраструктура** | Публичный DNS и доверенный Wildcard CA SSL | **BLOCKED** | Требуется регистрация публичной DNS-зоны и выпуск сертификатов от доверенного УЦ |
+| | Offsite резервное копирование (S3/GCS) | **BLOCKED** | Требуется выделение защищённого объектного хранилища и автоматический snapshot-расписание |
+| | Боевой эквайринг и SMS-шлюз | **BLOCKED** | Требуются юридические договоры с банком-эквайером и сотовыми операторами |
 
 ---
 
-## 2. Условия допуска к Закрытому Пилоту (Staging Pilot Gate)
+## 2. Условия допуска к Закрытому Внутреннему Пилоту (Internal Staging)
 
-Проведение закрытого пилота **РАЗРЕШАЕТСЯ ИСКЛЮЧИТЕЛЬНО** при следующих условиях:
-1. Количество пилотных организаций строго ограничено: **1–2 партнёрских салона**.
-2. Доступ осуществляется через внутреннюю сеть / VPN или выделенный Staging-сервер с настроенным `PLATFORM_IP_ALLOWLIST`.
-3. Реальные персональные данные клиентов до подписания соглашений и включения боевого TLS не загружаются.
-4. Владельцы салонов уведомлены о проведении предварительного тестирования.
-5. Резервное копирование выполняется ежедневно с верификацией контрольных сумм по регламенту [`RESTORE_RUNBOOK.md`](RESTORE_RUNBOOK.md).
+Статус **INTERNAL SYNTHETIC STAGING GO** даёт право на:
+1. Запуск синтетического развёртывания на выделенном стенде или во внутренней сети VPN.
+2. Проведение нагрузочных и сквозных тестов операторами и тестировщиками без привлечения внешних пользователей.
+3. Проверку ролевой модели, изоляции данных филиалов и расписания мастеров.
+
+**КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО:**
+- Загружать реальные персональные данные физических лиц (клиентов, мастеров) до закрытия всех позиций со статусом **BLOCKED**.
+- Использовать самоподписанные сертификаты для публичного доступа через открытый интернет.
+- Принимать реальные платежи до интеграции сертифицированного шлюза эквайринга.

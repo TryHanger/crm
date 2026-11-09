@@ -1021,18 +1021,11 @@ async def get_booking_settings(
     stmt_theme = select(BookingTheme).where(BookingTheme.tenant_id == crm_user.tenant_id)
     theme = (await db.execute(stmt_theme)).scalars().first()
 
-    # Get Publication
+    # Get Publication (Pure read-only: do NOT create or commit side-effects during GET)
     stmt_pub = select(BookingPublication).where(BookingPublication.tenant_id == crm_user.tenant_id)
     pub = (await db.execute(stmt_pub)).scalars().first()
-    if not pub:
-        pub = BookingPublication(
-            tenant_id=crm_user.tenant_id,
-            slug=t_slug,
-            is_published=True,
-            published_at=datetime.datetime.now(datetime.timezone.utc)
-        )
-        db.add(pub)
-        await db.commit()
+    is_pub = pub.is_published if pub else False
+    pub_slug = (pub.slug if pub and pub.slug else None) or t_slug
 
     # Calculate canonical public url for this specific tenant
     stmt_dom = select(TenantDomain).where(TenantDomain.tenant_id == crm_user.tenant_id)
@@ -1042,11 +1035,11 @@ async def get_booking_settings(
         canonical_domain = next((d.hostname_normalized for d in doms if d.verification_status == "verified"), None)
 
     from apps.api.app.core.config import settings
-    if canonical_domain:
-        canonical_public_url = f"http://{canonical_domain}:3000" if settings.ENVIRONMENT == "development" else f"https://{canonical_domain}"
+    if settings.ENVIRONMENT in ("development", "test"):
+        canonical_public_url = f"http://{t_slug}.localhost:3000"
     else:
-        if settings.ENVIRONMENT == "development":
-            canonical_public_url = f"http://{t_slug}.localhost:3000"
+        if canonical_domain:
+            canonical_public_url = f"https://{canonical_domain}"
         else:
             suffix = settings.BOOKING_DOMAIN_SUFFIX if settings.BOOKING_DOMAIN_SUFFIX.startswith(".") else f".{settings.BOOKING_DOMAIN_SUFFIX}"
             canonical_public_url = f"https://{t_slug}{suffix}"
@@ -1066,8 +1059,8 @@ async def get_booking_settings(
             "accent_color": theme.accent_color if theme else "#2563EB",
         },
         "publication": {
-            "is_published": pub.is_published,
-            "slug": pub.slug or t_slug,
+            "is_published": is_pub,
+            "slug": pub_slug,
             "public_url": canonical_public_url,
         },
         "book_ahead_days": policy.book_ahead_days,
@@ -1152,9 +1145,7 @@ async def publish_online_booking(
     if pol:
         pol.allow_online_booking = target_state
 
-    await db.commit()
-
-    # Compute URL
+    # Compute URL before commit to preserve tenant RLS context
     tenant_res = await db.execute(select(Tenant).where(Tenant.id == crm_user.tenant_id))
     t_obj = tenant_res.scalar_one_or_none()
     t_slug = t_obj.slug if t_obj else pub.slug
@@ -1166,14 +1157,16 @@ async def publish_online_booking(
         canonical_domain = next((d.hostname_normalized for d in doms if d.verification_status == "verified"), None)
 
     from apps.api.app.core.config import settings
-    if canonical_domain:
-        canonical_public_url = f"http://{canonical_domain}:3000" if settings.ENVIRONMENT == "development" else f"https://{canonical_domain}"
+    if settings.ENVIRONMENT in ("development", "test"):
+        canonical_public_url = f"http://{t_slug}.localhost:3000"
     else:
-        if settings.ENVIRONMENT == "development":
-            canonical_public_url = f"http://{t_slug}.localhost:3000"
+        if canonical_domain:
+            canonical_public_url = f"https://{canonical_domain}"
         else:
             suffix = settings.BOOKING_DOMAIN_SUFFIX if settings.BOOKING_DOMAIN_SUFFIX.startswith(".") else f".{settings.BOOKING_DOMAIN_SUFFIX}"
             canonical_public_url = f"https://{t_slug}{suffix}"
+
+    await db.commit()
 
     return {
         "is_published": pub.is_published,

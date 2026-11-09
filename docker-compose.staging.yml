@@ -71,7 +71,7 @@ services:
       ENABLE_DEMO_SEED: "false"
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env.staging}
       PLATFORM_IP_ALLOWLIST: ${PLATFORM_IP_ALLOWLIST:?PLATFORM_IP_ALLOWLIST must be set in .env.staging}
-      TRUSTED_PROXIES: 127.0.0.1,::1,proxy,nginx,172.28.0.10,172.28.0.0/16
+      TRUSTED_PROXIES: 127.0.0.1,::1,proxy,nginx,172.28.0.10
       BOOKING_DOMAIN_SUFFIX: ${BOOKING_DOMAIN_SUFFIX:-.book.staging.crm.internal}
       CRM_DOMAIN: ${CRM_DOMAIN:-app.staging.crm.internal}
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-console.staging.crm.internal}

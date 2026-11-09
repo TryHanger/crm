@@ -30,6 +30,9 @@ venv.bak/
 
 # Environment Variables & Secrets
 .env
+.env.*
+!.env.example
+!.env.staging.example
 .env.local
 .env.*.local
 *.pem

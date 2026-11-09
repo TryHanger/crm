@@ -1,0 +1,45 @@
+{
+  "status": "SUCCESS",
+  "verified_at_utc": "2026-11-09T14:47:44Z",
+  "container_states": {
+    "saas_crm_staging_api": "up 3 minutes (healthy)",
+    "saas_crm_staging_frontend": "up 3 minutes",
+    "saas_crm_staging_migrations": "exited (0) less than a second ago",
+    "saas_crm_staging_pg": "up 3 minutes (healthy)",
+    "saas_crm_staging_proxy": "up 3 minutes"
+  },
+  "nginx_config_test": "PASS",
+  "https_smoke_probes": [
+    {
+      "probe": "http_healthz",
+      "status": 200,
+      "passed": true
+    },
+    {
+      "probe": "http_redirect_301",
+      "status": 301,
+      "location": "https://app.staging.crm.internal/",
+      "passed": true
+    },
+    {
+      "probe": "unknown_host_rejection",
+      "status": 404,
+      "passed": true
+    },
+    {
+      "probe": "console_spa_https",
+      "status": 200,
+      "passed": true
+    },
+    {
+      "probe": "crm_spa_https",
+      "status": 200,
+      "passed": true
+    },
+    {
+      "probe": "api_login_via_nginx_https",
+      "status": 200,
+      "passed": true
+    }
+  ]
+}

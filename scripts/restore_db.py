@@ -199,10 +199,27 @@ def restore_and_verify(
         if not has_exclusion_constraint:
             raise RuntimeError("FATAL: staff_occupancy_no_overlap exclusion constraint is missing after restore!")
 
-        # Fetch sample tenant IDs for isolation tests
-        cur.execute("SELECT id FROM tenants ORDER BY created_at ASC LIMIT 2;")
-        tenant_rows = cur.fetchall()
-        sample_tenant_id = str(tenant_rows[0][0]) if tenant_rows else None
+        # Fetch sample tenant IDs with records for rigorous cross-isolation proof
+        cur.execute("SELECT tenant_id, count(*) FROM branches GROUP BY tenant_id HAVING count(*) > 0 ORDER BY count(*) DESC LIMIT 2;")
+        tenant_branch_rows = cur.fetchall()
+        if len(tenant_branch_rows) < 2:
+            raise RuntimeError(f"FATAL: A/B isolation verification requires at least 2 tenants with branches in the restored database, found {len(tenant_branch_rows)}!")
+
+        t_a_id = str(tenant_branch_rows[0][0])
+        t_b_id = str(tenant_branch_rows[1][0])
+
+        cur.execute("SELECT id FROM branches WHERE tenant_id = %s;", (t_a_id,))
+        a_branch_rows = cur.fetchall()
+        a_branch_ids = [str(r[0]) for r in a_branch_rows]
+
+        cur.execute("SELECT id FROM branches WHERE tenant_id = %s;", (t_b_id,))
+        b_branch_rows = cur.fetchall()
+        b_branch_ids = [str(r[0]) for r in b_branch_rows]
+
+        if not a_branch_ids or not b_branch_ids:
+            raise RuntimeError(f"FATAL: Both Tenant A ({t_a_id}: {len(a_branch_ids)} branches) and Tenant B ({t_b_id}: {len(b_branch_ids)} branches) must have existing records for non-vacuous A/B isolation proof!")
+
+        sample_tenant_id = t_a_id
 
     target_conn.close()
 
@@ -227,12 +244,9 @@ def restore_and_verify(
             no_context_count = r_cur.fetchone()[0]
 
             # Querying with tenant context must return that tenant's rows only
-            if sample_tenant_id:
-                r_cur.execute(f"SET LOCAL app.current_tenant = '{sample_tenant_id}';")
-                r_cur.execute("SELECT count(*) FROM branches;")
-                tenant_context_count = r_cur.fetchone()[0]
-            else:
-                tenant_context_count = 0
+            r_cur.execute(f"SET LOCAL app.current_tenant = '{sample_tenant_id}';")
+            r_cur.execute("SELECT count(*) FROM branches;")
+            tenant_context_count = r_cur.fetchone()[0]
 
             if no_context_count == 0:
                 runtime_rls_verified = True
@@ -240,30 +254,44 @@ def restore_and_verify(
             else:
                 raise RuntimeError(f"Runtime role leaked {no_context_count} rows without tenant context!")
 
-            # 7. Cross-tenant isolation verification under runtime role
-            if len(tenant_rows) >= 2:
-                t_a = str(tenant_rows[0][0])
-                t_b = str(tenant_rows[1][0])
+            # 7. Rigorous Cross-Tenant ID-Level Isolation Verification under runtime role
+            # Test 7.1: Under Tenant A context:
+            r_cur.execute(f"SET LOCAL app.current_tenant = '{t_a_id}';")
+            # Querying Tenant B's specific known IDs while authenticated as Tenant A MUST return 0 rows
+            r_cur.execute("SELECT count(*) FROM branches WHERE id = ANY(%s::uuid[]);", (b_branch_ids,))
+            cross_b_in_a = r_cur.fetchone()[0]
+            if cross_b_in_a != 0:
+                raise RuntimeError(f"CRITICAL: Tenant A context leaked {cross_b_in_a} rows of Tenant B!")
 
-                r_cur.execute(f"SET LOCAL app.current_tenant = '{t_a}';")
-                r_cur.execute("SELECT count(*) FROM branches;")
-                count_a = r_cur.fetchone()[0]
+            # Querying Tenant A's own known IDs MUST return all of A's rows
+            r_cur.execute("SELECT count(*) FROM branches WHERE id = ANY(%s::uuid[]);", (a_branch_ids,))
+            own_a = r_cur.fetchone()[0]
+            if own_a != len(a_branch_ids):
+                raise RuntimeError(f"Tenant A could not read own branches: expected {len(a_branch_ids)}, got {own_a}")
 
-                r_cur.execute(f"SET LOCAL app.current_tenant = '{t_b}';")
-                r_cur.execute("SELECT count(*) FROM branches;")
-                count_b = r_cur.fetchone()[0]
+            # Test 7.2: Under Tenant B context:
+            r_cur.execute(f"SET LOCAL app.current_tenant = '{t_b_id}';")
+            # Querying Tenant A's specific known IDs while authenticated as Tenant B MUST return 0 rows
+            r_cur.execute("SELECT count(*) FROM branches WHERE id = ANY(%s::uuid[]);", (a_branch_ids,))
+            cross_a_in_b = r_cur.fetchone()[0]
+            if cross_a_in_b != 0:
+                raise RuntimeError(f"CRITICAL: Tenant B context leaked {cross_a_in_b} rows of Tenant A!")
 
-                r_cur.execute("RESET app.current_tenant;")
-                r_cur.execute("SELECT count(*) FROM branches;")
-                count_reset = r_cur.fetchone()[0]
+            # Querying Tenant B's own known IDs MUST return all of B's rows
+            r_cur.execute("SELECT count(*) FROM branches WHERE id = ANY(%s::uuid[]);", (b_branch_ids,))
+            own_b = r_cur.fetchone()[0]
+            if own_b != len(b_branch_ids):
+                raise RuntimeError(f"Tenant B could not read own branches: expected {len(b_branch_ids)}, got {own_b}")
 
-                if count_reset == 0:
-                    tenant_ab_verified = True
-                    print(f"[+] Tenant A/B cross-isolation verified: Tenant A={count_a}, Tenant B={count_b}, Unauthenticated=0.")
-                else:
-                    raise RuntimeError(f"Cross-tenant isolation check failed: RESET leaked {count_reset} rows!")
-            else:
-                tenant_ab_verified = True
+            # Test 7.3: Reset context (Unauthenticated runtime query)
+            r_cur.execute("RESET app.current_tenant;")
+            r_cur.execute("SELECT count(*) FROM branches WHERE id = ANY(%s::uuid[]);", (a_branch_ids + b_branch_ids,))
+            unauth_count = r_cur.fetchone()[0]
+            if unauth_count != 0:
+                raise RuntimeError(f"CRITICAL: Unauthenticated query leaked {unauth_count} rows!")
+
+            tenant_ab_verified = True
+            print(f"[+] Proven A/B cross-isolation: Tenant A querying B's IDs=0/{len(b_branch_ids)}, Tenant B querying A's IDs=0/{len(a_branch_ids)}, unauthenticated=0.")
 
         runtime_conn.close()
     except Exception as e:

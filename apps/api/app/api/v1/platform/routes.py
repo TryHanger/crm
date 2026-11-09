@@ -576,15 +576,15 @@ async def create_tenant(
 
     await db.execute(text(f"SELECT set_config('app.current_tenant', '{tenant.id}', true)"))
 
-    booking_policy = BookingPolicy(tenant_id=tenant.id)
+    booking_policy = BookingPolicy(tenant_id=tenant.id, allow_online_booking=False)
     db.add(booking_policy)
     booking_theme = BookingTheme(tenant_id=tenant.id)
     db.add(booking_theme)
     booking_pub = BookingPublication(
         tenant_id=tenant.id,
         slug=tenant.slug,
-        is_published=True,
-        published_at=datetime.datetime.now(datetime.timezone.utc)
+        is_published=False,
+        published_at=None
     )
     db.add(booking_pub)
 

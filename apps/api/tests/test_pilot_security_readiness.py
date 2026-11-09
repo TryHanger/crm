@@ -390,3 +390,143 @@ async def test_booking_publication_toggle_and_config():
         pub_resp_active = await client.get("/api/v1/public/site", headers=pub_headers)
         assert pub_resp_active.status_code == 200
         assert pub_resp_active.json()["is_published"] is True
+
+
+@pytest.mark.asyncio
+async def test_fresh_tenant_booking_settings_does_not_auto_publish():
+    """
+    P0 Gate: Opening booking settings for a newly created tenant with no BookingPublication
+    MUST NOT create a publication record or auto-publish the site.
+    GET must be side-effect-free, returning is_published=False.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # Create a fresh tenant via platform owner
+        admin_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner@platform.example.kz", "password": "Password123!"}
+        )
+        assert admin_login.status_code == 200
+        admin_token = admin_login.json()["access_token"]
+
+        slug = f"fresh{uuid.uuid4().hex[:6]}"
+        owner_email = f"owner_{slug}@freshkz.internal"
+        create_resp = await client.post(
+            "/api/v1/platform/tenants",
+            json={
+                "slug": slug,
+                "display_name": f"Fresh Studio {slug}",
+                "plan_code": "start",
+                "owner_email": owner_email,
+                "owner_name": "Fresh Owner",
+                "vertical": "barbershop"
+            },
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        assert create_resp.status_code == 201
+        invite_token = create_resp.json()["invite_token"]
+
+        # Activate owner password
+        activate_resp = await client.post(
+            "/api/v1/auth/accept-invite",
+            json={"token": invite_token, "password": "FreshPassword123!"}
+        )
+        assert activate_resp.status_code == 200
+
+        # Login as owner of fresh tenant
+        owner_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": owner_email, "password": "FreshPassword123!"}
+        )
+        assert owner_login.status_code == 200
+        token = owner_login.json()["access_token"]
+        auth_headers = {"Authorization": f"Bearer {token}"}
+
+        # 1. First GET: Must be side-effect-free, return is_published=False
+        settings_resp = await client.get("/api/v1/business/booking-settings", headers=auth_headers)
+        assert settings_resp.status_code == 200
+        data = settings_resp.json()
+        assert data["publication"]["is_published"] is False
+        assert slug in data["publication"]["slug"]
+        assert slug in data["canonical_public_url"]
+
+        # 2. Public endpoint MUST return 404 SITE_NOT_PUBLISHED
+        pub_headers = {"Host": f"{slug}.localhost"}
+        site_resp = await client.get("/api/v1/public/site", headers=pub_headers)
+        assert site_resp.status_code == 404
+        assert site_resp.json()["detail"]["code"] == "SITE_NOT_PUBLISHED"
+
+        # 3. Explicit publish via PATCH
+        publish_resp = await client.patch(
+            "/api/v1/business/booking-publication",
+            json={"is_published": True},
+            headers=auth_headers
+        )
+        assert publish_resp.status_code == 200
+        assert publish_resp.json()["is_published"] is True
+
+        # Now public endpoint succeeds
+        site_resp2 = await client.get("/api/v1/public/site", headers=pub_headers)
+        assert site_resp2.status_code == 200
+        assert site_resp2.json()["is_published"] is True
+
+        # 4. Explicit pause via PATCH
+        pause_resp = await client.patch(
+            "/api/v1/business/booking-publication",
+            json={"is_published": False},
+            headers=auth_headers
+        )
+        assert pause_resp.status_code == 200
+        assert pause_resp.json()["is_published"] is False
+
+        # Public site is 404 again
+        site_resp3 = await client.get("/api/v1/public/site", headers=pub_headers)
+        assert site_resp3.status_code == 404
+        assert site_resp3.json()["detail"]["code"] == "SITE_NOT_PUBLISHED"
+
+
+@pytest.mark.asyncio
+async def test_unregistered_domain_rejection_in_staging_and_production():
+    """
+    P1 Gate: In STAGING and PRODUCTION, host resolution requires an exact match
+    with a registered and verified TenantDomain. Slug fallback on arbitrary hostnames
+    is strictly disabled (defense-in-depth).
+    """
+    orig_env = settings.ENVIRONMENT
+    try:
+        settings.ENVIRONMENT = "staging"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            # 1. Attacker queries with unmapped/unregistered hostname containing a valid tenant slug
+            attacker_headers = {"Host": "barberhouse.unregistered-malicious-domain.com"}
+            resp_attacker = await client.get("/api/v1/public/site", headers=attacker_headers)
+            assert resp_attacker.status_code == 404
+            assert resp_attacker.json()["detail"]["code"] == "SITE_NOT_FOUND"
+
+            # 2. Registered domain resolves properly
+            registered_headers = {"Host": "barberhouse.book.example.kz"}
+            resp_reg = await client.get("/api/v1/public/site", headers=registered_headers)
+            assert resp_reg.status_code == 200
+            assert resp_reg.json()["slug"] == "barberhouse"
+    finally:
+        settings.ENVIRONMENT = orig_env
+
+
+def test_narrowed_trusted_proxy_rejection():
+    """
+    P1 Gate: Verify that peer IP from arbitrary container on Docker network (e.g. 172.28.0.99)
+    is NOT trusted when TRUSTED_PROXIES is narrowed to 172.28.0.10.
+    """
+    orig_proxies = list(settings.TRUSTED_PROXIES)
+    try:
+        settings.TRUSTED_PROXIES = ["127.0.0.1", "::1", "proxy", "nginx", "172.28.0.10"]
+        # Designated Nginx IP is trusted
+        assert is_trusted_peer("172.28.0.10") is True
+        assert is_trusted_peer("127.0.0.1") is True
+        # Other containers on 172.28.0.0/16 are NOT trusted
+        assert is_trusted_peer("172.28.0.99") is False
+        assert is_trusted_peer("172.28.0.5") is False
+        assert is_trusted_peer("172.28.1.100") is False
+    finally:
+        settings.TRUSTED_PROXIES = orig_proxies
+

@@ -37,6 +37,8 @@ def package_delivery():
         "RESTORE_RUNBOOK.md",
         "CRM_PILOT_47F5E652_INDEPENDENT_AUDIT_NEXT_GATE.md",
         "CRM_PILOT_CCC916DA_INDEPENDENT_AUDIT_AND_FINAL_RUNTIME_GATE.md",
+        "CRM_PILOT_B669108_FINAL_DEPLOYMENT_ACCEPTANCE.md",
+        "staging_deployment_report.json",
         "alembic.ini",
         "package.json",
         "package-lock.json",

@@ -67,7 +67,7 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
           setAccentColor(res.theme.accent_color || '#2563EB');
         }
         if (res.publication) {
-          setIsPublished(res.publication.is_published ?? true);
+          setIsPublished(res.publication.is_published ?? false);
           setPublicUrl(res.publication.public_url || (res.publication.slug ? `http://${res.publication.slug}.localhost:3000` : ''));
         }
         if ((res as any).tenant_slug) {
@@ -480,6 +480,7 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
                 <label style={{ fontSize: '13px', fontWeight: 500 }}>Ваша персональная ссылка:</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
+                    data-testid="booking-public-url-input"
                     type="text"
                     readOnly
                     value={publicUrl}
@@ -494,6 +495,7 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
                     }}
                   />
                   <a
+                    data-testid="booking-public-url-link"
                     href={publicUrl}
                     target="_blank"
                     rel="noopener noreferrer"

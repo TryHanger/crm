@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { execSync } from 'child_process';
 
 test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
   test.describe.configure({ mode: 'serial' });
@@ -17,6 +18,7 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
   let pilotTenantId = '';
   let pilotBranchId = '';
   let bookedPublicRef = '';
+  let pilotBookingUrl = '';
 
   test('PR-5.1: Real Onboarding Wizard & Safe Invite Delivery (PR-2)', async ({ page }) => {
     // 1. Platform owner logs in to Platform Console
@@ -146,49 +148,59 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
     await page.click('button:has-text("Публикация и QR-код")');
 
     // Verify personal link input contains pilotSlug (and NOT barberhouse!)
-    const linkInput = page.locator('input[readonly]');
+    const linkInput = page.locator('[data-testid="booking-public-url-input"], input[readonly]').first();
     await expect(linkInput).toBeVisible({ timeout: 10000 });
     const linkVal = await linkInput.inputValue();
     expect(linkVal).toContain(pilotSlug);
     expect(linkVal).not.toContain('barberhouse');
+    pilotBookingUrl = linkVal;
 
-    // Verify QR code image is generated and visible
-    const qrImg = page.locator('[data-testid="booking-qr-code"], img[alt*="QR"]');
+    // Verify QR code image is generated, visible, and decodes to the exact personal URL
+    const qrImg = page.locator('[data-testid="booking-qr-code"]').first();
     await expect(qrImg).toBeVisible({ timeout: 10000 });
     const qrSrc = await qrImg.getAttribute('src');
     expect(qrSrc).toContain('data:image/png;base64');
 
+    const decodedQr = execSync('python scripts/decode_qr.py', { input: qrSrc! }).toString().trim();
+    expect(decodedQr).toBe(linkVal);
+
+    // Verify initial state for a fresh unconfigured tenant is NOT published (404 SITE_NOT_PUBLISHED)
+    const initialResp = await page.request.get(`${API_URL}/api/v1/public/site`, {
+      headers: { Host: `${pilotSlug}.localhost` },
+    });
+    expect(initialResp.status()).toBe(404);
+
     // Capture screenshot of publication tab for pilot studio
     await page.screenshot({ path: 'docs/screenshots/pilot-03-booking-settings.png', fullPage: true });
 
-    // Test toggle publication: Pause booking -> verify server returns 404 -> re-enable
-    const publishToggle = page.locator('button:has-text("Опубликовать"), button:has-text("Приостановить")');
-    await expect(publishToggle).toBeVisible({ timeout: 10000 });
-    const btnText = await publishToggle.textContent();
+    // Enable publication
+    const publishBtn = page.locator('button:has-text("Опубликовать")');
+    await expect(publishBtn).toBeVisible({ timeout: 10000 });
+    await publishBtn.click();
+    await expect(page.locator('button:has-text("Приостановить")')).toBeVisible({ timeout: 10000 });
 
-    if (btnText?.includes('Приостановить')) {
-      await publishToggle.click();
-      await expect(page.locator('button:has-text("Опубликовать")')).toBeVisible({ timeout: 10000 });
+    // Public endpoint now returns 200 OK
+    const liveResp = await page.request.get(`${API_URL}/api/v1/public/site`, {
+      headers: { Host: `${pilotSlug}.localhost` },
+    });
+    expect(liveResp.status()).toBe(200);
 
-      // While paused, verify that attempting to fetch public site returns 404
-      const pausedResp = await page.request.get(`${API_URL}/api/v1/public/site`, {
-        headers: { Host: `${pilotSlug}.localhost` },
-      });
-      expect(pausedResp.status()).toBe(404);
+    // Test pausing: Pause -> 404 -> Re-publish -> 200
+    await page.click('button:has-text("Приостановить")');
+    await expect(page.locator('button:has-text("Опубликовать")')).toBeVisible({ timeout: 10000 });
+    const pausedResp = await page.request.get(`${API_URL}/api/v1/public/site`, {
+      headers: { Host: `${pilotSlug}.localhost` },
+    });
+    expect(pausedResp.status()).toBe(404);
 
-      // Re-publish
-      await page.click('button:has-text("Опубликовать")');
-      await expect(page.locator('button:has-text("Приостановить")')).toBeVisible({ timeout: 10000 });
-    } else {
-      await publishToggle.click();
-      await expect(page.locator('button:has-text("Приостановить")')).toBeVisible({ timeout: 10000 });
-    }
+    await page.click('button:has-text("Опубликовать")');
+    await expect(page.locator('button:has-text("Приостановить")')).toBeVisible({ timeout: 10000 });
   });
 
   test('PR-5.4: End-to-End Client Booking & Sync into CRM Calendar', async ({ page }) => {
-    // 1. Visit Booking Web for this pilot tenant via its host
+    // 1. Visit Booking Web for this pilot tenant via its actual canonical link
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(`http://${pilotSlug}.localhost:3000`);
+    await page.goto(pilotBookingUrl || `http://${pilotSlug}.localhost:3000`);
 
     // Verify brand header
     await expect(page.locator('header')).toContainText(new RegExp(pilotName, 'i'));
