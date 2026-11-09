@@ -123,13 +123,18 @@ export const StaffModule: React.FC<StaffModuleProps> = ({
     e.preventDefault();
     if (!addName.trim()) return;
     try {
+      let branchId = addBranchId || modalBranchId || branches[0]?.id;
+      if (!branchId) {
+        const bList = await api.getBranches(token, tenantId);
+        if (bList && bList.length > 0) branchId = bList[0].id;
+      }
       await api.createStaff(
         {
           display_name: addName.trim(),
           role_title: addTitle.trim(),
           color: addColor,
           online_bookable: true,
-          branch_ids: [addBranchId || branches[0]?.id],
+          branch_ids: branchId ? [branchId] : [],
         },
         token,
         tenantId

@@ -226,6 +226,18 @@ export class BusinessCrmApiClient {
     return h;
   }
 
+
+  async acceptInvite(payload: { token: string; password?: string; full_name?: string }): Promise<TokenResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/auth/accept-invite`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<TokenResponse>(res);
+  }
   async login(payload: LoginRequest): Promise<TokenResponse> {
     const res = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
       method: 'POST',

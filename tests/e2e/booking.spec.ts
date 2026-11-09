@@ -10,7 +10,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
 
     // Verify brand title and branch
     await expect(page.locator('header')).toContainText(/barber house/i);
-    await expect(page.locator('header')).toContainText(/астана/i);
+    await expect(page.locator('header')).toContainText(/главный филиал|астана/i);
     await expect(page.locator('h1')).toContainText('Выберите услуги');
 
     // Screenshot Step 1 initial

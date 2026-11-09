@@ -181,63 +181,85 @@ def seed_system_baseline(session):
     session.add_all(pe_pro)
 
     # 3. Platform Users & Roles
-    demo_pwd_hash = get_password_hash("Password123!")
-    pv_start = session.query(PlanVersion).join(Plan).filter(Plan.code == "start").first()
-    pv_pro = session.query(PlanVersion).join(Plan).filter(Plan.code == "pro").first()
+    import os
+    if settings.ENVIRONMENT in ("development", "test"):
+        # In DEV/TEST, seed default roles for local development and test automation
+        demo_pwd_hash = get_password_hash("Password123!")
 
-    # Platform Owner
-    u_powner = IdentityUser(
-        oidc_subject="platform_owner_sub",
-        email_normalized="owner@platform.example.kz",
-        display_name="Главный Администратор Платформы",
-        password_hash=demo_pwd_hash
-    )
-    session.add(u_powner)
-    session.flush()
+        # Platform Owner
+        u_powner = IdentityUser(
+            oidc_subject="platform_owner_sub",
+            email_normalized="owner@platform.example.kz",
+            display_name="Главный Администратор Платформы",
+            password_hash=demo_pwd_hash
+        )
+        session.add(u_powner)
+        session.flush()
 
-    ps_owner = PlatformStaff(user_id=u_powner.id, platform_role="platform_owner")
-    session.add(ps_owner)
+        ps_owner = PlatformStaff(user_id=u_powner.id, platform_role="platform_owner")
+        session.add(ps_owner)
 
-    # Platform Support
-    u_psupport = IdentityUser(
-        oidc_subject="platform_support_sub",
-        email_normalized="support@platform.example.kz",
-        display_name="Агент Поддержки Платформы",
-        password_hash=demo_pwd_hash
-    )
-    session.add(u_psupport)
-    session.flush()
+        # Platform Support
+        u_psupport = IdentityUser(
+            oidc_subject="platform_support_sub",
+            email_normalized="support@platform.example.kz",
+            display_name="Агент Поддержки Платформы",
+            password_hash=demo_pwd_hash
+        )
+        session.add(u_psupport)
+        session.flush()
 
-    ps_support = PlatformStaff(user_id=u_psupport.id, platform_role="support")
-    session.add(ps_support)
+        ps_support = PlatformStaff(user_id=u_psupport.id, platform_role="support")
+        session.add(ps_support)
 
-    # Platform Finance
-    u_pfinance = IdentityUser(
-        oidc_subject="platform_finance_sub",
-        email_normalized="finance@platform.example.kz",
-        display_name="Финансовый Менеджер Платформы",
-        password_hash=demo_pwd_hash
-    )
-    session.add(u_pfinance)
-    session.flush()
+        # Platform Finance
+        u_pfinance = IdentityUser(
+            oidc_subject="platform_finance_sub",
+            email_normalized="finance@platform.example.kz",
+            display_name="Финансовый Менеджер Платформы",
+            password_hash=demo_pwd_hash
+        )
+        session.add(u_pfinance)
+        session.flush()
 
-    ps_finance = PlatformStaff(user_id=u_pfinance.id, platform_role="finance")
-    session.add(ps_finance)
-    session.flush()
+        ps_finance = PlatformStaff(user_id=u_pfinance.id, platform_role="finance")
+        session.add(ps_finance)
 
-    # Platform Viewer
-    u_pviewer = IdentityUser(
-        oidc_subject="platform_viewer_sub",
-        email_normalized="viewer@platform.example.kz",
-        display_name="Аудитор Платформы",
-        password_hash=demo_pwd_hash
-    )
-    session.add(u_pviewer)
-    session.flush()
+        # Platform Viewer
+        u_pviewer = IdentityUser(
+            oidc_subject="platform_viewer_sub",
+            email_normalized="viewer@platform.example.kz",
+            display_name="Аудитор Платформы",
+            password_hash=demo_pwd_hash
+        )
+        session.add(u_pviewer)
+        session.flush()
 
-    ps_viewer = PlatformStaff(user_id=u_pviewer.id, platform_role="viewer")
-    session.add(ps_viewer)
-    session.flush()
+        ps_viewer = PlatformStaff(user_id=u_pviewer.id, platform_role="viewer")
+        session.add(ps_viewer)
+        session.flush()
+    else:
+        # In STAGING / PRODUCTION: NEVER use Password123! or hardcoded demo users.
+        # Only provision initial platform owner if explicitly supplied via secure environment variables.
+        initial_owner_email = os.getenv("INITIAL_PLATFORM_OWNER_EMAIL")
+        initial_owner_pwd = os.getenv("INITIAL_PLATFORM_OWNER_PASSWORD")
+        if initial_owner_email and initial_owner_pwd:
+            if len(initial_owner_pwd) < 12 or initial_owner_pwd == "Password123!":
+                raise RuntimeError("FATAL: INITIAL_PLATFORM_OWNER_PASSWORD must be at least 12 characters and cannot be Password123!")
+            u_owner = IdentityUser(
+                oidc_subject=f"platform_owner_{uuid.uuid4()}",
+                email_normalized=initial_owner_email.lower().strip(),
+                display_name=os.getenv("INITIAL_PLATFORM_OWNER_NAME", "Platform Administrator"),
+                password_hash=get_password_hash(initial_owner_pwd)
+            )
+            session.add(u_owner)
+            session.flush()
+            ps_owner = PlatformStaff(user_id=u_owner.id, platform_role="platform_owner")
+            session.add(ps_owner)
+            session.flush()
+            print(f"Staging/Prod platform owner initialized: {initial_owner_email}")
+        else:
+            print("Notice: Staging/Prod initialized without demo users. Use onboarding/invite CLI to add staff.")
 
     # Seed Platform Settings if not exist
     if not session.query(PlatformSetting).filter_by(key="trial_days").first():

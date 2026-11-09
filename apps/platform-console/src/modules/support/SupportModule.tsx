@@ -846,9 +846,7 @@ export const SupportModule: React.FC<SupportModuleProps> = ({
                   style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #CBD5E1' }}
                 >
                   {allTenants.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.display_name} ({t.slug})
-                    </option>
+                    <option key={t.id} value={t.id}>{t.display_name} ({t.slug})</option>
                   ))}
                 </select>
               </div>

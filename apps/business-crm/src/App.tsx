@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { BusinessCrmApiClient } from '@crm/api-client';
 import { CrmMembership, CalendarStaff, CalendarBooking, CrmNavigationSection } from './types';
 import { LoginPage } from './modules/auth/LoginPage';
+import { AcceptInvitePage } from './modules/auth/AcceptInvitePage';
 import { CrmLayout } from './layouts/CrmLayout';
 import { CalendarModule } from './modules/calendar/CalendarModule';
 import { CustomersModule } from './modules/customers/CustomersModule';
@@ -19,6 +20,10 @@ export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [memberships, setMemberships] = useState<CrmMembership[]>([]);
   const [activeMembership, setActiveMembership] = useState<CrmMembership | null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('token') || params.get('invite_token') || null;
+  });
 
   // Active Navigation
   const [currentSection, setCurrentSection] = useState<CrmNavigationSection>(() => {
@@ -215,6 +220,18 @@ export const App: React.FC = () => {
 
   // If not authenticated, render Login Page
   if (!token || !currentUser || !activeMembership) {
+    if (inviteToken) {
+      return (
+        <AcceptInvitePage
+          api={api}
+          token={inviteToken}
+          onSuccess={(authToken, mems, user) => {
+            setInviteToken(null);
+            handleLoginSuccess(authToken, mems, user);
+          }}
+        />
+      );
+    }
     return (
       <LoginPage
         api={api}

@@ -1,0 +1,15 @@
+{
+  "status": "SUCCESS",
+  "verified_at_utc": "2026-11-09T10:26:43.119504+00:00",
+  "dump_file": "backups\\backup_saas_crm_test_20261109_102546Z.sql",
+  "target_database": "saas_crm_restore_test",
+  "restore_duration_seconds": 4.153,
+  "rto_metric_seconds": 4.153,
+  "alembic_version": "001_initial (baseline_models)",
+  "tables_count": 47,
+  "tenants_count": 15,
+  "subscription_plans_count": 4,
+  "tenant_tables_rls_verified": 22,
+  "staff_occupancy_constraint_verified": true,
+  "rls_enforcement": "100% FORCED RLS ON ALL TENANT TABLES"
+}

@@ -839,6 +839,33 @@ async def create_staff(
     for b_id in req.branch_ids:
         sb = StaffBranch(tenant_id=crm_user.tenant_id, staff_id=staff.id, branch_id=b_id)
         db.add(sb)
+        for weekday in range(1, 8):
+            shift = WeeklyShift(
+                tenant_id=crm_user.tenant_id,
+                staff_id=staff.id,
+                branch_id=b_id,
+                weekday_iso=weekday,
+                local_start=datetime.time(9, 0),
+                local_end=datetime.time(20, 0),
+            )
+            db.add(shift)
+
+    stmt_existing_svcs = select(Service).where(
+        Service.tenant_id == crm_user.tenant_id,
+        Service.active == True,
+        Service.archived_at.is_(None)
+    )
+    existing_svcs = (await db.execute(stmt_existing_svcs)).scalars().all()
+    for svc_item in existing_svcs:
+        for b_id in req.branch_ids:
+            sso = StaffServiceOffer(
+                tenant_id=crm_user.tenant_id,
+                staff_id=staff.id,
+                branch_id=b_id,
+                service_id=svc_item.id,
+                active=True
+            )
+            db.add(sso)
 
     await db.flush()
     await db.commit()
@@ -952,6 +979,22 @@ async def create_service(
     )
     db.add(svc)
     await db.flush()
+
+    stmt_active_staff = select(StaffBranch).where(
+        StaffBranch.tenant_id == crm_user.tenant_id,
+        StaffBranch.active == True
+    )
+    staff_branches = (await db.execute(stmt_active_staff)).scalars().all()
+    for sb_item in staff_branches:
+        sso = StaffServiceOffer(
+            tenant_id=crm_user.tenant_id,
+            staff_id=sb_item.staff_id,
+            branch_id=sb_item.branch_id,
+            service_id=svc.id,
+            active=True
+        )
+        db.add(sso)
+
     await db.commit()
     return svc
 
@@ -1010,6 +1053,17 @@ async def publish_online_booking(
         pub.is_published = publish
         if publish:
             pub.published_at = datetime.datetime.now(datetime.timezone.utc)
+    else:
+        tenant_res = await db.execute(select(Tenant).where(Tenant.id == crm_user.tenant_id))
+        t_obj = tenant_res.scalar_one_or_none()
+        t_slug = t_obj.slug if t_obj else "default"
+        pub = BookingPublication(
+            tenant_id=crm_user.tenant_id,
+            slug=t_slug,
+            is_published=publish,
+            published_at=datetime.datetime.now(datetime.timezone.utc) if publish else None
+        )
+        db.add(pub)
     await db.commit()
     return {"is_published": publish, "message": "Статус публикации обновлен"}
 

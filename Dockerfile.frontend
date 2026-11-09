@@ -1,0 +1,37 @@
+# Multi-Stage Dockerfile for Frontend Applications (Booking Web, Business CRM, Platform Console)
+
+# ==========================================
+# Stage 1: Build all workspaces
+# ==========================================
+FROM node:20-alpine AS builder
+
+WORKDIR /build
+
+COPY package.json package-lock.json ./
+COPY packages/ ./packages/
+COPY apps/ ./apps/
+
+RUN npm ci && npm run build --workspaces
+
+# ==========================================
+# Stage 2: Production Non-Root Nginx Runner
+# ==========================================
+FROM nginx:1.27-alpine AS runner
+
+# Create directory structure for the 3 SPAs
+RUN mkdir -p /var/www/booking-web \
+             /var/www/business-crm \
+             /var/www/platform-console \
+             /var/cache/nginx /var/run /var/log/nginx && \
+    chown -R nginx:nginx /var/www /var/cache/nginx /var/run /var/log/nginx
+
+# Copy build artifacts from builder stage
+COPY --from=builder --chown=nginx:nginx /build/apps/booking-web/dist /var/www/booking-web
+COPY --from=builder --chown=nginx:nginx /build/apps/business-crm/dist /var/www/business-crm
+COPY --from=builder --chown=nginx:nginx /build/apps/platform-console/dist /var/www/platform-console
+
+USER nginx
+
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]

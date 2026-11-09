@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: saas_crm_staging_pg
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-staging_admin_secret_9921}
+      POSTGRES_DB: ${POSTGRES_DB:-saas_crm_staging}
+    volumes:
+      - staging_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-saas_crm_staging}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migration-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: saas_crm_staging_migrations
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-staging_admin_secret_9921}@postgres:5432/${POSTGRES_DB:-saas_crm_staging}
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-crm_app_user}:${DB_PASSWORD:-staging_app_secret_4412}@postgres:5432/${POSTGRES_DB:-saas_crm_staging}
+      DB_USER: ${DB_USER:-crm_app_user}
+      DB_PASSWORD: ${DB_PASSWORD:-staging_app_secret_4412}
+      ADMIN_DB_USER: ${POSTGRES_USER:-postgres}
+      ADMIN_DB_PASSWORD: ${POSTGRES_PASSWORD:-staging_admin_secret_9921}
+      ENVIRONMENT: staging
+      ENABLE_DEMO_SEED: "false"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-staging-secure-jwt-key-minimum-32-chars-long!}
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m apps.api.app.infrastructure.db.init_db"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: saas_crm_staging_api
+    restart: always
+    depends_on:
+      migration-runner:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-crm_app_user}:${DB_PASSWORD:-staging_app_secret_4412}@postgres:5432/${POSTGRES_DB:-saas_crm_staging}
+      ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-staging_admin_secret_9921}@postgres:5432/${POSTGRES_DB:-saas_crm_staging}
+      DB_USER: ${DB_USER:-crm_app_user}
+      DB_PASSWORD: ${DB_PASSWORD:-staging_app_secret_4412}
+      ADMIN_DB_USER: ${POSTGRES_USER:-postgres}
+      ADMIN_DB_PASSWORD: ${POSTGRES_PASSWORD:-staging_admin_secret_9921}
+      ENVIRONMENT: staging
+      ENABLE_DEMO_SEED: "false"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-staging-secure-jwt-key-minimum-32-chars-long!}
+      TRUSTED_PROXIES: 127.0.0.1,::1,proxy,nginx
+      BOOKING_DOMAIN_SUFFIX: ${BOOKING_DOMAIN_SUFFIX:-.book.staging.crm.internal}
+      CRM_DOMAIN: ${CRM_DOMAIN:-app.staging.crm.internal}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-console.staging.crm.internal}
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: saas_crm_staging_frontend
+    restart: always
+    volumes:
+      - frontend_booking:/var/www/booking-web
+      - frontend_crm:/var/www/business-crm
+      - frontend_platform:/var/www/platform-console
+
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: saas_crm_staging_proxy
+    restart: always
+    depends_on:
+      - api
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/staging.conf:/etc/nginx/conf.d/default.conf:ro
+      - frontend_booking:/var/www/booking-web:ro
+      - frontend_crm:/var/www/business-crm:ro
+      - frontend_platform:/var/www/platform-console:ro
+
+volumes:
+  staging_pgdata:
+  frontend_booking:
+  frontend_crm:
+  frontend_platform:
