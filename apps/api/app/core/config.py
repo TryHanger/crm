@@ -1,53 +1,35 @@
 import os
-
-from typing import List, Optional
-
+from typing import List, Optional, Union
 from pydantic_settings import BaseSettings
-
 from pydantic import Field, field_validator
 
 
-
 class Settings(BaseSettings):
-
     PROJECT_NAME: str = "SaaS Online Booking & CRM Platform"
-
     API_V1_STR: str = "/api/v1"
-
-    ENVIRONMENT: str = Field(default=os.getenv("ENVIRONMENT", "development"))  # development, test, production
-
+    ENVIRONMENT: str = Field(default=os.getenv("ENVIRONMENT", "development"))  # development, test, staging, production
+    PROCESS_ROLE: str = Field(default=os.getenv("PROCESS_ROLE", "api"))  # "api", "migration", "worker"
     ENABLE_DEMO_SEED: bool = Field(default=os.getenv("ENABLE_DEMO_SEED", "false").lower() in ("true", "1", "yes"))
-
-    TRUSTED_PROXIES: List[str] = Field(default_factory=lambda: [p.strip() for p in os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1,localhost").split(",") if p.strip()])
-
+    TRUSTED_PROXIES: Union[List[str], str] = Field(default_factory=lambda: [p.strip() for p in os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1,localhost").split(",") if p.strip()])
     ENABLE_API_DOCS: bool = Field(default=os.getenv("ENABLE_API_DOCS", "false").lower() in ("true", "1", "yes"))
-
     ALLOW_EMPTY_PLATFORM_IP_ALLOWLIST: bool = Field(default=os.getenv("ALLOW_EMPTY_PLATFORM_IP_ALLOWLIST", "false").lower() in ("true", "1", "yes"))
 
-
-
     # PostgreSQL Direct Connection Strings (preferred if provided, e.g. from Docker Compose / Cloud)
-
     DATABASE_URL: Optional[str] = Field(default=os.getenv("DATABASE_URL", None))
-
     ADMIN_DATABASE_URL: Optional[str] = Field(default=os.getenv("ADMIN_DATABASE_URL", None))
 
-
-
     # PostgreSQL Individual Connection Parameters (fallback if direct URLs not specified)
-
     DB_HOST: str = Field(default=os.getenv("DB_HOST", "127.0.0.1"))
-
     DB_PORT: int = Field(default=int(os.getenv("DB_PORT", "5433")))
-
     DB_USER: str = Field(default=os.getenv("DB_USER", "crm_app_user"))
-
     DB_PASSWORD: str = Field(default=os.getenv("DB_PASSWORD", "crm_app_secret"))
-
     ADMIN_DB_USER: str = Field(default=os.getenv("ADMIN_DB_USER", "postgres"))
-
-    ADMIN_DB_PASSWORD: str = Field(default=os.getenv("ADMIN_DB_PASSWORD", "postgres"))
-
+    ADMIN_DB_PASSWORD: Optional[str] = Field(
+        default=os.getenv(
+            "ADMIN_DB_PASSWORD",
+            "postgrespassword" if os.getenv("ENVIRONMENT", "development") in ("development", "test") else None
+        )
+    )
     DB_NAME: str = Field(default=os.getenv("DB_NAME", "saas_crm"))
 
 
@@ -196,9 +178,12 @@ class Settings(BaseSettings):
 
                 raise RuntimeError(f"FATAL: In test mode, DB_NAME must end with '_test', got '{self.DB_NAME}'!")
 
-        pwd = f":{self.ADMIN_DB_PASSWORD}" if self.ADMIN_DB_PASSWORD else ""
+        if not self.ADMIN_DATABASE_URL and not self.ADMIN_DB_PASSWORD:
+            raise RuntimeError("ADMIN_DB_PASSWORD or ADMIN_DATABASE_URL is not configured for this process role.")
 
-        return f"postgresql+psycopg2://{self.ADMIN_DB_USER}{pwd}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        pwd = f":{self.ADMIN_DB_PASSWORD}" if self.ADMIN_DB_PASSWORD else ""
+        admin_user = self.ADMIN_DB_USER or "postgres"
+        return f"postgresql+psycopg2://{admin_user}{pwd}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
 
 
@@ -237,50 +222,34 @@ class Settings(BaseSettings):
 
 
     # Security & IP Allowlist
-
-    PLATFORM_IP_ALLOWLIST: List[str] = Field(
-
+    PLATFORM_IP_ALLOWLIST: Union[List[str], str] = Field(
         default_factory=lambda: [ip.strip() for ip in os.getenv("PLATFORM_IP_ALLOWLIST", "").split(",") if ip.strip()]
-
     )
-
     RATE_LIMIT_ENABLED: bool = Field(default=os.getenv("RATE_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes"))
 
-
-
     # Default Business / Booking policies
-
     DEFAULT_BOOK_AHEAD_DAYS: int = 30
-
     DEFAULT_MIN_ADVANCE_MINUTES: int = 120
-
     DEFAULT_CANCEL_CUTOFF_MINUTES: int = 180
-
     DEFAULT_SLOT_STEP_MINUTES: int = 15
-
     DEFAULT_MAX_SERVICES_PER_BOOKING: int = 5
 
-
-
     # CORS
-
-    CORS_ORIGINS: List[str] = [
-
+    CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:3000",
-
         "http://localhost:5173",
-
         "http://localhost:8000",
-
         "http://127.0.0.1:3000",
-
         "http://127.0.0.1:5173",
-
         "http://127.0.0.1:8000",
-
     ]
 
-
+    @field_validator("TRUSTED_PROXIES", "PLATFORM_IP_ALLOWLIST", "CORS_ORIGINS", mode="before")
+    @classmethod
+    def _parse_comma_separated_list(cls, v):
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v
 
     def validate_environment_security(self):
         """Enforces fail-fast validation when running in staging or production environments."""
@@ -325,6 +294,12 @@ class Settings(BaseSettings):
             ):
                 raise RuntimeError(f"FATAL: Insecure or default DB_PASSWORD configured in {self.ENVIRONMENT} environment (must be at least 16 characters and not use known defaults)!")
 
+            # Migration processes must have valid admin credentials
+            if self.PROCESS_ROLE == "migration":
+                if not self.ADMIN_DATABASE_URL and not self.ADMIN_DB_PASSWORD:
+                    raise RuntimeError(f"FATAL: Migration runner in {self.ENVIRONMENT} environment requires ADMIN_DATABASE_URL or ADMIN_DB_PASSWORD!")
+
+            # Validate admin password if explicitly configured
             if self.ADMIN_DB_PASSWORD:
                 insecure_admin_passwords = {
                     "postgrespassword",

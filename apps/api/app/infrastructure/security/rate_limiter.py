@@ -54,6 +54,14 @@ def is_trusted_peer(host: str) -> bool:
             except ValueError:
                 if host == tp:
                     return True
+                # Attempt hostname resolution for Docker container service names (e.g. 'proxy', 'nginx')
+                try:
+                    import socket
+                    resolved_ips = {ai[4][0] for ai in socket.getaddrinfo(tp, None)}
+                    if host in resolved_ips:
+                        return True
+                except Exception:
+                    pass
     except ValueError:
         pass
     return False

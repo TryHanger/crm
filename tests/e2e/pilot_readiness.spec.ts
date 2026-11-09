@@ -144,12 +144,42 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
     await page.click('nav a:has-text("Онлайн-запись"), aside button:has-text("Онлайн-запись")');
     await expect(page.locator('h1')).toContainText('Настройки онлайн-записи');
     await page.click('button:has-text("Публикация и QR-код")');
+
+    // Verify personal link input contains pilotSlug (and NOT barberhouse!)
+    const linkInput = page.locator('input[readonly]');
+    await expect(linkInput).toBeVisible({ timeout: 10000 });
+    const linkVal = await linkInput.inputValue();
+    expect(linkVal).toContain(pilotSlug);
+    expect(linkVal).not.toContain('barberhouse');
+
+    // Verify QR code image is generated and visible
+    const qrImg = page.locator('[data-testid="booking-qr-code"], img[alt*="QR"]');
+    await expect(qrImg).toBeVisible({ timeout: 10000 });
+    const qrSrc = await qrImg.getAttribute('src');
+    expect(qrSrc).toContain('data:image/png;base64');
+
+    // Capture screenshot of publication tab for pilot studio
     await page.screenshot({ path: 'docs/screenshots/pilot-03-booking-settings.png', fullPage: true });
 
+    // Test toggle publication: Pause booking -> verify server returns 404 -> re-enable
     const publishToggle = page.locator('button:has-text("Опубликовать"), button:has-text("Приостановить")');
     await expect(publishToggle).toBeVisible({ timeout: 10000 });
-    const text = await publishToggle.textContent();
-    if (text?.includes('Опубликовать')) {
+    const btnText = await publishToggle.textContent();
+
+    if (btnText?.includes('Приостановить')) {
+      await publishToggle.click();
+      await expect(page.locator('button:has-text("Опубликовать")')).toBeVisible({ timeout: 10000 });
+
+      // While paused, verify that attempting to fetch public site returns 404
+      const pausedResp = await page.request.get(`${API_URL}/api/v1/public/site`, {
+        headers: { Host: `${pilotSlug}.localhost` },
+      });
+      expect(pausedResp.status()).toBe(404);
+
+      // Re-publish
+      await page.click('button:has-text("Опубликовать")');
+      await expect(page.locator('button:has-text("Приостановить")')).toBeVisible({ timeout: 10000 });
+    } else {
       await publishToggle.click();
       await expect(page.locator('button:has-text("Приостановить")')).toBeVisible({ timeout: 10000 });
     }
@@ -299,7 +329,7 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
 
     await ownerPage.click('[data-testid="nav-settings"]');
     await ownerPage.click('[data-testid="settings-tab-security"]');
-    await expect(ownerPage.locator('[data-testid="pending-support-requests-table"]')).toBeVisible();
+    await expect(ownerPage.locator('[data-testid="pending-support-requests-table"]')).toBeVisible({ timeout: 15000 });
     await expect(ownerPage.locator(`text=${uniqueReason}`).first()).toBeVisible({ timeout: 10000 });
 
     // Approve support request

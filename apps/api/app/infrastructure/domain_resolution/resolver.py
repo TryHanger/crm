@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.core.config import settings
 from apps.api.app.infrastructure.db.session import get_db, set_tenant_context
 from apps.api.app.infrastructure.db.models import Tenant, TenantDomain, BookingPublication
+from apps.api.app.infrastructure.security.rate_limiter import is_trusted_peer
 
 @dataclass
 class ResolvedPublicTenant:
@@ -44,11 +45,7 @@ async def resolve_public_tenant(
     Trusts X-Forwarded-Host only from configured trusted proxies.
     """
     client_ip = request.client.host if request.client else "127.0.0.1"
-    is_trusted_proxy = (
-        client_ip in settings.TRUSTED_PROXIES or
-        client_ip in ("127.0.0.1", "::1", "testclient") or
-        settings.ENVIRONMENT == "test"
-    )
+    is_trusted_proxy = is_trusted_peer(client_ip) or settings.ENVIRONMENT == "test"
 
     if is_trusted_proxy and "x-forwarded-host" in request.headers:
         raw_host = request.headers.get("x-forwarded-host") or ""
@@ -86,6 +83,17 @@ async def resolve_public_tenant(
 
     res = await db.execute(stmt)
     row = res.first()
+
+    # Fallback: extract subdomain prefix (e.g. 'pilotstudio' from 'pilotstudio.localhost' or 'pilotstudio.book.staging.crm.internal')
+    if not row:
+        subdomain = hostname.split(".")[0]
+        if subdomain and subdomain not in ("localhost", "api", "console", "app", "www", "testserver"):
+            stmt_slug = (
+                select(TenantDomain, Tenant)
+                .join(Tenant, Tenant.id == TenantDomain.tenant_id)
+                .where(Tenant.slug == subdomain.lower())
+            )
+            row = (await db.execute(stmt_slug)).first()
 
     if not row:
         raise HTTPException(

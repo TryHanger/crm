@@ -239,6 +239,9 @@ class BookingPolicyUpdateRequest(BaseModel):
     max_services_per_booking: Optional[int] = None
     allow_online_booking: Optional[bool] = None
 
+class BookingPublicationUpdateRequest(BaseModel):
+    is_published: Optional[bool] = None
+
 class BookingBrandingUpdateRequest(BaseModel):
     primary_color: Optional[str] = None
     accent_color: Optional[str] = None

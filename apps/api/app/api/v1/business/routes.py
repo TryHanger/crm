@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.infrastructure.db.session import get_db, set_tenant_context
 from apps.api.app.infrastructure.security.auth import get_crm_tenant_user, require_crm_roles, AuthenticatedTenantUser
 from apps.api.app.infrastructure.db.models import (
-    Tenant, Branch, Service, ServiceCategory, StaffProfile, StaffBranch,
+    Tenant, TenantDomain, Branch, Service, ServiceCategory, StaffProfile, StaffBranch,
     StaffServiceOffer, WeeklyShift, ShiftBreak, StaffTimeOff, Customer,
     CustomerNote, Booking, BookingItem, StaffOccupancy, CalendarBlock,
     BookingEvent, BookingPolicy, BookingTheme, BookingPublication,
@@ -24,7 +24,7 @@ from apps.api.app.modules.schemas import (
     StaffServiceOfferUpdateRequest, StaffScheduleUpdateRequest, ServiceCreateRequest,
     ServiceUpdateRequest, ServiceCategoryCreateRequest, ServiceCategoryUpdateRequest,
     BranchUpdateRequest, BookingPolicyUpdateRequest, BookingBrandingUpdateRequest,
-    InviteCreateRequest, RescheduleRequest, CancelRequest
+    InviteCreateRequest, RescheduleRequest, CancelRequest, BookingPublicationUpdateRequest
 )
 
 router = APIRouter(prefix="/business", tags=["Business CRM"])
@@ -1004,13 +1004,82 @@ async def create_service(
 # =========================================================================
 
 @router.get("/booking-settings")
+@router.get("/online-booking/config")
 async def get_booking_settings(
     branch_id: Optional[uuid.UUID] = None,
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
     policy = await BookingEngine.get_booking_policy(db, crm_user.tenant_id, branch_id or uuid.uuid4())
-    return policy
+
+    # Get Tenant and Slug
+    stmt_t = select(Tenant).where(Tenant.id == crm_user.tenant_id)
+    t_obj = (await db.execute(stmt_t)).scalar_one_or_none()
+    t_slug = t_obj.slug if t_obj else "default"
+
+    # Get Theme
+    stmt_theme = select(BookingTheme).where(BookingTheme.tenant_id == crm_user.tenant_id)
+    theme = (await db.execute(stmt_theme)).scalars().first()
+
+    # Get Publication
+    stmt_pub = select(BookingPublication).where(BookingPublication.tenant_id == crm_user.tenant_id)
+    pub = (await db.execute(stmt_pub)).scalars().first()
+    if not pub:
+        pub = BookingPublication(
+            tenant_id=crm_user.tenant_id,
+            slug=t_slug,
+            is_published=True,
+            published_at=datetime.datetime.now(datetime.timezone.utc)
+        )
+        db.add(pub)
+        await db.commit()
+
+    # Calculate canonical public url for this specific tenant
+    stmt_dom = select(TenantDomain).where(TenantDomain.tenant_id == crm_user.tenant_id)
+    doms = (await db.execute(stmt_dom)).scalars().all()
+    canonical_domain = next((d.hostname_normalized for d in doms if d.canonical and d.verification_status == "verified"), None)
+    if not canonical_domain:
+        canonical_domain = next((d.hostname_normalized for d in doms if d.verification_status == "verified"), None)
+
+    from apps.api.app.core.config import settings
+    if canonical_domain:
+        canonical_public_url = f"http://{canonical_domain}:3000" if settings.ENVIRONMENT == "development" else f"https://{canonical_domain}"
+    else:
+        if settings.ENVIRONMENT == "development":
+            canonical_public_url = f"http://{t_slug}.localhost:3000"
+        else:
+            suffix = settings.BOOKING_DOMAIN_SUFFIX if settings.BOOKING_DOMAIN_SUFFIX.startswith(".") else f".{settings.BOOKING_DOMAIN_SUFFIX}"
+            canonical_public_url = f"https://{t_slug}{suffix}"
+
+    return {
+        "policy": {
+            "book_ahead_days": policy.book_ahead_days,
+            "min_advance_minutes": policy.min_advance_minutes,
+            "cancellation_cutoff_minutes": policy.cancellation_cutoff_minutes,
+            "allow_self_reschedule": policy.allow_self_reschedule,
+            "slot_step_minutes": policy.slot_step_minutes,
+            "max_services_per_booking": policy.max_services_per_booking,
+            "allow_online_booking": policy.allow_online_booking,
+        },
+        "theme": {
+            "primary_color": theme.primary_color if theme else "#1E293B",
+            "accent_color": theme.accent_color if theme else "#2563EB",
+        },
+        "publication": {
+            "is_published": pub.is_published,
+            "slug": pub.slug or t_slug,
+            "public_url": canonical_public_url,
+        },
+        "book_ahead_days": policy.book_ahead_days,
+        "min_advance_minutes": policy.min_advance_minutes,
+        "cancellation_cutoff_minutes": policy.cancellation_cutoff_minutes,
+        "allow_self_reschedule": policy.allow_self_reschedule,
+        "slot_step_minutes": policy.slot_step_minutes,
+        "max_services_per_booking": policy.max_services_per_booking,
+        "allow_online_booking": policy.allow_online_booking,
+        "canonical_public_url": canonical_public_url,
+        "tenant_slug": t_slug
+    }
 
 
 @router.patch("/booking-settings")
@@ -1039,19 +1108,30 @@ async def update_booking_settings(
     return policy
 
 
+@router.patch("/booking-publication")
 @router.post("/booking-publication/publish")
 async def publish_online_booking(
-    publish: bool = True,
+    payload: Optional[BookingPublicationUpdateRequest] = None,
+    publish: Optional[bool] = Query(default=None),
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
+
+    # Determine target published state from JSON body first, then query param fallback
+    if payload is not None and payload.is_published is not None:
+        target_state = payload.is_published
+    elif publish is not None:
+        target_state = publish
+    else:
+        target_state = True
+
     stmt = select(BookingPublication).where(BookingPublication.tenant_id == crm_user.tenant_id)
     res = await db.execute(stmt)
     pub = res.scalars().first()
     if pub:
-        pub.is_published = publish
-        if publish:
+        pub.is_published = target_state
+        if target_state:
             pub.published_at = datetime.datetime.now(datetime.timezone.utc)
     else:
         tenant_res = await db.execute(select(Tenant).where(Tenant.id == crm_user.tenant_id))
@@ -1060,12 +1140,47 @@ async def publish_online_booking(
         pub = BookingPublication(
             tenant_id=crm_user.tenant_id,
             slug=t_slug,
-            is_published=publish,
-            published_at=datetime.datetime.now(datetime.timezone.utc) if publish else None
+            is_published=target_state,
+            published_at=datetime.datetime.now(datetime.timezone.utc) if target_state else None
         )
         db.add(pub)
+
+    # Sync BookingPolicy.allow_online_booking
+    stmt_pol = select(BookingPolicy).where(BookingPolicy.tenant_id == crm_user.tenant_id)
+    res_pol = await db.execute(stmt_pol)
+    pol = res_pol.scalars().first()
+    if pol:
+        pol.allow_online_booking = target_state
+
     await db.commit()
-    return {"is_published": publish, "message": "Статус публикации обновлен"}
+
+    # Compute URL
+    tenant_res = await db.execute(select(Tenant).where(Tenant.id == crm_user.tenant_id))
+    t_obj = tenant_res.scalar_one_or_none()
+    t_slug = t_obj.slug if t_obj else pub.slug
+
+    stmt_dom = select(TenantDomain).where(TenantDomain.tenant_id == crm_user.tenant_id)
+    doms = (await db.execute(stmt_dom)).scalars().all()
+    canonical_domain = next((d.hostname_normalized for d in doms if d.canonical and d.verification_status == "verified"), None)
+    if not canonical_domain:
+        canonical_domain = next((d.hostname_normalized for d in doms if d.verification_status == "verified"), None)
+
+    from apps.api.app.core.config import settings
+    if canonical_domain:
+        canonical_public_url = f"http://{canonical_domain}:3000" if settings.ENVIRONMENT == "development" else f"https://{canonical_domain}"
+    else:
+        if settings.ENVIRONMENT == "development":
+            canonical_public_url = f"http://{t_slug}.localhost:3000"
+        else:
+            suffix = settings.BOOKING_DOMAIN_SUFFIX if settings.BOOKING_DOMAIN_SUFFIX.startswith(".") else f".{settings.BOOKING_DOMAIN_SUFFIX}"
+            canonical_public_url = f"https://{t_slug}{suffix}"
+
+    return {
+        "is_published": pub.is_published,
+        "slug": pub.slug,
+        "public_url": canonical_public_url,
+        "message": "Онлайн-запись опубликована" if pub.is_published else "Онлайн-запись приостановлена"
+    }
 
 
 # =========================================================================

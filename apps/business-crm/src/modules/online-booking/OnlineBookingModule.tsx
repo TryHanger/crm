@@ -34,15 +34,18 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
   const [accentColor, setAccentColor] = useState('#2563EB');
 
   // Publication state
-  const [isPublished, setIsPublished] = useState(true);
-  const [publicUrl, setPublicUrl] = useState('http://barberhouse.localhost:3000');
+  const [isPublished, setIsPublished] = useState(false);
+  const [publicUrl, setPublicUrl] = useState('');
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [businessName, setBusinessName] = useState('ВАШ БИЗНЕС');
 
   useEffect(() => {
     if (publicUrl) {
       QRCode.toDataURL(publicUrl, { width: 180, margin: 2, errorCorrectionLevel: 'M' })
         .then(url => setQrCodeDataUrl(url))
         .catch(err => console.error('Failed to generate QR code', err));
+    } else {
+      setQrCodeDataUrl('');
     }
   }, [publicUrl]);
 
@@ -65,7 +68,10 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
         }
         if (res.publication) {
           setIsPublished(res.publication.is_published ?? true);
-          setPublicUrl(res.publication.public_url || `http://${res.publication.slug}.localhost:3000`);
+          setPublicUrl(res.publication.public_url || (res.publication.slug ? `http://${res.publication.slug}.localhost:3000` : ''));
+        }
+        if ((res as any).tenant_slug) {
+          setBusinessName((res as any).tenant_slug.toUpperCase());
         }
       } catch (err: any) {
         console.error('Failed to load booking settings', err);
@@ -124,9 +130,13 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
     try {
       setIsSaving(true);
       const nextState = !isPublished;
-      await api.toggleBookingPublication(nextState, token, tenantId);
-      setIsPublished(nextState);
-      onShowToast(nextState ? 'Онлайн-запись опубликована' : 'Онлайн-запись приостановлена');
+      const res = await api.toggleBookingPublication(nextState, token, tenantId);
+      const actualState = res?.is_published !== undefined ? res.is_published : nextState;
+      setIsPublished(actualState);
+      if (res?.public_url) {
+        setPublicUrl(res.public_url);
+      }
+      onShowToast(actualState ? 'Онлайн-запись опубликована' : 'Онлайн-запись приостановлена');
     } catch (err: any) {
       alert(`Ошибка публикации: ${err.message || err}`);
     } finally {
@@ -383,7 +393,7 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
                     fontSize: '14px',
                   }}
                 >
-                  BARBER HOUSE
+                  {businessName || 'ВАШ БИЗНЕС'}
                 </div>
                 <div style={{ padding: '8px', background: '#F8FAFC', borderRadius: '8px', fontSize: '12px' }}>
                   <b>Мужская стрижка</b> — 7 000 ₸
@@ -523,6 +533,7 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
                 </div>
                 {qrCodeDataUrl ? (
                   <img
+                    data-testid="booking-qr-code"
                     src={qrCodeDataUrl}
                     alt="QR-код онлайн-записи"
                     style={{

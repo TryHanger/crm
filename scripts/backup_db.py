@@ -45,12 +45,19 @@ def create_backup(
     start_time = time.time()
 
     pg_container = os.getenv("PG_CONTAINER", "crm-test-pg")
-    has_local_pg_dump = shutil.which("pg_dump") is not None
+    # Search for PostgreSQL 17 client explicitly or in PATH
+    pg_dump_bin = os.getenv("PG_DUMP_BIN")
+    if not pg_dump_bin:
+        for candidate in ["/usr/lib/postgresql/17/bin/pg_dump", "pg_dump"]:
+            if shutil.which(candidate) or os.path.exists(candidate):
+                pg_dump_bin = candidate
+                break
+    has_local_pg_dump = pg_dump_bin is not None
     pg_dump_version_str = "unknown"
 
     if has_local_pg_dump:
         try:
-            ver_proc = subprocess.run(["pg_dump", "--version"], stdout=subprocess.PIPE, text=True, check=True)
+            ver_proc = subprocess.run([pg_dump_bin, "--version"], stdout=subprocess.PIPE, text=True, check=True)
             pg_dump_version_str = ver_proc.stdout.strip()
             if verbose:
                 print(f"[*] Using local pg_dump: {pg_dump_version_str}")
@@ -60,7 +67,7 @@ def create_backup(
         pg_env = os.environ.copy()
         pg_env["PGPASSWORD"] = settings.ADMIN_DB_PASSWORD
         pg_dump_cmd = [
-            "pg_dump",
+            pg_dump_bin,
             "-h", str(settings.DB_HOST),
             "-p", str(settings.DB_PORT),
             "-U", settings.ADMIN_DB_USER,

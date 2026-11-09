@@ -1,8 +1,8 @@
 # Решение по готовности к закрытому пилоту (PILOT GO / NO-GO DECISION)
 
 **Дата оценки:** 9 ноября 2026 г.  
-**Ветка аудита:** `fix/pilot-readiness-v1-audit-gate`  
-**Базовый аудит коммит:** `47f5e652e6c066ccd6b77cb3df1f150243ae2159`  
+**Ветка аудита:** `fix/pilot-v1-runtime-and-publication-gate`  
+**Базовый аудит коммит:** `ccc916da6acc57e28525b4fcc8bd84b94358a15e`  
 **Итоговое решение:**
 - **Внешний запуск с реальными клиентами и персональными данными:** **NO-GO** (до предоставления боевого домена, доверенного SSL и offsite хранилища);
 - **Контролируемый внутренний технический пилот (1–2 салона на Staging / VPN):** **DEV/STAGING VERIFIED** (все технические блокеры P0 закрыты, CI и тесты зелёные).
@@ -13,6 +13,10 @@
 
 | Область | Критерий приёмки | Статус | Доказательство / Комментарий |
 |---|---|:---:|---|
+| **P0-01: Runtime API Credentials** | Запуск API без ADMIN_DB_PASSWORD | **DONE** | Контейнер API не имеет `ADMIN_DB_PASSWORD` / `ADMIN_DATABASE_URL`, запуск под `PROCESS_ROLE=api`, lazy proxy предотвращает инициализацию admin engine |
+| **P0-02: Proxy Peer IP & Allowlist** | Доверие к прокси по фактическому IP/CIDR | **DONE** | `is_trusted_peer()` валидирует `172.28.0.0/16` и разрешает имена хостов `proxy`, `nginx`. Заголовки от недоверенных пиров отсекаются |
+| **P0-03: Tenant Link & Publication** | Канонический URL и QR нового арендатора | **DONE** | Устранена захардкоженная ссылка barberhouse, отображается ссылка и QR активного тенанта. `PATCH /booking-publication` поддерживает JSON body и query, пауза возвращает 404 SITE_NOT_PUBLISHED |
+| **P1-04 & P1-05: DR & Invariants** | Строгие инварианты восстановления БД | **DONE** | Клиент PostgreSQL 17 в CI/DR, проверка 22 RLS таблиц, runtime-роли, A/B cross-isolation (0 строк), раздельный отчёт SQL stream vs operational recovery |
 | **P0-A: Секреты и Fail-Fast** | Удаление дефолтных паролей из Compose | **DONE** | В `docker-compose.staging.yml` удалены fallback-значения, используется `${VAR:?Required}` |
 | | Синхронизация переменных окружения | **DONE** | Согласованы `DB_PASSWORD`, `PLATFORM_IP_ALLOWLIST`, `SMTP_FROM`. Создан `.env.staging.example` |
 | | Защита образов в `.dockerignore` | **DONE** | Исключены `.env*`, `backups/`, `*.sql`, `*.dump`, `logs/`, `test-results/` |

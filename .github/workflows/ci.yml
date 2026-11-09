@@ -49,6 +49,8 @@ jobs:
           echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y libpq-dev postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> $GITHUB_PATH
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
           pg_dump --version
           psql --version
 

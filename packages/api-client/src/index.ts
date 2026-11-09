@@ -711,8 +711,8 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/v1/business/booking-publication/publish`, {
-      method: 'POST',
+    const res = await fetch(`${this.baseUrl}/api/v1/business/booking-publication?publish=${isPublished}`, {
+      method: 'PATCH',
       headers: {
         ...this.headers(token, tenantId),
         'Content-Type': 'application/json',

@@ -256,3 +256,137 @@ def test_disaster_recovery_negative_scenarios(tmp_path):
 
     with pytest.raises(ValueError, match="Unsafe target DB name"):
         restore_and_verify(str(fake_dump), target_db="saas_crm")
+
+
+def test_staging_api_runtime_without_admin_credentials():
+    """
+    Validates P0-01 regression: Runtime API in staging MUST initialize and pass
+    fail-fast validation without any admin credentials (ADMIN_DB_PASSWORD/URL).
+    """
+    # 1. API runtime process with no admin credentials must pass
+    s_api = Settings(
+        ENVIRONMENT="staging",
+        PROCESS_ROLE="api",
+        ENABLE_DEMO_SEED=False,
+        JWT_SECRET="k8vN9#mX2$pL5!qR7*tY1@wZ4^bC6(eF)",
+        DB_USER="crm_app_user",
+        DB_PASSWORD="real_secure_staging_password_123!",
+        ADMIN_DB_USER="postgres",
+        ADMIN_DB_PASSWORD=None,
+        ADMIN_DATABASE_URL=None,
+        PLATFORM_IP_ALLOWLIST=["127.0.0.1", "10.0.0.0/8"]
+    )
+    s_api.validate_environment_security()
+    assert s_api.ADMIN_DB_PASSWORD is None
+    assert s_api.DB_USER == "crm_app_user"
+
+    # 2. Attempting to access admin sync engine without admin credentials must raise clear error
+    with pytest.raises(RuntimeError, match="ADMIN_DB_PASSWORD or ADMIN_DATABASE_URL is not configured"):
+        _ = s_api.ADMIN_SYNC_DATABASE_URL
+
+    # 3. Migration runner process without admin credentials must fail fast
+    s_migration_missing_admin = Settings(
+        ENVIRONMENT="staging",
+        PROCESS_ROLE="migration",
+        ENABLE_DEMO_SEED=False,
+        JWT_SECRET="k8vN9#mX2$pL5!qR7*tY1@wZ4^bC6(eF)",
+        DB_USER="crm_app_user",
+        DB_PASSWORD="real_secure_staging_password_123!",
+        ADMIN_DB_USER="postgres",
+        ADMIN_DB_PASSWORD=None,
+        ADMIN_DATABASE_URL=None,
+        PLATFORM_IP_ALLOWLIST=["127.0.0.1"]
+    )
+    with pytest.raises(RuntimeError, match="Migration runner in staging environment requires ADMIN_DATABASE_URL"):
+        s_migration_missing_admin.validate_environment_security()
+
+
+def test_proxy_trusted_peer_hostname_and_subnet_matching(monkeypatch):
+    """
+    Validates P0-02 regression: is_trusted_peer properly validates direct peer IP
+    against CIDR subnets, exact IPs, and Docker container hostnames.
+    """
+    monkeypatch.setattr(
+        settings,
+        "TRUSTED_PROXIES",
+        ["127.0.0.1", "::1", "172.28.0.10", "172.28.0.0/16", "proxy"]
+    )
+    # 1. Loopback and internal IPs
+    assert is_trusted_peer("127.0.0.1") is True
+    assert is_trusted_peer("::1") is True
+    assert is_trusted_peer("testclient") is True
+
+    # 2. Staging proxy static IP and subnet
+    assert is_trusted_peer("172.28.0.10") is True
+    assert is_trusted_peer("172.28.0.25") is True
+    assert is_trusted_peer("172.28.1.5") is True
+
+    # 3. Untrusted external IPs must be rejected
+    assert is_trusted_peer("185.220.101.5") is False
+    assert is_trusted_peer("8.8.8.8") is False
+    assert is_trusted_peer("192.168.100.5") is False
+
+
+@pytest.mark.asyncio
+async def test_booking_publication_toggle_and_config():
+    """
+    Validates P0-03 regression:
+    - GET /booking-settings returns structured DTO with policy, theme, publication, canonical_public_url.
+    - PATCH /booking-publication with { is_published: false } pauses booking on server.
+    - When paused, public site resolution returns 404 SITE_NOT_PUBLISHED.
+    - Re-publishing restores public site access.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login as Barberhouse owner
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner@barberhouse.kz", "password": "Password123!"}
+        )
+        assert login_resp.status_code == 200
+        token = login_resp.json()["access_token"]
+        auth_headers = {"Authorization": f"Bearer {token}"}
+
+        # 2. GET /booking-settings returns unified config
+        cfg_resp = await client.get("/api/v1/business/booking-settings", headers=auth_headers)
+        assert cfg_resp.status_code == 200
+        cfg = cfg_resp.json()
+        assert "policy" in cfg
+        assert "theme" in cfg
+        assert "publication" in cfg
+        assert "canonical_public_url" in cfg
+        assert "barberhouse" in cfg["publication"]["slug"]
+        assert "barberhouse" in cfg["publication"]["public_url"]
+
+        # 3. Pause online booking
+        pause_resp = await client.patch(
+            "/api/v1/business/booking-publication",
+            json={"is_published": False},
+            headers=auth_headers
+        )
+        assert pause_resp.status_code == 200
+        assert pause_resp.json()["is_published"] is False
+
+        # Verify setting persisted in GET
+        verify_cfg = (await client.get("/api/v1/business/booking-settings", headers=auth_headers)).json()
+        assert verify_cfg["publication"]["is_published"] is False
+
+        # 4. Public endpoint must reject booking access when paused (404 SITE_NOT_PUBLISHED)
+        pub_headers = {"Host": "barberhouse.localhost"}
+        pub_resp = await client.get("/api/v1/public/site", headers=pub_headers)
+        assert pub_resp.status_code == 404
+        assert pub_resp.json()["detail"]["code"] == "SITE_NOT_PUBLISHED"
+
+        # 5. Re-enable online booking
+        resume_resp = await client.patch(
+            "/api/v1/business/booking-publication",
+            json={"is_published": True},
+            headers=auth_headers
+        )
+        assert resume_resp.status_code == 200
+        assert resume_resp.json()["is_published"] is True
+
+        # Public endpoint works again
+        pub_resp_active = await client.get("/api/v1/public/site", headers=pub_headers)
+        assert pub_resp_active.status_code == 200
+        assert pub_resp_active.json()["is_published"] is True
