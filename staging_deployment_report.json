@@ -1,12 +1,12 @@
 {
   "status": "SUCCESS",
-  "verified_at_utc": "2026-11-09T14:47:44Z",
+  "verified_at_utc": "2026-11-09T18:16:26Z",
   "container_states": {
-    "saas_crm_staging_api": "up 3 minutes (healthy)",
-    "saas_crm_staging_frontend": "up 3 minutes",
+    "saas_crm_staging_api": "up 7 minutes (healthy)",
+    "saas_crm_staging_frontend": "up 4 hours",
     "saas_crm_staging_migrations": "exited (0) less than a second ago",
-    "saas_crm_staging_pg": "up 3 minutes (healthy)",
-    "saas_crm_staging_proxy": "up 3 minutes"
+    "saas_crm_staging_pg": "up 4 hours (healthy)",
+    "saas_crm_staging_proxy": "up 4 hours"
   },
   "nginx_config_test": "PASS",
   "https_smoke_probes": [
@@ -19,6 +19,16 @@
       "probe": "http_redirect_301",
       "status": 301,
       "location": "https://app.staging.crm.internal/",
+      "passed": true
+    },
+    {
+      "probe": "tls_sni_positive_console",
+      "cipher": "TLS_AES_256_GCM_SHA384 (TLSv1.3)",
+      "passed": true
+    },
+    {
+      "probe": "tls_sni_negative_rejection",
+      "error": "TLS_VERIFICATION_REJECTED: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'untrusted-domain.invalid'. (_ssl.c:1006)",
       "passed": true
     },
     {
@@ -41,5 +51,71 @@
       "status": 200,
       "passed": true
     }
-  ]
+  ],
+  "e2e_container_https_flow": {
+    "status": "SUCCESS",
+    "verified_at_utc": "2026-11-09T18:16:43.203140+00:00",
+    "tenant_slug": "pilot-df8259",
+    "booking_id": "b1ff32df-bbda-488a-9544-ec821578a097",
+    "steps": [
+      {
+        "step": "platform_owner_login",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "step": "tenant_provisioning",
+        "tenant_id": "cf05e531-b49b-4790-88c5-a9ab9af54aae",
+        "slug": "pilot-df8259",
+        "passed": true
+      },
+      {
+        "step": "accept_owner_invite",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "step": "pre_publication_404_check",
+        "status": 404,
+        "passed": true
+      },
+      {
+        "step": "configure_entities",
+        "branch_id": "8db27b14-acfb-4f1e-b37c-e7a9d6625992",
+        "service_id": "6e2b6416-0d00-4f77-bb06-adc4d8a4a68c",
+        "staff_id": "4ea2cf8d-b7c3-4e51-a9f9-95b7d4666e1f",
+        "passed": true
+      },
+      {
+        "step": "publish_booking",
+        "passed": true
+      },
+      {
+        "step": "public_discovery_and_slots",
+        "slots_count": 148,
+        "passed": true
+      },
+      {
+        "step": "public_booking_created",
+        "booking_id": "b1ff32df-bbda-488a-9544-ec821578a097",
+        "passed": true
+      },
+      {
+        "step": "crm_intake_verified",
+        "booking_id": "b1ff32df-bbda-488a-9544-ec821578a097",
+        "public_ref": "PI-900568",
+        "passed": true
+      },
+      {
+        "step": "pause_unpublish_verified",
+        "status": 404,
+        "passed": true
+      },
+      {
+        "step": "multi_tenant_isolation_check",
+        "status": 401,
+        "passed": true
+      }
+    ]
+  }
 }

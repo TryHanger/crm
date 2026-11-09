@@ -43,7 +43,12 @@ venv.bak/
 pgdata/
 *.dump
 *.sql.gz
+*.sql.gz.enc
 *.sqlite3
+backups/backup_*
+backups/*.dr_restore_report.json
+backups/offsite_dr_verification_report.json
+staging_e2e_report.json
 
 # Testing & Coverage
 .pytest_cache/

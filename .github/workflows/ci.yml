@@ -124,12 +124,28 @@ jobs:
           python scripts/restore_db.py --target-db saas_crm_ci_restore_test --report backups/ci_restore_report.json --verbose
           cat backups/ci_restore_report.json
 
+      - name: Verify AES-256 Encrypted Offsite Disaster Recovery Pipeline
+        env:
+          ADMIN_DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/saas_crm_test
+          ADMIN_DB_USER: postgres
+          ADMIN_DB_PASSWORD: postgrespassword
+          DB_USER: crm_app_user
+          DB_PASSWORD: crm_app_secret
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: saas_crm_test
+        run: |
+          python scripts/offsite_backup.py --database saas_crm_test --verify --target-db saas_crm_ci_offsite_restore_test
+          cat backups/offsite_dr_verification_report.json
+
       - name: Upload Disaster Recovery Verification Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: disaster-recovery-report
-          path: backups/ci_restore_report.json
+          path: |
+            backups/ci_restore_report.json
+            backups/offsite_dr_verification_report.json
           retention-days: 7
 
       - name: Install Frontend Dependencies
