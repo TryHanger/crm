@@ -135,6 +135,8 @@ jobs:
           DB_PORT: 5432
           DB_NAME: saas_crm_test
         run: |
+          python scripts/offsite_backup.py --test-negative
+          export BACKUP_ENCRYPTION_KEY=$(python scripts/offsite_backup.py --generate-key)
           python scripts/offsite_backup.py --database saas_crm_test --verify --target-db saas_crm_ci_offsite_restore_test
           cat backups/offsite_dr_verification_report.json
 

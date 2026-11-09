@@ -463,9 +463,9 @@ def run_staging_e2e_flow(
     report_steps.append({"step": "pause_unpublish_verified", "status": st, "passed": True})
 
     # --------------------------------------------------------------------------
-    # Step 11: Multi-Tenant Isolation & Unauthenticated Access Block Check
+    # Step 11: Unauthenticated Access Rejection (Authentication Enforcement)
     # --------------------------------------------------------------------------
-    print(f"\n[Step 11] Checking multi-tenant isolation...")
+    print(f"\n[Step 11] Checking unauthenticated access rejection...")
     # Unauthenticated attempt to business CRM endpoint
     st, hdrs, body = client.request(
         server_hostname="app.staging.crm.internal",
@@ -483,10 +483,102 @@ def run_staging_e2e_flow(
     )
     assert st in (401, 403), f"Expected 401/403 for unauthenticated /business/me, got {st}: {body}"
     print(f"    [+] Unauthenticated /business/me blocked with HTTP {st}.")
-    report_steps.append({"step": "multi_tenant_isolation_check", "status": st, "passed": True})
+    report_steps.append({"step": "unauthenticated_access_rejection", "status": st, "passed": True})
+
+    # --------------------------------------------------------------------------
+    # Step 12: Cross-Tenant Isolation with Valid JWT of Second Tenant (Owner B)
+    # --------------------------------------------------------------------------
+    print(f"\n[Step 12] Verifying true cross-tenant isolation with valid Owner B JWT...")
+    slug_b = f"pilot-b-{uuid.uuid4().hex[:6]}"
+    email_b = f"owner.{slug_b}@pilot-staging.internal"
+    pass_b = f"OwnerBPass_{slug_b}!2026"
+
+    # 12a. Provision Tenant B via Platform Console
+    create_b_payload = json.dumps({
+        "slug": slug_b,
+        "display_name": f"Pilot Salon B {slug_b.upper()}",
+        "owner_email": email_b,
+        "owner_name": "Owner B",
+        "vertical": "barbershop",
+        "plan_code": "start"
+    })
+    st, hdrs, body = client.request(
+        server_hostname="console.staging.crm.internal",
+        path="/api/v1/platform/tenants",
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {platform_token}"
+        },
+        body=create_b_payload
+    )
+    assert st == 201, f"Tenant B creation failed with status {st}: {body}"
+    tenant_b_data = json.loads(body)
+    invite_token_b = tenant_b_data.get("invite_token")
+    if not invite_token_b and "token=" in (tenant_b_data.get("invite_url") or ""):
+        invite_token_b = tenant_b_data["invite_url"].split("token=")[1].split("&")[0]
+
+    # 12b. Owner B accepts invite and receives authentic JWT for Tenant B
+    st, hdrs, body = client.request(
+        server_hostname="app.staging.crm.internal",
+        path="/api/v1/auth/accept-invite",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+        body=json.dumps({
+            "token": invite_token_b,
+            "password": pass_b,
+            "display_name": "Owner B"
+        })
+    )
+    assert st == 200, f"Owner B invite acceptance failed with status {st}: {body}"
+    token_b = json.loads(body)["access_token"]
+    print(f"    [+] Tenant B created ({slug_b}) and Owner B authenticated with valid JWT.")
+
+    # 12c. Owner B tries to access Tenant A's booking card by ID
+    crm_b_headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token_b}"
+    }
+    st, hdrs, body = client.request(
+        server_hostname="app.staging.crm.internal",
+        path=f"/api/v1/business/bookings/{created_booking_id}",
+        method="GET",
+        headers=crm_b_headers
+    )
+    assert st in (403, 404), f"CROSS-TENANT LEAK: Owner B was able to fetch Tenant A booking! Status: {st}, Body: {body}"
+    print(f"    [+] Proven Cross-Tenant Isolation: Owner B requesting Tenant A booking {created_booking_id} rejected with HTTP {st}.")
+
+    # 12d. Owner B queries branches (should see only Tenant B's branches, i.e. 0 branches)
+    st, hdrs, body = client.request(
+        server_hostname="app.staging.crm.internal",
+        path="/api/v1/business/branches",
+        method="GET",
+        headers=crm_b_headers
+    )
+    assert st == 200, f"Owner B failed to fetch branches: {st}"
+    branches_b = json.loads(body)
+    assert len(branches_b) == 0, f"CROSS-TENANT LEAK: Owner B sees Tenant A's branches: {branches_b}"
+    print(f"    [+] Owner B branches query strictly isolated: {len(branches_b)} branches returned.")
+
+    # 12e. Verify Tenant B's public site is unpublished (404)
+    st, hdrs, body = client.request(
+        server_hostname=f"{slug_b}.book.staging.crm.internal",
+        path="/api/v1/public/site",
+        method="GET"
+    )
+    assert st == 404, f"Expected 404 for unpublished Tenant B, got {st}"
+    print(f"    [+] Tenant B public site strictly isolated & unpublished (HTTP 404).")
+
+    report_steps.append({
+        "step": "cross_tenant_isolation_with_valid_jwt",
+        "tenant_a_slug": tenant_slug,
+        "tenant_b_slug": slug_b,
+        "cross_access_status": st,
+        "passed": True
+    })
 
     print("\n" + "=" * 80)
-    print("  ALL 11 STAGING E2E LIFECYCLE STEPS PASSED SUCCESSFULLY VIA HTTPS!")
+    print("  ALL 12 STAGING E2E LIFECYCLE STEPS PASSED SUCCESSFULLY VIA HTTPS!")
     print("=" * 80)
 
     return {

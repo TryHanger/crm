@@ -11,15 +11,15 @@
 
 | Компонент / Требование | Техническая реализация в коде | Требуемый внешний ресурс / Решение | Статус готовности |
 | :--- | :--- | :--- | :---: |
-| **Генератор случайных криптосекретов** | `scripts/generate_staging_secrets.py` (длина >= 28, entropy >= 48 байт) | Локальное/CI исполнение без хардкода | **READY** |
+| **Генератор случайных криптосекретов** | `scripts/generate_staging_secrets.py` (длина >= 28, entropy >= 48 байт, права 0600) | Локальное/CI исполнение без хардкода | **READY** |
 | **Строгая TLS SNI / Hostname валидация** | `scripts/verify_staging_deployment.py` (check_hostname=True, positive & negative probes) | Проверено на synthetic SAN/SNI | **READY** |
-| **Сквозной E2E через контейнерный HTTPS** | `scripts/verify_staging_e2e_flow.py` (11 шагов: invite → CRM → publication → booking → card → pause) | Проверено через Nginx 443 | **READY** |
-| **Non-root контейнер статики фронтенда** | `Dockerfile.frontend` (`USER 101:101`, без sudo/chown в CMD) | Docker 24+ / Compose v2 | **READY** |
-| **Шифрованный Offsite Backup (AES-256-GCM)** | `scripts/offsite_backup.py` (сжатие GZIP + AES-256-GCM + SHA256 манифест) | Локально проверено; RTO = 1.73s | **READY** |
+| **Сквозной E2E через контейнерный HTTPS** | `scripts/verify_staging_e2e_flow.py` (12 шагов: invite → CRM → publication → booking → isolation с валидным JWT) | Проверено через Nginx 443 | **READY** |
+| **Non-root контейнер статики фронтенда** | `Dockerfile.frontend` (`USER 101:101`, `cp -a`, Docker HEALTHCHECK, Nginx 200 на всех SPA) | Docker 24+ / Compose v2 | **READY** |
+| **Шифрованный Offsite Backup (AES-256-GCM)** | `scripts/offsite_backup.py` (сжатие GZIP + AES-256-GCM 64-hex key + SHA256 манифест) | Локальный архив готов; `local_encrypted_archive_restore_duration_seconds` = 1.73s | **LOCAL READY** |
 | **Выделенный боевой сервер (Cloud VPS)** | Спецификация Docker Compose / Nginx / PostgreSQL 17 подготовлена | Покупка/аренда облачного сервера (vCPU/RAM/NVMe) | **BLOCKED** |
 | **Реальный публичный домен и DNS** | Поддержка поддоменов `app.*`, `console.*`, `*.book.*` реализована | Покупка домена и делегирование в DNS (Cloudflare/Route53/Yandex) | **BLOCKED** |
 | **Доверенный Wildcard TLS (Let's Encrypt)** | Nginx готов принимать `/etc/nginx/certs/fullchain.pem` | Выпуск Certbot DNS-01 через API DNS-провайдера | **BLOCKED** |
-| **Удалённое облачное хранилище бэкапов (S3)** | Скрипт `scripts/offsite_backup.py` поддерживает S3 REST API | Создание S3 бакета и IAM-ключей с версионированием | **BLOCKED** |
+| **Удалённое облачное хранилище бэкапов (S3)** | Скрипт `scripts/offsite_backup.py` формирует зашифрованный пакет | Создание S3 бакета и IAM-ключей с версионированием | **BLOCKED** |
 | **Юридический контур (ПДн, Оферта, Согласие)** | Логирование маскирует PII, в CRM разделены персональные данные | Юридическое утверждение политики конфиденциальности и договора | **BLOCKED** |
 
 ---
@@ -166,30 +166,32 @@ docker exec saas_crm_staging_proxy nginx -s reload
 5. Формирование защищённого манифеста целостности `.offsite_manifest.json`.
 6. Выгрузка в удалённый бакет по протоколу HTTPS.
 
-### 6.3. Фактические измеренные метрики DR
+### 6.3. Измеренные метрики локального восстановления архива
 - **RPO (Recovery Point Objective):** Задаётся расписанием Cron (рекомендовано: каждые 2 часа в рабочее время; максимальная потенциальная потеря данных при катастрофе хоста — 2 часа).
-- **RTO (Recovery Time Objective):** Измеренное сквозное время полного восстановления платформы:
+- **Метрика `local_encrypted_archive_restore_duration_seconds`:** Измеренное время расшифровки и наката дампа:
   - Расшифровка AES-256-GCM: **< 0.01 с**
   - Распаковка GZIP: **0.01 с**
   - Восстановление 47 таблиц и 22 RLS политик в PostgreSQL: **1.13 с**
-  - Полное аппаратное RTO: **1.73 с** (с учётом прогрева соединений — до 25 с).
+  - Полное время восстановления локального архива: **1.73 с**.
+  > [!NOTE]
+  > Данная метрика отражает исключительно локальную распаковку и накат дампа в PostgreSQL. Полный операционный RTO (с учётом provisioning нового сервера, DNS propagation, TLS-сертификации и развёртывания контейнеров) будет измерен в ходе отдельного disaster-recovery drill на выделенном хосте.
 
 ### 6.4. Блокирующий фактор для S3
 Для включения выгрузки требуется:
 - Выделение бакета `s3://crm-backups-offsite`
 - Настройка Lifecycle Rule: удаление бэкапов старше 30 дней, перевод в Cold Storage через 14 дней.
 - Передача переменных: `OFFSITE_S3_BUCKET`, `OFFSITE_S3_ENDPOINT`, `OFFSITE_S3_ACCESS_KEY`, `OFFSITE_S3_SECRET_KEY`.
-- До выделения ресурсов статус: **BLOCKED**.
+- До выделения ресурсов статус удалённой репликации: **BLOCKED** (локальный статус: `LOCAL_ENCRYPTED_BACKUP_READY`, имитация выгрузки не производится).
 
 ---
 
 ## 7. Защита периметра и ограничение доступа к Platform Console
 
-1. **IP Allowlist:** Доступ к управлению арендаторами (`/api/v1/platform/*`) ограничен на уровне Middleware и Nginx. В `.env` задаётся `PLATFORM_IP_ALLOWLIST` (только доверенные статические IP администраторов или офиса).
+1. **IP Allowlist:** Доступ к управлению арендаторами (`/api/v1/platform/*`) строго ограничен на уровне Middleware и Nginx. В `.env` задаётся `PLATFORM_IP_ALLOWLIST` (по умолчанию строго ограничен `127.0.0.1,::1,172.28.0.0/16`, без чрезмерно широких подсетей вроде `10.0.0.0/8`).
 2. **VPN / Bastion (Рекомендуется для боевого использования):**
    - Настройка WireGuard на сервере (`wg0`, 10.8.0.0/24).
    - `PLATFORM_IP_ALLOWLIST=10.8.0.0/24,127.0.0.1`.
-   - Вход в Platform Console возможен только при активном VPN-соединении.
+   - Вход в Platform Console возможен только при активном VPN-соединении. Не исключает обязательную JWT-аутентификацию платформенного администратора.
 
 ---
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Disaster Recovery: PostgreSQL Offsite Backup & Encryption Utility
+Disaster Recovery: PostgreSQL Encrypted Backup & Integrity Verification Utility
 Encapsulates:
   1. Base SQL dump generation & SHA-256 checksumming via scripts/backup_db.py
   2. Gzip compression (.sql.gz)
-  3. Authenticated AES-256-GCM encryption (.sql.gz.enc)
-  4. Offsite S3-compatible replication (with BLOCKED safeguard when credentials not provisioned)
-  5. Decryption, decompression, and end-to-end restore verification measuring real RTO
+  3. Authenticated AES-256-GCM encryption (.sql.gz.enc) with strict CSPRNG key requirement
+  4. Local encrypted archive integrity assertion (Remote S3 transport explicitly marked BLOCKED)
+  5. Decryption, decompression, and end-to-end restore verification measuring local restore duration
 """
 
 import os
@@ -17,37 +17,56 @@ import json
 import time
 import shutil
 import hashlib
+import secrets
 import argparse
 import datetime
 from typing import Dict, Any, Tuple, Optional
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.exceptions import InvalidTag
 from scripts.backup_db import create_backup
 from scripts.restore_db import restore_and_verify
 
 
-def derive_or_get_encryption_key(key_hex_or_env: Optional[str] = None) -> Tuple[bytes, str]:
+def derive_or_get_encryption_key(key_hex: Optional[str] = None) -> Tuple[bytes, str]:
     """
-    Retrieves or derives a 256-bit key for AES-GCM.
+    Validates and parses a 256-bit AES key.
+    STRICT FAIL-CLOSED: Requires exactly 64 hexadecimal characters.
+    No hardcoded fallback, no silent hashing of arbitrary strings.
     Returns (key_bytes, key_fingerprint).
     """
-    raw_key = key_hex_or_env or os.getenv("BACKUP_ENCRYPTION_KEY")
-    if raw_key:
-        if len(raw_key) == 64:
-            key_bytes = bytes.fromhex(raw_key)
-        else:
-            # Hash to 32 bytes
-            key_bytes = hashlib.sha256(raw_key.encode("utf-8")).digest()
-    else:
-        # Default dedicated DR key for staging test verification
-        key_bytes = hashlib.sha256(b"saas_crm_staging_disaster_recovery_aes_key_2026").digest()
+    raw_key = (key_hex or os.getenv("BACKUP_ENCRYPTION_KEY", "")).strip()
+    if not raw_key:
+        raise ValueError(
+            "FATAL: BACKUP_ENCRYPTION_KEY is required and cannot be empty. "
+            "Fail-closed: no fallback key is permitted."
+        )
 
+    if len(raw_key) != 64:
+        raise ValueError(
+            f"FATAL: BACKUP_ENCRYPTION_KEY must be exactly 64 hex characters (256-bit key), "
+            f"got {len(raw_key)} characters. Fail-closed."
+        )
+
+    try:
+        key_bytes = bytes.fromhex(raw_key)
+    except ValueError as e:
+        raise ValueError(
+            "FATAL: BACKUP_ENCRYPTION_KEY must contain valid hexadecimal characters only. Fail-closed."
+        ) from e
+
+    # Compute one-way fingerprint (first 16 hex chars of SHA-256) for audit logging without leaking key
     fingerprint = hashlib.sha256(key_bytes).hexdigest()[:16]
     return key_bytes, fingerprint
 
 
+def generate_new_encryption_key() -> str:
+    """Generates a cryptographically strong 256-bit AES key formatted as 64 hex characters."""
+    return secrets.token_hex(32)
+
+
 def encrypt_file_aes_gcm(input_path: str, output_path: str, key_bytes: bytes) -> Dict[str, Any]:
-    """Encrypts a file with AES-256-GCM (12-byte nonce, 16-byte tag prepended)."""
+    """Encrypts a file with AES-256-GCM (12-byte nonce prepended, 16-byte tag appended)."""
     aesgcm = AESGCM(key_bytes)
     nonce = os.urandom(12)
 
@@ -75,9 +94,12 @@ def encrypt_file_aes_gcm(input_path: str, output_path: str, key_bytes: bytes) ->
 
 
 def decrypt_file_aes_gcm(encrypted_path: str, output_path: str, key_bytes: bytes) -> str:
-    """Decrypts an AES-256-GCM encrypted file."""
+    """Decrypts an AES-256-GCM encrypted file. Raises InvalidTag if tampered or wrong key."""
     with open(encrypted_path, "rb") as f:
         data = f.read()
+
+    if len(data) < 28:
+        raise ValueError(f"Corrupt or incomplete encrypted payload: length {len(data)} < 28 bytes.")
 
     nonce = data[:12]
     ciphertext = data[12:]
@@ -117,13 +139,19 @@ def decompress_file_gzip(compressed_path: str, output_path: str) -> str:
 
 def create_encrypted_offsite_package(
     target_dir: str = "backups",
-    database: Optional[str] = None
+    database: Optional[str] = None,
+    key_hex: Optional[str] = None,
+    keep_plaintext: bool = False
 ) -> Tuple[str, Dict[str, Any]]:
     """
-    Creates a full backup, compresses, encrypts with AES-256-GCM, and produces an offsite manifest.
+    Creates full PostgreSQL backup, compresses with gzip, encrypts with AES-256-GCM,
+    and produces audit manifest with honest BLOCKED status for unprovisioned remote S3.
     """
     os.makedirs(target_dir, exist_ok=True)
     t0 = time.time()
+
+    # Step 0: Validate key fail-closed before taking backup
+    key_bytes, key_fp = derive_or_get_encryption_key(key_hex=key_hex)
 
     # Step 1: Base backup
     raw_dump_path = create_backup(target_dir=target_dir, database=database)
@@ -140,23 +168,23 @@ def create_encrypted_offsite_package(
     print(f"[+] Compressed SQL dump with GZIP: {gz_path} (Ratio: {compression_ratio}:1)")
 
     # Step 3: AES-256-GCM Encryption
-    key_bytes, key_fp = derive_or_get_encryption_key()
     enc_path = f"{base_name}.sql.gz.enc"
     enc_meta = encrypt_file_aes_gcm(gz_path, enc_path, key_bytes)
     print(f"[+] Encrypted archive with AES-256-GCM (Key FP: {key_fp}): {enc_path}")
 
-    # Step 4: Offsite S3 Dispatch Check
-    s3_bucket = os.getenv("OFFSITE_S3_BUCKET")
-    s3_endpoint = os.getenv("OFFSITE_S3_ENDPOINT")
-    s3_access_key = os.getenv("OFFSITE_S3_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
-    s3_secret_key = os.getenv("OFFSITE_S3_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+    # Remove temporary compressed file
+    if os.path.exists(gz_path):
+        os.remove(gz_path)
 
-    if s3_bucket and s3_access_key and s3_secret_key:
-        offsite_status = "READY_TO_UPLOAD"
-        offsite_detail = f"Configured remote S3 destination: {s3_bucket} via {s3_endpoint or 'AWS S3'}"
-    else:
-        offsite_status = "BLOCKED"
-        offsite_detail = "Offsite upload BLOCKED pending Cloud S3 Bucket provisioning and IAM credentials by platform administrator."
+    # Step 4: Honest Remote S3 Status (Strictly BLOCKED until real S3 bucket is provisioned)
+    s3_bucket = os.getenv("OFFSITE_S3_BUCKET")
+    remote_status = "BLOCKED"
+    remote_detail = (
+        "Remote cloud object storage (S3) is NOT provisioned. Remote upload is strictly BLOCKED "
+        "pending IAM credentials, bucket policy, and provider selection by platform administrator."
+    )
+    if s3_bucket:
+        remote_detail = f"S3 Bucket '{s3_bucket}' configured in env, but remote upload transport is pending cloud IAM verification."
 
     total_duration = round(time.time() - t0, 3)
 
@@ -178,11 +206,9 @@ def create_encrypted_offsite_package(
             "nonce_bytes": 12,
             "tag_bytes": 16
         },
-        "offsite_replication": {
-            "status": offsite_status,
-            "detail": offsite_detail,
-            "target_bucket": s3_bucket or "NOT_CONFIGURED"
-        },
+        "local_package_status": "LOCAL_ENCRYPTED_BACKUP_READY",
+        "remote_offsite_status": remote_status,
+        "remote_offsite_detail": remote_detail,
         "backup_duration_seconds": total_duration,
         "created_by": "scripts/offsite_backup.py"
     }
@@ -192,29 +218,35 @@ def create_encrypted_offsite_package(
         json.dump(offsite_manifest, f, indent=2, ensure_ascii=False)
 
     print(f"[+] Offsite backup package created successfully: {offsite_manifest_path}")
-    print(f"    Offsite status: {offsite_status} ({offsite_detail})")
+    print(f"    Local status: LOCAL_ENCRYPTED_BACKUP_READY")
+    print(f"    Remote status: {remote_status} ({remote_detail})")
 
-    # Clean up intermediate unencrypted gz file for hygiene
-    if os.path.exists(gz_path):
-        os.remove(gz_path)
+    # Step 5: Safe cleanup of plaintext .sql dump unless explicitly requested to keep
+    if not keep_plaintext:
+        try:
+            os.remove(raw_dump_path)
+            print(f"    [+] Cleaned up intermediate unencrypted plaintext dump: {raw_dump_path}")
+        except Exception as e:
+            print(f"    [!] Warning: failed to clean up plaintext dump: {e}")
 
     return enc_path, offsite_manifest
 
 
 def verify_offsite_restore(
     encrypted_path: str,
-    target_test_db: str = "saas_crm_offsite_restore_test"
+    target_test_db: str = "saas_crm_offsite_restore_test",
+    key_hex: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Tests end-to-end disaster recovery restoration from an encrypted offsite package:
-      1. Decrypt AES-256-GCM
+    Tests end-to-end disaster recovery restoration from an encrypted package:
+      1. Decrypt AES-256-GCM (fails if key or payload tampered)
       2. Decompress GZIP
-      3. Verify SHA-256 integrity against raw dump
+      3. Verify SHA-256 integrity against raw dump manifest
       4. Re-create schema, load SQL, and execute RLS / negative security validation
-      5. Measure real End-to-End Recovery Time (RTO)
+      5. Measure local encrypted archive restore duration
     """
     print("\n" + "=" * 80)
-    print("  VERIFYING END-TO-END OFFSITE RESTORATION & MEASURING FULL RTO")
+    print("  VERIFYING LOCAL RESTORATION FROM ENCRYPTED ARCHIVE")
     print("=" * 80)
     t0 = time.time()
 
@@ -224,7 +256,7 @@ def verify_offsite_restore(
     decrypted_gz = os.path.join(work_dir, f"{base_name}.decrypted.sql.gz")
     restored_sql = os.path.join(work_dir, f"{base_name}.restored.sql")
 
-    key_bytes, key_fp = derive_or_get_encryption_key()
+    key_bytes, key_fp = derive_or_get_encryption_key(key_hex=key_hex)
 
     # Step 1: Decrypt
     print(f"[*] Step 1: Decrypting AES-256-GCM package using key fingerprint {key_fp}...")
@@ -252,7 +284,7 @@ def verify_offsite_restore(
         verbose=True
     )
 
-    total_rto = round(time.time() - t0, 3)
+    total_duration = round(time.time() - t0, 3)
 
     # Cleanup temporary restored sql & gz
     for tmp_file in [decrypted_gz, restored_sql]:
@@ -264,10 +296,13 @@ def verify_offsite_restore(
         "verified_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "encrypted_package": encrypted_path,
         "target_database": target_test_db,
+        "key_fingerprint": key_fp,
         "decryption_time_seconds": t_decrypt,
         "decompression_time_seconds": t_decompress,
         "database_restore_time_seconds": restore_meta.get("sql_stream_restore_duration_seconds", 0),
-        "total_measured_platform_rto_seconds": total_rto,
+        "local_encrypted_archive_restore_duration_seconds": total_duration,
+        "recovery_scope": "LOCAL_ARCHIVE_DECRYPTION_AND_SQL_RESTORE_ONLY",
+        "rto_note": "Measures only local decryption, decompression, and psql restoration into PostgreSQL. Full operational RTO includes remote S3 download, VM provisioning, DNS/TLS propagation, container startup, and end-to-end smoke verification, which will be measured during standalone multi-host DR drill.",
         "rls_enforcement": restore_meta.get("rls_enforcement"),
         "tenant_tables_rls_verified": restore_meta.get("tenant_tables_rls_verified"),
         "tenant_isolation_ab_verified": restore_meta.get("tenant_isolation_ab_verified"),
@@ -279,20 +314,103 @@ def verify_offsite_restore(
     with open(dr_report_path, "w", encoding="utf-8") as f:
         json.dump(dr_verification, f, indent=2, ensure_ascii=False)
 
-    print(f"\n[+] Offsite Disaster Recovery Verification SUCCESSFUL! Report saved to {dr_report_path}")
-    print(f"    Total Measured Platform RTO: {total_rto} seconds")
+    print(f"\n[+] Local Restoration Verification SUCCESSFUL! Report saved to {dr_report_path}")
+    print(f"    Local Archive Restore Duration: {total_duration} seconds")
     return dr_verification
 
 
+def run_encryption_negative_tests():
+    """Validates fail-closed behavior on missing keys, corrupt tags, and tampered ciphertext."""
+    print("\n[*] Running Encryption Fail-Closed Negative Tests...")
+
+    # 1. Missing key
+    try:
+        derive_or_get_encryption_key(key_hex="")
+        assert False, "Failed to reject empty key"
+    except ValueError as e:
+        print(f"    [+] Correctly rejected empty key: {e}")
+
+    # 2. Key too short
+    try:
+        derive_or_get_encryption_key(key_hex="abcdef123456")
+        assert False, "Failed to reject short key"
+    except ValueError as e:
+        print(f"    [+] Correctly rejected short key: {e}")
+
+    # 3. Invalid hex characters
+    try:
+        derive_or_get_encryption_key(key_hex="z" * 64)
+        assert False, "Failed to reject non-hex key"
+    except ValueError as e:
+        print(f"    [+] Correctly rejected non-hex key: {e}")
+
+    # 4. Wrong key decryption
+    key1, _ = derive_or_get_encryption_key(secrets.token_hex(32))
+    key2, _ = derive_or_get_encryption_key(secrets.token_hex(32))
+    test_in = "tmp_plain.txt"
+    test_enc = "tmp_cipher.enc"
+    test_dec = "tmp_decrypted.txt"
+    with open(test_in, "w") as f:
+        f.write("Secret database content")
+
+    try:
+        encrypt_file_aes_gcm(test_in, test_enc, key1)
+        try:
+            decrypt_file_aes_gcm(test_enc, test_dec, key2)
+            assert False, "Decryption with wrong key unexpectedly succeeded"
+        except InvalidTag:
+            print("    [+] Correctly rejected decryption with wrong key (InvalidTag).")
+
+        # 5. Tampered ciphertext
+        with open(test_enc, "r+b") as f:
+            f.seek(15)
+            byte = f.read(1)
+            f.seek(15)
+            f.write(bytes([byte[0] ^ 0xFF]))  # flip bits
+
+        try:
+            decrypt_file_aes_gcm(test_enc, test_dec, key1)
+            assert False, "Decryption of tampered ciphertext unexpectedly succeeded"
+        except InvalidTag:
+            print("    [+] Correctly rejected tampered ciphertext (InvalidTag).")
+    finally:
+        for p in [test_in, test_enc, test_dec]:
+            if os.path.exists(p):
+                os.remove(p)
+
+    print("[+] All encryption negative tests PASSED!\n")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create AES-256 encrypted offsite backup and verify full restore.")
+    parser = argparse.ArgumentParser(description="Create AES-256 encrypted backup and verify restore.")
     parser.add_argument("--dir", default="backups", help="Target backup directory")
     parser.add_argument("--database", "--db", default=None, help="Source database name")
+    parser.add_argument("--key", "-k", default=None, help="64-character hex AES-256 encryption key")
+    parser.add_argument("--generate-key", action="store_true", help="Generate a fresh 64-hex AES-256 key and exit")
     parser.add_argument("--verify", action="store_true", help="Perform full decryption and database restore verification")
     parser.add_argument("--target-db", default="saas_crm_offsite_restore_test", help="Target verification database")
+    parser.add_argument("--keep-plaintext", action="store_true", help="Retain unencrypted .sql file after encryption")
+    parser.add_argument("--test-negative", action="store_true", help="Run fail-closed negative tests for encryption")
     args = parser.parse_args()
 
-    enc_file, manifest = create_encrypted_offsite_package(target_dir=args.dir, database=args.database)
+    if args.generate_key:
+        print(generate_new_encryption_key())
+        sys.exit(0)
+
+    if args.test_negative:
+        run_encryption_negative_tests()
+        sys.exit(0)
+
+    enc_file, manifest = create_encrypted_offsite_package(
+        target_dir=args.dir,
+        database=args.database,
+        key_hex=args.key,
+        keep_plaintext=args.keep_plaintext
+    )
 
     if args.verify:
-        verify_offsite_restore(encrypted_path=enc_file, target_test_db=args.target_db)
+        verify_offsite_restore(
+            encrypted_path=enc_file,
+            target_test_db=args.target_db,
+            key_hex=args.key
+        )

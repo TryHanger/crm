@@ -2,12 +2,13 @@
 """
 SaaS CRM - Containerized Staging Deployment Verification Script
 Automates the build, startup, health assertion, Nginx config test, strict TLS SNI probes,
-and full containerized E2E HTTPS lifecycle verification.
+frontend static bundle verification (all 3 apps), and full containerized E2E HTTPS lifecycle verification.
 """
 
 import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import re
 import time
 import ssl
 import json
@@ -50,7 +51,7 @@ def ensure_env_staging(force_fresh: bool = False) -> Dict[str, str]:
     print(f"[*] Generating synthetic {ENV_FILE} with cryptographically strong secrets...")
     env_vars = generate_staging_env_dict()
     write_env_file(ENV_FILE, env_vars)
-    print(f"[+] Fresh {ENV_FILE} created with randomized passwords and JWT secret.")
+    print(f"[+] Fresh {ENV_FILE} created with randomized passwords and JWT secret (mode 0600).")
     return env_vars
 
 
@@ -93,8 +94,8 @@ def wait_for_containers(timeout_seconds: int = 120) -> Dict[str, str]:
                 pg_ok = any("healthy" in statuses.get(k, "") for k in statuses if "pg" in k or "postgres" in k)
                 mig_ok = any(("exited (0)" in statuses.get(k, "") or statuses.get(k, "") == "exited") for k in statuses if "migration" in k)
                 api_ok = any("healthy" in statuses.get(k, "") for k in statuses if "api" in k)
+                fe_ok = any(("healthy" in statuses.get(k, "") or "up" in statuses.get(k, "") or "running" in statuses.get(k, "")) for k in statuses if "frontend" in k)
                 proxy_ok = any(("up" in statuses.get(k, "") or "running" in statuses.get(k, "")) for k in statuses if "proxy" in k)
-                fe_ok = any(("up" in statuses.get(k, "") or "running" in statuses.get(k, "")) for k in statuses if "frontend" in k)
 
                 if pg_ok and mig_ok and api_ok and proxy_ok and fe_ok:
                     print("[+] All staging services reached desired health/completion state!")
@@ -214,7 +215,7 @@ def test_http_request(host_header: str, path: str = "/", port: int = 80) -> Tupl
 
 
 def run_deployment_smoke_tests(ca_cert: str, env_vars: Dict[str, str]) -> List[Dict[str, Any]]:
-    """Runs full suite of HTTPS, SNI validation, and Nginx reverse proxy probes."""
+    """Runs full suite of HTTPS, SNI validation, frontend assets, and Nginx reverse proxy probes."""
     results = []
 
     # Probe 1: HTTP Port 80 Health Probe
@@ -260,6 +261,16 @@ def run_deployment_smoke_tests(ca_cert: str, env_vars: Dict[str, str]) -> List[D
     assert st == 200 and ("<div id=\"root\"" in body or "<!doctype html>" in body.lower()), f"Expected 200 Console SPA HTML, got {st}"
     results.append({"probe": "console_spa_https", "status": st, "passed": True})
 
+    # Probe 6b: Platform Console Static JS Asset Delivery & Content-Type
+    js_match = re.search(r'src="(/assets/[^"]+\.js)"', body)
+    if js_match:
+        js_path = js_match.group(1)
+        st_js, hdrs_js, body_js = test_https_request("console.staging.crm.internal", js_path, 443, ca_cert=ca_cert, check_hostname=True)
+        print(f"    Console JS Asset: {js_path} -> Status: {st_js}, Content-Type: {hdrs_js.get('content-type')}")
+        assert st_js == 200, f"Expected 200 for Console JS {js_path}, got {st_js}"
+        assert "javascript" in hdrs_js.get("content-type", "").lower(), f"Unexpected Content-Type for JS: {hdrs_js.get('content-type')}"
+        results.append({"probe": "console_js_asset_https", "asset": js_path, "status": st_js, "passed": True})
+
     # Probe 7: HTTPS Port 443 -> Business CRM SPA
     print("[*] Probe 7: HTTPS Port 443 -> Business CRM SPA (app.staging.crm.internal)...")
     st, _, body = test_https_request("app.staging.crm.internal", "/", 443, ca_cert=ca_cert, check_hostname=True)
@@ -267,10 +278,17 @@ def run_deployment_smoke_tests(ca_cert: str, env_vars: Dict[str, str]) -> List[D
     assert st == 200 and ("<div id=\"root\"" in body or "<!doctype html>" in body.lower()), f"Expected 200 Business CRM SPA HTML, got {st}"
     results.append({"probe": "crm_spa_https", "status": st, "passed": True})
 
-    # Probe 8: HTTPS Port 443 -> Platform Owner Login via Verified Nginx Proxy
+    # Probe 8: HTTPS Port 443 -> Booking Web SPA (barberhouse.book.staging.crm.internal)
+    print("[*] Probe 8: HTTPS Port 443 -> Booking Web SPA (barberhouse.book.staging.crm.internal)...")
+    st, _, body = test_https_request("barberhouse.book.staging.crm.internal", "/", 443, ca_cert=ca_cert, check_hostname=True)
+    print(f"    Status: {st}, HTML Length: {len(body)}")
+    assert st == 200 and ("<div id=\"root\"" in body or "<!doctype html>" in body.lower()), f"Expected 200 Booking Web SPA HTML, got {st}"
+    results.append({"probe": "booking_spa_https", "status": st, "passed": True})
+
+    # Probe 9: HTTPS Port 443 -> Platform Owner Login via Verified Nginx Proxy
     admin_email = env_vars.get("INITIAL_PLATFORM_OWNER_EMAIL", "admin@staging.crm.internal")
     admin_password = env_vars.get("INITIAL_PLATFORM_OWNER_PASSWORD", "")
-    print(f"[*] Probe 8: HTTPS Port 443 -> API Login via Nginx Proxy (Platform Owner '{admin_email}')...")
+    print(f"[*] Probe 9: HTTPS Port 443 -> API Login via Nginx Proxy (Platform Owner '{admin_email}')...")
     login_payload = json.dumps({"email": admin_email, "password": admin_password})
     st, _, body = test_https_request(
         "console.staging.crm.internal",
@@ -329,16 +347,30 @@ def main():
         # 6. Wait for health
         container_states = wait_for_containers()
 
-        # 7. Nginx config test
+        # 7. Check frontend asset files directly on volumes in both containers
+        print("\n[*] Asserting frontend assets presence on volumes...")
+        run_cmd([
+            "docker", "compose", "--env-file", ENV_FILE, "-f", DOCKER_COMPOSE_FILE,
+            "exec", "frontend", "sh", "-c",
+            "test -s /var/www/booking-web/index.html && test -s /var/www/business-crm/index.html && test -s /var/www/platform-console/index.html"
+        ])
+        run_cmd([
+            "docker", "compose", "--env-file", ENV_FILE, "-f", DOCKER_COMPOSE_FILE,
+            "exec", "proxy", "sh", "-c",
+            "test -s /var/www/booking-web/index.html && test -s /var/www/business-crm/index.html && test -s /var/www/platform-console/index.html"
+        ])
+        print("    [+] All three frontend index.html files verified on volumes in frontend and proxy containers.")
+
+        # 8. Nginx config test
         print("\n[*] Verifying Nginx configuration inside proxy container...")
         nginx_test = run_cmd(["docker", "compose", "--env-file", ENV_FILE, "-f", DOCKER_COMPOSE_FILE, "exec", "proxy", "nginx", "-t"])
         print(nginx_test.stdout or nginx_test.stderr)
 
-        # 8. Run Strict TLS SNI and Smoke Probes
-        print("\n[*] Executing Strict TLS SNI & HTTPS Smoke Probes through Nginx...")
+        # 9. Run Strict TLS SNI and Smoke Probes
+        print("\n[*] Executing Strict TLS SNI, Frontend Asset & HTTPS Smoke Probes through Nginx...")
         probe_results = run_deployment_smoke_tests(ca_cert=CERT_FILE, env_vars=env_vars)
 
-        # 9. Run Containerized E2E Flow over Real HTTPS
+        # 10. Run Containerized E2E Flow over Real HTTPS
         e2e_results = None
         if not args.skip_e2e:
             print("\n[*] Executing Full Multi-Tenant E2E Lifecycle over Container HTTPS...")
@@ -347,6 +379,7 @@ def main():
         report_data.update({
             "status": "SUCCESS",
             "container_states": container_states,
+            "asset_volume_check": "PASS",
             "nginx_config_test": "PASS",
             "https_smoke_probes": probe_results,
             "e2e_container_https_flow": e2e_results

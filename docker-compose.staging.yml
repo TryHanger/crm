@@ -100,14 +100,22 @@ services:
       - frontend_booking:/var/www/booking-web
       - frontend_crm:/var/www/business-crm
       - frontend_platform:/var/www/platform-console
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /var/www/booking-web/index.html && test -s /var/www/business-crm/index.html && test -s /var/www/platform-console/index.html || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 1s
 
   proxy:
     image: nginx:1.27-alpine
     container_name: saas_crm_staging_proxy
     restart: always
     depends_on:
-      - api
-      - frontend
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     networks:
       staging_net:
         ipv4_address: 172.28.0.10
