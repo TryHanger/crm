@@ -26,7 +26,7 @@ from apps.api.app.modules.schemas import (
     IssueChargeRequest, RecordPaymentRequest, FeatureOverrideRequest,
     SupportAccessRequestCreate, SupportTicketCreateRequest, SupportMessageCreateRequest,
     PlanVersionCreateRequest, RenewSubscriptionRequest, ChangePlanRequest,
-    FeatureOverrideCreateRequest, PlatformStaffCreateRequest, PlatformSettingUpdateRequest
+    FeatureOverrideCreateRequest, PlatformStaffCreateRequest, PlatformStaffActivateRequest, PlatformSettingUpdateRequest
 )
 
 router = APIRouter(prefix="/platform", tags=["Platform Console"])
@@ -897,15 +897,20 @@ async def renew_subscription(
     old_status = sub.lifecycle_status
     sub.period_end = new_end
     sub.lifecycle_status = "active"
-    if tenant.lifecycle_status == "suspended":
-        tenant.lifecycle_status = "active"
-        tenant.suspended_at = None
+    # IMPORTANT: Do NOT automatically unsuspend a manually suspended company!
+    # Restoration of access requires explicit authorized reactivation with documented reason.
 
     amount = req.amount_minor if req.amount_minor is not None else pv.price_minor
     charge = None
     pmt = None
 
     if req.record_payment:
+        evidence_clean = (req.evidence_reference or "").strip()
+        if not evidence_clean:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Explicit payment evidence reference from bank statement or receipt is required when recording payment"
+            )
         charge = SubscriptionCharge(
             tenant_id=tenant.id,
             subscription_id=sub.id,
@@ -914,7 +919,7 @@ async def renew_subscription(
             amount_minor=amount,
             currency=pv.currency,
             charge_status="paid",
-            evidence_reference=req.evidence_reference or f"Ручное продление на {req.extend_days} дн.",
+            evidence_reference=evidence_clean,
             created_by=staff.user.id
         )
         db.add(charge)
@@ -927,10 +932,24 @@ async def renew_subscription(
             currency=pv.currency,
             recorded_by=staff.user.id,
             payment_method=req.payment_method,
-            evidence_reference=req.evidence_reference or "Ручное подтверждение платежа",
+            evidence_reference=evidence_clean,
             note=f"Оплата за продление подписки до {new_end.strftime('%d.%m.%Y')}"
         )
         db.add(pmt)
+    else:
+        # P0-04: Issue new billing charge awaiting manual payment
+        charge = SubscriptionCharge(
+            tenant_id=tenant.id,
+            subscription_id=sub.id,
+            period_start=base_start,
+            period_end=new_end,
+            amount_minor=amount,
+            currency=pv.currency,
+            charge_status="issued",
+            evidence_reference=None,
+            created_by=staff.user.id
+        )
+        db.add(charge)
 
     await record_audit_event(
         db=db,
@@ -1044,7 +1063,8 @@ async def record_payment(
     staff: AuthenticatedPlatformStaff = Depends(require_platform_roles(["platform_owner", "finance"])),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(SubscriptionCharge).where(SubscriptionCharge.id == charge_id)
+    # Row locking via SELECT ... FOR UPDATE to prevent concurrent race condition double payments
+    stmt = select(SubscriptionCharge).where(SubscriptionCharge.id == charge_id).with_for_update()
     res = await db.execute(stmt)
     charge = res.scalar_one_or_none()
     if not charge:
@@ -1053,18 +1073,47 @@ async def record_payment(
     if req.amount_minor <= 0:
         raise HTTPException(status_code=422, detail="Payment amount must be greater than zero")
 
+    evidence_clean = req.evidence_reference.strip()
+    if not evidence_clean:
+        raise HTTPException(status_code=422, detail="Valid payment evidence reference from bank/receipt is required")
+
+    # Strict idempotency key bound to (charge_id, amount, currency, evidence, method)
     if idempotency_key:
         stmt_idem = select(PaymentRecord).where(PaymentRecord.idempotency_key == idempotency_key)
-        res_idem = await db.execute(stmt_idem)
-        existing_pmt = res_idem.scalar_one_or_none()
+        existing_pmt = (await db.execute(stmt_idem)).scalar_one_or_none()
         if existing_pmt:
-            return {"payment_id": str(existing_pmt.id), "status": charge.charge_status, "replay": True}
+            if (
+                existing_pmt.charge_id == charge.id
+                and existing_pmt.amount_minor == req.amount_minor
+                and existing_pmt.currency == charge.currency
+                and existing_pmt.evidence_reference == evidence_clean
+                and existing_pmt.payment_method == req.payment_method
+            ):
+                return {
+                    "payment_id": str(existing_pmt.id),
+                    "status": charge.charge_status,
+                    "amount_minor": existing_pmt.amount_minor,
+                    "replay": True
+                }
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key already used with different payment payload"
+                )
 
+    # Calculate previous payments and remaining balance
     stmt_prev = select(func.coalesce(func.sum(PaymentRecord.amount_minor), 0)).where(PaymentRecord.charge_id == charge.id)
     prev_total = (await db.execute(stmt_prev)).scalar() or 0
-    new_total = prev_total + req.amount_minor
+    remaining = charge.amount_minor - prev_total
 
-    if new_total >= charge.amount_minor:
+    if req.amount_minor > remaining:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payment amount ({req.amount_minor}) exceeds remaining charge balance ({remaining})"
+        )
+
+    new_total = prev_total + req.amount_minor
+    if new_total == charge.amount_minor:
         charge.charge_status = "paid"
     else:
         charge.charge_status = "partially_paid"
@@ -1076,7 +1125,7 @@ async def record_payment(
         currency=charge.currency,
         recorded_by=staff.user.id,
         payment_method=req.payment_method,
-        evidence_reference=req.evidence_reference,
+        evidence_reference=evidence_clean,
         note=req.note,
         idempotency_key=idempotency_key
     )
@@ -1090,11 +1139,21 @@ async def record_payment(
         object_type="payment_record",
         target_tenant_id=charge.tenant_id,
         object_id=str(charge.id),
-        after={"amount_minor": req.amount_minor, "evidence": req.evidence_reference}
+        after={
+            "amount_minor": req.amount_minor,
+            "evidence": evidence_clean,
+            "status": charge.charge_status,
+            "idempotency_key": idempotency_key
+        }
     )
 
     await db.commit()
-    return {"payment_id": str(pmt.id), "status": charge.charge_status, "amount_minor": pmt.amount_minor}
+    return {
+        "payment_id": str(pmt.id),
+        "status": charge.charge_status,
+        "amount_minor": pmt.amount_minor,
+        "remaining_balance_minor": max(0, charge.amount_minor - new_total)
+    }
 
 
 # =========================================================================
@@ -1487,6 +1546,13 @@ async def get_tenant_diagnosis(
     )
     overrides = (await db.execute(stmt_ov)).scalars().all()
 
+    # Real DB health probe
+    try:
+        await db.execute(text("SELECT 1"))
+        db_health = "healthy"
+    except Exception:
+        db_health = "unhealthy"
+
     return {
         "tenant": {
             "id": str(t.id),
@@ -1514,7 +1580,7 @@ async def get_tenant_diagnosis(
             for o in overrides
         ],
         "infrastructure": {
-            "db_status": "healthy",
+            "db_status": db_health,
             "rls_enforcement": "strict",
             "read_only": t.lifecycle_status == "suspended"
         }
@@ -1584,49 +1650,52 @@ async def create_access_request(
 @router.post("/access-requests/{request_id}/approve")
 async def approve_access_request(
     request_id: uuid.UUID,
+    staff: AuthenticatedPlatformStaff = Depends(get_current_platform_staff),
+):
+    """Platform operators (support, owner, etc.) cannot approve tenant access requests.
+    Explicit tenant owner authorization via Business CRM is strictly required."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Self-approval is forbidden. Support access requests must be authorized by the tenant owner in Business CRM."
+    )
+
+
+@router.get("/support/delegated-tenant/{tenant_id}")
+async def get_delegated_tenant_data(
+    tenant_id: uuid.UUID,
     staff: AuthenticatedPlatformStaff = Depends(require_platform_roles(["platform_owner", "support"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Simulates approval (by owner or platform owner) and creates a 30-minute diagnostic session."""
-    stmt = select(SupportAccessRequest, Tenant).join(Tenant, Tenant.id == SupportAccessRequest.tenant_id).where(SupportAccessRequest.id == request_id)
-    row = (await db.execute(stmt)).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Request not found")
-
-    access_req, ten = row
-    access_req.status = "approved"
-
+    """Returns delegated tenant data strictly guarded by an active, owner-approved support session."""
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    session_obj = SupportAccessSession(
-        request_id=access_req.id,
-        tenant_id=access_req.tenant_id,
-        staff_id=access_req.requester_id,
-        approved_by=staff.user.id,
-        starts_at=now_utc,
-        expires_at=now_utc + datetime.timedelta(minutes=30),
-        status="active"
+    stmt = select(SupportAccessSession).where(
+        SupportAccessSession.tenant_id == tenant_id,
+        SupportAccessSession.staff_id == staff.user.id,
+        SupportAccessSession.status == "active",
+        SupportAccessSession.expires_at > now_utc
     )
-    db.add(session_obj)
+    sess = (await db.execute(stmt)).scalars().first()
+    if not sess:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: No active, owner-approved support session exists for this tenant, or session has expired/been revoked."
+        )
 
-    await record_audit_event(
-        db=db,
-        actor_id=staff.user.id,
-        actor_email=staff.user.email_normalized,
-        action="support.session_started",
-        object_type="support_access_session",
-        target_tenant_id=access_req.tenant_id,
-        object_id=str(session_obj.id),
-        reason=f"Approved diagnostic access: {access_req.reason}"
-    )
+    # Scoped read with tenant context
+    from apps.api.app.infrastructure.db.session import set_tenant_context
+    await set_tenant_context(db, tenant_id)
+    stmt_b = select(Branch).where(Branch.tenant_id == tenant_id)
+    branches = (await db.execute(stmt_b)).scalars().all()
+    stmt_s = select(StaffProfile).where(StaffProfile.tenant_id == tenant_id)
+    staff_members = (await db.execute(stmt_s)).scalars().all()
 
-    await db.commit()
     return {
-        "status": "approved",
-        "session_id": str(session_obj.id),
-        "tenant_id": str(access_req.tenant_id),
-        "tenant_name": ten.display_name,
-        "expires_at": session_obj.expires_at,
-        "duration_minutes": 30
+        "tenant_id": str(tenant_id),
+        "session_id": str(sess.id),
+        "expires_at": sess.expires_at.isoformat(),
+        "branches_count": len(branches),
+        "staff_count": len(staff_members),
+        "delegated_access": "read_only_active"
     }
 
 
@@ -1775,18 +1844,29 @@ async def create_platform_staff(
     staff: AuthenticatedPlatformStaff = Depends(require_platform_roles(["platform_owner"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Adds or invites a platform staff operator."""
+    """Adds or invites a platform staff operator without known default passwords.
+    Generates a secure one-time activation link."""
     email_clean = req.email.lower().strip()
     stmt_u = select(IdentityUser).where(IdentityUser.email_normalized == email_clean)
     res_u = await db.execute(stmt_u)
     user = res_u.scalar_one_or_none()
 
-    if not user:
+    if user:
+        # Check boundary: prevent silent privilege escalation of regular CRM users
+        stmt_m = select(TenantMembership).where(TenantMembership.user_id == user.id)
+        crm_memberships = (await db.execute(stmt_m)).scalars().all()
+        if crm_memberships and not req.allow_crm_user_upgrade:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This identity belongs to a regular CRM tenant user. Upgrading CRM users to platform operators requires explicit confirmation (allow_crm_user_upgrade=True)."
+            )
+    else:
+        # User created with unusable temporary secret hash until activation
         user = IdentityUser(
             oidc_subject=f"platform_{uuid.uuid4()}",
             email_normalized=email_clean,
             display_name=req.display_name,
-            password_hash=get_password_hash(req.password or "Password123!")
+            password_hash=get_password_hash(secrets.token_urlsafe(32))
         )
         db.add(user)
         await db.flush()
@@ -1795,15 +1875,31 @@ async def create_platform_staff(
     existing_ps = (await db.execute(stmt_ps)).scalar_one_or_none()
     if existing_ps:
         existing_ps.platform_role = req.platform_role
-        existing_ps.status = "active"
+        existing_ps.status = "pending_activation"
         ps_obj = existing_ps
     else:
         ps_obj = PlatformStaff(
             user_id=user.id,
             platform_role=req.platform_role,
-            status="active"
+            status="pending_activation"
         )
         db.add(ps_obj)
+        await db.flush()
+
+    # Generate cryptographically secure one-time activation token
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
+
+    invite = Invite(
+        tenant_id=None,
+        email=email_clean,
+        invite_type="platform_staff_invite",
+        role=req.platform_role,
+        token_hash=token_hash,
+        expires_at=expires_at
+    )
+    db.add(invite)
 
     await record_audit_event(
         db=db,
@@ -1812,11 +1908,72 @@ async def create_platform_staff(
         action="platform_staff.created",
         object_type="platform_staff",
         object_id=str(user.id),
-        after={"email": email_clean, "role": req.platform_role}
+        after={"email": email_clean, "role": req.platform_role, "status": "pending_activation"}
     )
 
     await db.commit()
-    return {"staff_id": str(ps_obj.id), "email": email_clean, "platform_role": req.platform_role}
+    return {
+        "staff_id": str(ps_obj.id),
+        "email": email_clean,
+        "platform_role": req.platform_role,
+        "status": "pending_activation",
+        "activation_token": raw_token,
+        "activation_url": f"/activate-platform?token={raw_token}",
+        "expires_at": expires_at.isoformat()
+    }
+
+
+@router.post("/staff/activate")
+async def activate_platform_staff(
+    req: PlatformStaffActivateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Operator sets personal password and activates their platform staff account using one-time token."""
+    token_hash = hashlib.sha256(req.activation_token.strip().encode()).hexdigest()
+    stmt = select(Invite).where(
+        Invite.invite_type == "platform_staff_invite",
+        Invite.token_hash == token_hash
+    )
+    invite = (await db.execute(stmt)).scalar_one_or_none()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid activation token")
+
+    if invite.consumed_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Activation token has already been used")
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    exp = invite.expires_at.replace(tzinfo=datetime.timezone.utc) if invite.expires_at.tzinfo is None else invite.expires_at
+    if exp < now_utc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Activation token has expired")
+
+    stmt_u = select(IdentityUser).where(IdentityUser.email_normalized == invite.email)
+    user = (await db.execute(stmt_u)).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found")
+
+    user.password_hash = get_password_hash(req.password)
+    if req.display_name:
+        user.display_name = req.display_name
+
+    stmt_ps = select(PlatformStaff).where(PlatformStaff.user_id == user.id)
+    ps = (await db.execute(stmt_ps)).scalar_one_or_none()
+    if ps:
+        ps.status = "active"
+
+    invite.consumed_at = now_utc
+
+    await record_audit_event(
+        db=db,
+        actor_id=user.id,
+        actor_email=user.email_normalized,
+        action="platform_staff.activated",
+        object_type="platform_staff",
+        object_id=str(user.id),
+        after={"email": user.email_normalized, "status": "active"}
+    )
+
+    await db.commit()
+    return {"status": "activated", "email": user.email_normalized, "message": "Учётная запись успешно активирована"}
 
 
 @router.get("/settings")

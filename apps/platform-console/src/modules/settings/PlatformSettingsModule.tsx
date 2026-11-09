@@ -24,8 +24,8 @@ export const PlatformSettingsModule: React.FC<PlatformSettingsModuleProps> = ({
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffRole, setNewStaffRole] = useState<PlatformRole>('viewer');
-  const [newStaffPassword, setNewStaffPassword] = useState('Password123!');
   const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
+  const [createdActivationUrl, setCreatedActivationUrl] = useState<string | null>(null);
 
   // Platform Lifecycle Settings
   const [settingsData, setSettingsData] = useState<PlatformSettingsResponse | null>(null);
@@ -72,16 +72,17 @@ export const PlatformSettingsModule: React.FC<PlatformSettingsModuleProps> = ({
     if (!newStaffEmail.trim() || !newStaffName.trim()) return;
     setIsSubmittingStaff(true);
     try {
-      await api.createStaff(
+      const res = await api.createStaff(
         {
           email: newStaffEmail.toLowerCase().trim(),
           display_name: newStaffName.trim(),
           platform_role: newStaffRole,
-          password: newStaffPassword,
         },
         token
       );
-      showToast(`Оператор ${newStaffName} (${newStaffRole}) успешно добавлен`);
+      showToast(`Оператор ${newStaffName} (${newStaffRole}) успешно приглашён`);
+      const fullUrl = `${window.location.origin}/activate-platform?token=${res.activation_token}`;
+      setCreatedActivationUrl(res.activation_url || fullUrl);
       setShowAddStaffModal(false);
       setNewStaffEmail('');
       setNewStaffName('');
@@ -493,18 +494,9 @@ export const PlatformSettingsModule: React.FC<PlatformSettingsModuleProps> = ({
                 </select>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
-                  Пароль оператора:
-                </label>
-                <input
-                  type="text"
-                  value={newStaffPassword}
-                  onChange={e => setNewStaffPassword(e.target.value)}
-                  required
-                  data-testid="staff-password-input"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #CBD5E1', boxSizing: 'border-box' }}
-                />
+              <div style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '12px', fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
+                🔒 <b>Безопасная активация без пароля по умолчанию:</b><br />
+                После создания оператора система сгенерирует защищённую одноразовую ссылку (TTL: 24 часа), по которой сотрудник самостоятельно задаст надёжный пароль.
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
@@ -525,6 +517,106 @@ export const PlatformSettingsModule: React.FC<PlatformSettingsModuleProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ACTIVATION URL SUCCESS MODAL */}
+      {createdActivationUrl && (
+        <div
+          data-testid="activation-url-modal"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: '14px',
+              maxWidth: '520px',
+              width: '100%',
+              padding: '24px',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <span style={{ fontSize: '24px' }}>🔑</span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
+                  Ссылка одноразовой активации создана
+                </h3>
+                <div style={{ fontSize: '12px', color: '#64748B' }}>
+                  Срок действия: 24 часа · Защита от повторного использования
+                </div>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5, margin: '0 0 16px 0' }}>
+              Передайте эту одноразовую ссылку новому оператору платформы. При переходе он установит личный надёжный пароль:
+            </p>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+              <input
+                type="text"
+                readOnly
+                value={createdActivationUrl}
+                data-testid="activation-url-display"
+                style={{
+                  flex: 1,
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #CBD5E1',
+                  background: '#F8FAFC',
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(createdActivationUrl);
+                  showToast('Ссылка скопирована в буфер обмена');
+                }}
+                style={{
+                  padding: '10px 14px',
+                  background: '#2563EB',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                }}
+              >
+                Копировать
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setCreatedActivationUrl(null)}
+                data-testid="close-activation-modal-btn"
+                style={{
+                  padding: '8px 18px',
+                  background: '#0F172A',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Понятно
+              </button>
+            </div>
           </div>
         </div>
       )}

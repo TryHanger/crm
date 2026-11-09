@@ -97,9 +97,10 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
   const handleOpenRenewModal = (sub: PlatformSubscriptionItem) => {
     setSelectedSub(sub);
     setRenewDays(30);
-    setRenewRecordPayment(true);
+    // Default: extend access only without automatic payment confirmation
+    setRenewRecordPayment(false);
     setRenewAmount(sub.price_minor / 100);
-    setRenewEvidence(`Платёжное поручение № ${Math.floor(1000 + Math.random() * 9000)}`);
+    setRenewEvidence('');
     setRenewPaymentMethod('bank_transfer');
   };
 
@@ -135,7 +136,7 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
     const totalPaid = ch.payments.reduce((acc, p) => acc + p.amount_minor, 0);
     const balance = Math.max(0, (ch.amount_minor - totalPaid) / 100);
     setPaymentAmount(balance);
-    setPaymentEvidence(`Платёжное поручение № ${Math.floor(1000 + Math.random() * 9000)}`);
+    setPaymentEvidence('');
     setPaymentMethod('bank_transfer');
     setPaymentNote('Оплата по выставленному счёту');
   };
@@ -607,7 +608,7 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
                       type="text"
                       value={renewEvidence}
                       onChange={e => setRenewEvidence(e.target.value)}
-                      placeholder="П/п № 4410 от 08.11.2026"
+                      placeholder="Например: Kaspi Pay Чек №948201 или п/п 1045"
                       data-testid="renew-evidence-input"
                       style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', boxSizing: 'border-box' }}
                     />
@@ -711,7 +712,7 @@ export const SubscriptionsModule: React.FC<SubscriptionsModuleProps> = ({
                   type="text"
                   value={paymentEvidence}
                   onChange={e => setPaymentEvidence(e.target.value)}
-                  placeholder="П/п № 4519 от 09.11.2026"
+                  placeholder="Например: Kaspi Pay Чек №948201 или п/п 1045"
                   required
                   data-testid="payment-evidence-input"
                   style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #CBD5E1', boxSizing: 'border-box' }}

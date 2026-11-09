@@ -203,7 +203,7 @@ async def test_reschedule_and_cancel_lifecycle(db_session: AsyncSession):
     service = res_srv.scalars().first()
 
     today = datetime.datetime.now(datetime.timezone.utc).date()
-    target_day = today + datetime.timedelta(days=14)
+    target_day = today + datetime.timedelta(days=20)
     while target_day.isoweekday() not in (1, 2, 3, 4, 5):
         target_day += datetime.timedelta(days=1)
     # 11:00 UTC = 16:00 Almaty

@@ -306,9 +306,14 @@ class FeatureOverrideCreateRequest(BaseModel):
 
 class PlatformStaffCreateRequest(BaseModel):
     email: EmailStr
-    display_name: str
+    display_name: str = Field(min_length=2, max_length=128)
     platform_role: str = "viewer"
-    password: Optional[str] = None
+    allow_crm_user_upgrade: bool = False
+
+class PlatformStaffActivateRequest(BaseModel):
+    activation_token: str = Field(min_length=16)
+    password: str = Field(min_length=8, max_length=128)
+    display_name: Optional[str] = None
 
 class PlatformSettingUpdateRequest(BaseModel):
     value: Any

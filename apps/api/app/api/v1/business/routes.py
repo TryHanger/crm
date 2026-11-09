@@ -1151,6 +1151,37 @@ async def get_reports_overview(
 # SUPPORT ASSISTANCE CONSENT (OWNER APPROVAL)
 # =========================================================================
 
+@router.get("/access-requests/pending")
+async def list_pending_support_access(
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lists pending support access requests for tenant owner review."""
+    from apps.api.app.infrastructure.db.models import SupportAccessRequest, IdentityUser
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    stmt = select(SupportAccessRequest, IdentityUser).join(
+        IdentityUser, IdentityUser.id == SupportAccessRequest.requester_id
+    ).where(
+        SupportAccessRequest.tenant_id == crm_user.tenant_id,
+        SupportAccessRequest.status == "pending",
+        SupportAccessRequest.expires_at > now_utc
+    ).order_by(SupportAccessRequest.created_at.desc())
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "id": str(req.id),
+            "requester_id": str(req.requester_id),
+            "requester_name": u.display_name,
+            "requester_email": u.email_normalized,
+            "reason": req.reason,
+            "requested_scope": req.requested_scope,
+            "expires_at": req.expires_at.isoformat(),
+            "created_at": req.created_at.isoformat()
+        }
+        for req, u in rows
+    ]
+
+
 @router.post("/access-requests/{request_id}/approve")
 async def approve_support_access(
     request_id: uuid.UUID,
@@ -1159,18 +1190,24 @@ async def approve_support_access(
 ):
     """Business Owner approves temporary limited support access (max 30 min)."""
     from apps.api.app.infrastructure.db.models import SupportAccessRequest, SupportAccessSession
-    stmt = select(SupportAccessRequest).where(
-        SupportAccessRequest.id == request_id,
-        SupportAccessRequest.tenant_id == crm_user.tenant_id,
-        SupportAccessRequest.status == "pending"
-    )
+    stmt = select(SupportAccessRequest).where(SupportAccessRequest.id == request_id)
     res = await db.execute(stmt)
     req = res.scalar_one_or_none()
     if not req:
-        raise HTTPException(status_code=404, detail="Access request not found or not pending")
+        raise HTTPException(status_code=404, detail="Access request not found")
+    if req.tenant_id != crm_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access request belongs to another company")
+    if req.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Access request is already {req.status}")
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    exp = req.expires_at.replace(tzinfo=datetime.timezone.utc) if req.expires_at.tzinfo is None else req.expires_at
+    if exp < now_utc:
+        req.status = "expired"
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Access request has expired")
 
     req.status = "approved"
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
     session = SupportAccessSession(
         request_id=req.id,
         tenant_id=crm_user.tenant_id,
@@ -1181,8 +1218,60 @@ async def approve_support_access(
         status="active"
     )
     db.add(session)
+
+    from apps.api.app.api.v1.platform.routes import record_audit_event
+    await record_audit_event(
+        db=db,
+        actor_id=crm_user.user.id,
+        actor_email=crm_user.user.email_normalized,
+        action="support.request_approved",
+        object_type="support_access_session",
+        target_tenant_id=crm_user.tenant_id,
+        object_id=str(session.id),
+        reason=f"Tenant owner approved diagnostic access: {req.reason}"
+    )
+
     await db.commit()
-    return {"message": "Доступ поддержки успешно одобрен на 30 минут"}
+    return {
+        "message": "Доступ поддержки успешно одобрен на 30 минут",
+        "status": "approved",
+        "session_id": str(session.id),
+        "expires_at": session.expires_at.isoformat()
+    }
+
+
+@router.post("/access-requests/{request_id}/deny")
+async def deny_support_access(
+    request_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Business Owner denies temporary support access request."""
+    from apps.api.app.infrastructure.db.models import SupportAccessRequest
+    stmt = select(SupportAccessRequest).where(SupportAccessRequest.id == request_id)
+    res = await db.execute(stmt)
+    req = res.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Access request not found")
+    if req.tenant_id != crm_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access request belongs to another company")
+    if req.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Access request is already {req.status}")
+
+    req.status = "denied"
+    from apps.api.app.api.v1.platform.routes import record_audit_event
+    await record_audit_event(
+        db=db,
+        actor_id=crm_user.user.id,
+        actor_email=crm_user.user.email_normalized,
+        action="support.request_denied",
+        object_type="support_access_request",
+        target_tenant_id=crm_user.tenant_id,
+        object_id=str(req.id),
+        reason=f"Owner denied support access request: {req.reason}"
+    )
+    await db.commit()
+    return {"message": "Запрос доступа отклонён", "status": "denied"}
 
 
 # =========================================================================

@@ -69,11 +69,67 @@ export const PlatformLayout: React.FC<PlatformLayoutProps> = ({
     border: '#CBD5E1',
   };
 
+  const bottomNavItems: { id: PlatformNavigationSection; label: string; icon: string }[] = [
+    { id: 'overview', label: 'Обзор', icon: '📊' },
+    { id: 'companies', label: 'Компании', icon: '🏢' },
+    { id: 'subs', label: 'Подписки', icon: '💳' },
+    { id: 'support', label: 'Поддержка', icon: '🎧' },
+  ];
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#F8FAFC' }}>
+    <div className="platform-root-layout" style={{ display: 'flex', minHeight: '100vh', background: '#F8FAFC', width: '100%', maxWidth: '100vw', overflowX: 'hidden' }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .platform-root-layout {
+            flex-direction: column !important;
+          }
+          .platform-desktop-sidebar {
+            display: none !important;
+          }
+          .platform-mobile-header {
+            display: flex !important;
+          }
+          .platform-mobile-bottom-bar {
+            display: flex !important;
+          }
+          .platform-top-header {
+            display: none !important;
+          }
+          .platform-page-body {
+            padding: 14px 12px 76px 12px !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            overflow-x: hidden !important;
+            box-sizing: border-box !important;
+          }
+          .platform-page-body > * {
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
+        }
+        @media (min-width: 769px) {
+          .platform-desktop-sidebar {
+            display: flex !important;
+          }
+          .platform-mobile-header {
+            display: none !important;
+          }
+          .platform-mobile-bottom-bar {
+            display: none !important;
+          }
+          .platform-top-header {
+            display: flex !important;
+          }
+          .platform-page-body {
+            padding: 24px !important;
+          }
+        }
+      `}</style>
+
       {/* SIDEBAR (Desktop) */}
       <aside
         data-testid="platform-sidebar"
+        className="platform-desktop-sidebar"
         style={{
           width: '240px',
           background: '#0B1220',
@@ -250,8 +306,253 @@ export const PlatformLayout: React.FC<PlatformLayoutProps> = ({
         </div>
       </aside>
 
+      {/* MOBILE TOP HEADER (<=768px) */}
+      <header
+        className="platform-mobile-header"
+        style={{
+          display: 'none',
+          position: 'sticky',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '54px',
+          background: '#0B1220',
+          borderBottom: '1px solid #1E293B',
+          padding: '0 14px',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          zIndex: 45,
+          color: '#FFFFFF',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            data-testid="platform-mobile-menu-btn"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#FFFFFF',
+              fontSize: '20px',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+            title="Открыть меню"
+          >
+            ☰
+          </button>
+          <span
+            style={{
+              width: '26px',
+              height: '26px',
+              borderRadius: '6px',
+              background: '#2563EB',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '11px',
+              fontWeight: 800,
+            }}
+          >
+            PC
+          </span>
+          <span style={{ fontWeight: 700, fontSize: '14px', color: '#FFFFFF' }}>{title}</span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span
+            data-testid="platform-user-role-badge-mobile"
+            style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              padding: '2px 6px',
+              borderRadius: '10px',
+              background: roleStyle.bg,
+              color: roleStyle.color,
+              border: `1px solid ${roleStyle.border}`,
+            }}
+          >
+            {ROLE_LABELS[currentUser.platform_role]}
+          </span>
+          <button
+            onClick={onLogout}
+            data-testid="platform-mobile-logout-btn"
+            title="Выйти"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94A3B8',
+              fontSize: '16px',
+              cursor: 'pointer',
+              padding: '4px',
+            }}
+          >
+            🚪
+          </button>
+        </div>
+      </header>
+
+      {/* MOBILE DRAWER (Slide-over when mobileMenuOpen is true) */}
+      {mobileMenuOpen && (
+        <div
+          data-testid="mobile-drawer-overlay"
+          onClick={() => setMobileMenuOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            zIndex: 60,
+            backdropFilter: 'blur(2px)',
+          }}
+        >
+          <div
+            data-testid="mobile-drawer"
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: 0,
+              bottom: 0,
+              left: 0,
+              width: '280px',
+              maxWidth: '82vw',
+              background: '#0B1220',
+              color: '#FFFFFF',
+              zIndex: 61,
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '4px 0 20px rgba(0,0,0,0.5)',
+            }}
+          >
+            {/* Drawer Header */}
+            <div
+              style={{
+                padding: '16px',
+                borderBottom: '1px solid #1E293B',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    background: '#2563EB',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                  }}
+                >
+                  PC
+                </span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '14px', color: '#FFFFFF' }}>Platform Console</div>
+                  <div style={{ fontSize: '10px', color: '#94A3B8' }}>{ROLE_LABELS[currentUser.platform_role]}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                data-testid="mobile-drawer-close-btn"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94A3B8',
+                  fontSize: '18px',
+                  cursor: 'pointer',
+                  padding: '4px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Drawer Navigation List */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 8px' }}>
+              {navGroups.map((g, gIdx) => (
+                <div key={gIdx} style={{ marginBottom: '14px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748B', padding: '4px 8px', letterSpacing: '0.05em' }}>
+                    {g.groupTitle}
+                  </div>
+                  {g.items.map(item => {
+                    const isActive = currentSection === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        data-testid={`drawer-nav-${item.id}`}
+                        onClick={() => {
+                          onNavigate(item.id);
+                          setMobileMenuOpen(false);
+                        }}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '10px 12px',
+                          marginBottom: '2px',
+                          background: isActive ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
+                          color: isActive ? '#FFFFFF' : '#94A3B8',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          fontWeight: isActive ? 600 : 500,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <span style={{ fontSize: '16px' }}>{item.icon}</span>
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            {/* Drawer Footer */}
+            <div style={{ padding: '14px 16px', borderTop: '1px solid #1E293B', background: '#070D18' }}>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onLogout();
+                }}
+                data-testid="platform-drawer-logout-btn"
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#EF4444',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span>🚪</span>
+                <span>Выйти из консоли</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MAIN CONTENT AREA */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div className="platform-main-container" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%', maxWidth: '100vw', overflowX: 'hidden' }}>
         {/* ACTIVE SUPPORT SESSION BANNER */}
         {activeSession && activeSession.has_active_session && (
           <div
@@ -260,19 +561,20 @@ export const PlatformLayout: React.FC<PlatformLayoutProps> = ({
               background: '#0F172A',
               borderBottom: '2px solid #F59E0B',
               color: '#FEF3C7',
-              padding: '10px 20px',
+              padding: '10px 14px',
               display: 'flex',
               alignItems: 'center',
-              gap: '12px',
-              fontSize: '13px',
+              gap: '10px',
+              fontSize: '12px',
               fontWeight: 500,
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              flexWrap: 'wrap',
             }}
           >
             <span style={{ fontSize: '18px' }}>🛡️</span>
-            <div style={{ flex: 1 }}>
-              <b>Диагностический доступ активен:</b> компания <u>{activeSession.tenant_name}</u> · осталось{' '}
-              <b>{activeSession.minutes_left} мин.</b> · Все действия строго логируются в журнал аудита
+            <div style={{ flex: 1, minWidth: '180px' }}>
+              <b>Диагностический доступ активен:</b> <u>{activeSession.tenant_name}</u> · осталось{' '}
+              <b>{activeSession.minutes_left} мин.</b>
             </div>
             <button
               onClick={onRevokeSession}
@@ -283,7 +585,7 @@ export const PlatformLayout: React.FC<PlatformLayoutProps> = ({
                 border: 'none',
                 borderRadius: '6px',
                 padding: '6px 12px',
-                fontSize: '12px',
+                fontSize: '11px',
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
@@ -293,8 +595,9 @@ export const PlatformLayout: React.FC<PlatformLayoutProps> = ({
           </div>
         )}
 
-        {/* TOP HEADER */}
+        {/* TOP HEADER (Desktop) */}
         <header
+          className="platform-top-header"
           style={{
             height: '64px',
             background: '#FFFFFF',
@@ -340,17 +643,93 @@ export const PlatformLayout: React.FC<PlatformLayoutProps> = ({
 
         {/* PAGE BODY */}
         <main
+          className="platform-page-body"
           style={{
             flex: 1,
             overflowY: 'auto',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
           }}
         >
           {children}
         </main>
       </div>
+
+      {/* MOBILE BOTTOM NAVIGATION BAR (<=768px) */}
+      <nav
+        className="platform-mobile-bottom-bar"
+        data-testid="platform-bottom-nav"
+        style={{
+          display: 'none',
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '60px',
+          background: '#0B1220',
+          borderTop: '1px solid #1E293B',
+          zIndex: 50,
+          alignItems: 'center',
+          justifyContent: 'space-around',
+          padding: '0 4px',
+        }}
+      >
+        {bottomNavItems.map(item => {
+          const isActive = currentSection === item.id;
+          return (
+            <button
+              key={item.id}
+              data-testid={`mobile-nav-${item.id}`}
+              onClick={() => onNavigate(item.id)}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'transparent',
+                border: 'none',
+                color: isActive ? '#38BDF8' : '#94A3B8',
+                padding: '4px 6px',
+                fontSize: '10px',
+                fontWeight: isActive ? 700 : 500,
+                cursor: 'pointer',
+                flex: 1,
+                gap: '2px',
+              }}
+            >
+              <span style={{ fontSize: '18px' }}>{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+
+        <button
+          onClick={() => setMobileMenuOpen(true)}
+          data-testid="mobile-nav-more"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+            border: 'none',
+            color: '#94A3B8',
+            padding: '4px 6px',
+            fontSize: '10px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            flex: 1,
+            gap: '2px',
+          }}
+        >
+          <span style={{ fontSize: '18px' }}>☰</span>
+          <span>Ещё</span>
+        </button>
+      </nav>
     </div>
   );
 };

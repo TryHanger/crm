@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Platform Console V1 E2E Suite', () => {
   const PLATFORM_URL = 'http://127.0.0.1:3002';
+  const API_URL = 'http://127.0.0.1:8000';
 
   test('P1: Platform Authentication & CRM User Rejection', async ({ page }) => {
     await page.goto(PLATFORM_URL);
@@ -44,6 +45,9 @@ test.describe('Platform Console V1 E2E Suite', () => {
 
     // Check Attention Items
     await expect(page.locator('[data-testid="attention-block"]')).toBeVisible();
+
+    // Capture screenshot platform-01-overview.png
+    await page.screenshot({ path: 'docs/screenshots/platform-01-overview.png', fullPage: true });
   });
 
   test('P3: Companies Repertoire & 4-Step Onboarding Wizard', async ({ page }) => {
@@ -55,13 +59,19 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await page.click('[data-testid="platform-nav-companies"]');
     await expect(page.locator('[data-testid="tenants-table"]')).toBeVisible();
 
+    // Capture screenshot platform-02-companies-repertoire.png
+    await page.screenshot({ path: 'docs/screenshots/platform-02-companies-repertoire.png', fullPage: true });
+
     // Filter by niche
     await page.selectOption('[data-testid="filter-vertical"]', 'barbershop');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
 
     // Launch Wizard
     await page.click('[data-testid="new-tenant-open-wizard-btn"]');
     await expect(page.locator('[data-testid="onboarding-wizard-modal"]')).toBeVisible();
+
+    // Capture screenshot platform-04-onboarding-wizard.png
+    await page.screenshot({ path: 'docs/screenshots/platform-04-onboarding-wizard.png' });
 
     // Step 1: Details
     const testSlug = `e2etest${Date.now().toString().slice(-4)}`;
@@ -101,6 +111,9 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await page.click('[data-testid="open-tenant-detail-cutco"]');
     await expect(page.locator('[data-testid="tenant-detail-view"]')).toBeVisible();
     await expect(page.locator('[data-testid="tenant-detail-status-pill"]')).toContainText('Активна');
+
+    // Capture screenshot platform-03-tenant-card-tabs.png
+    await page.screenshot({ path: 'docs/screenshots/platform-03-tenant-card-tabs.png', fullPage: true });
 
     // Tab 1: Overview
     await page.click('[data-testid="tenant-tab-overview"]');
@@ -164,15 +177,28 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await page.click('[data-testid="platform-nav-subs"]');
     await expect(page.locator('[data-testid="subscriptions-table"]')).toBeVisible();
 
-    // Renew subscription for Barber House
+    // Renew subscription: default record_payment=false (extend access only)
     await page.click('[data-testid="renew-sub-btn-cutco"]');
     await expect(page.locator('[data-testid="renew-subscription-modal"]')).toBeVisible();
     await page.click('[data-testid="confirm-renew-submit-btn"]');
     await expect(page.locator('[data-testid="platform-toast"]')).toBeVisible();
 
-    // Switch to Charges Ledger
+    // Switch to Charges Ledger (ensure data loaded and non-empty!)
     await page.click('[data-testid="tab-charges"]');
     await expect(page.locator('[data-testid="charges-table"]')).toBeVisible();
+    await expect(page.locator('button:has-text("Зафиксировать оплату")').first()).toBeVisible();
+
+    // Capture screenshot platform-05-subscriptions-ledger.png with non-empty loaded ledger!
+    await page.screenshot({ path: 'docs/screenshots/platform-05-subscriptions-ledger.png', fullPage: true });
+
+    // Open Payment Modal for first charge
+    await page.click('button:has-text("Зафиксировать оплату")');
+    await expect(page.locator('[data-testid="record-payment-modal"]')).toBeVisible();
+
+    // Fill valid external evidence reference (no fabricated numbers!)
+    await page.fill('[data-testid="payment-evidence-input"]', 'Kaspi Pay Чек №948201');
+    await page.click('[data-testid="confirm-record-payment-btn"]');
+    await expect(page.locator('[data-testid="platform-toast"]')).toBeVisible();
   });
 
   test('P6: Plans Catalog & Plan Versioning', async ({ page }) => {
@@ -184,15 +210,25 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await expect(page.locator('[data-testid="plans-grid"]')).toBeVisible();
     await expect(page.locator('[data-testid="plan-card-pro"]')).toBeVisible();
 
+    // Capture screenshot platform-06-plans-catalog.png
+    await page.screenshot({ path: 'docs/screenshots/platform-06-plans-catalog.png', fullPage: true });
+
     // Create new version for Pro plan
     await page.click('[data-testid="create-new-version-btn-pro"]');
     await expect(page.locator('[data-testid="create-version-modal"]')).toBeVisible();
     await page.fill('[data-testid="version-price-input"]', '22000');
     await page.click('[data-testid="confirm-create-version-btn"]');
     await expect(page.locator('[data-testid="platform-toast"]')).toBeVisible();
+
+    // Navigate to Modules Catalog
+    await page.click('[data-testid="platform-nav-modules"]');
+    await expect(page.locator('[data-testid="modules-catalog-table"]')).toBeVisible();
+
+    // Capture screenshot platform-07-modules-catalog.png
+    await page.screenshot({ path: 'docs/screenshots/platform-07-modules-catalog.png', fullPage: true });
   });
 
-  test('P7: Support Diagnosis & Temporary 30-Min Access Flow', async ({ page }) => {
+  test('P7: Support Diagnosis & Real Owner-Approval Flow (P0-02)', async ({ page, request }) => {
     await page.goto(PLATFORM_URL);
     await page.click('[data-testid="quick-login-support"]');
     await page.click('[data-testid="platform-login-submit-btn"]');
@@ -200,35 +236,69 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await page.click('[data-testid="platform-nav-support"]');
     await expect(page.locator('[data-testid="support-tickets-table"]')).toBeVisible();
 
-    // Tab: Diagnosis
+    // Tab: Diagnosis (Loaded non-empty report with live healthy DB check)
     await page.click('[data-testid="tab-support-diagnosis"]');
     await expect(page.locator('[data-testid="diagnosis-report-card"]')).toBeVisible();
     await expect(page.locator('text=strict').first()).toBeVisible();
+
+    // Capture screenshot platform-08-support-diagnosis-session.png with non-empty loaded report!
+    await page.screenshot({ path: 'docs/screenshots/platform-08-support-diagnosis-session.png', fullPage: true });
 
     // Tab: Access Requests
     await page.click('[data-testid="tab-support-access"]');
     await page.click('[data-testid="request-access-open-modal-btn"]');
     await expect(page.locator('[data-testid="request-access-modal"]')).toBeVisible();
-    await page.fill('[data-testid="access-reason-input"]', 'Обращение #1042: диагностика отправки SMS мастеру');
+    await page.selectOption('[data-testid="access-tenant-select"]', { label: 'Barber House (barberhouse)' });
+    const uniqueReason = `Обращение #1042: диагностика отправки SMS мастеру ${Date.now()}`;
+    await page.fill('[data-testid="access-reason-input"]', uniqueReason);
     await page.click('[data-testid="confirm-request-access-btn"]');
 
-    // Approve the pending request
-    await expect(page.locator('text=Обращение #1042: диагностика отправки SMS мастеру').first()).toBeVisible();
-    const approveBtns = page.locator('button:has-text("Одобрить (30 мин)")');
-    if (await approveBtns.count() > 0) {
-      await approveBtns.first().click();
+    // Request created -> shows pending status with owner consent notice
+    await expect(page.locator(`text=${uniqueReason}`).first()).toBeVisible();
+    await expect(page.locator('text=Ожидает согласия владельца').first()).toBeVisible();
 
-      // Top session banner should appear
-      await expect(page.locator('[data-testid="active-support-session-banner"]')).toBeVisible();
-      await expect(page.locator('[data-testid="active-support-session-banner"]')).toContainText('Диагностический доступ активен');
+    // UNCONDITIONAL ASSERTION 1: Self-approval button is NOT rendered for support in Platform Console!
+    await expect(page.locator('button:has-text("Одобрить (30 мин)")')).not.toBeVisible();
 
-      // End session
-      await page.click('[data-testid="end-support-session-btn"]');
-      await expect(page.locator('[data-testid="active-support-session-banner"]')).not.toBeVisible();
-    }
+    // UNCONDITIONAL ASSERTION 2: Support direct API call to approve returns 403 Forbidden!
+    const supportLogin = await request.post(`${API_URL}/api/v1/auth/login`, {
+      data: { email: 'support@platform.example.kz', password: 'Password123!' },
+    });
+    const sToken = (await supportLogin.json()).access_token;
+    const reqsRes = await request.get(`${API_URL}/api/v1/platform/access-requests`, {
+      headers: { Authorization: `Bearer ${sToken}` },
+    });
+    const reqs = await reqsRes.json();
+    const accessReq = reqs.find((r: any) => r.reason === uniqueReason);
+    expect(accessReq).toBeTruthy();
+    const reqId = accessReq.id;
+
+    const selfApproveResp = await request.post(`${API_URL}/api/v1/platform/access-requests/${reqId}/approve`, {
+      headers: { Authorization: `Bearer ${sToken}` },
+    });
+    expect(selfApproveResp.status()).toBe(403);
+
+    // UNCONDITIONAL ASSERTION 3: Exact Tenant Owner (Barber House) approves via Business CRM endpoint!
+    const ownerLogin = await request.post(`${API_URL}/api/v1/auth/login`, {
+      data: { email: 'owner@barberhouse.kz', password: 'Password123!' },
+    });
+    const oToken = (await ownerLogin.json()).access_token;
+    const ownerApproveResp = await request.post(`${API_URL}/api/v1/business/access-requests/${reqId}/approve`, {
+      headers: { Authorization: `Bearer ${oToken}` },
+    });
+    expect(ownerApproveResp.status()).toBe(200);
+
+    // Reload Platform Console: active support session banner appears!
+    await page.reload();
+    await expect(page.locator('[data-testid="active-support-session-banner"]')).toBeVisible();
+    await expect(page.locator('[data-testid="active-support-session-banner"]')).toContainText('Диагностический доступ активен');
+
+    // End / Revoke support session
+    await page.click('[data-testid="end-support-session-btn"]');
+    await expect(page.locator('[data-testid="active-support-session-banner"]')).not.toBeVisible();
   });
 
-  test('P8: Audit Trail Diff & Platform Settings RBAC', async ({ page }) => {
+  test('P8: Audit Trail Diff & Platform Settings RBAC (P0-03)', async ({ page }) => {
     await page.goto(PLATFORM_URL);
     await page.click('[data-testid="quick-login-owner"]');
     await page.click('[data-testid="platform-login-submit-btn"]');
@@ -237,16 +307,38 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await page.click('[data-testid="platform-nav-audit"]');
     await expect(page.locator('[data-testid="audit-table"]')).toBeVisible();
 
+    // Capture screenshot platform-09-audit-trail-diff.png
+    await page.screenshot({ path: 'docs/screenshots/platform-09-audit-trail-diff.png', fullPage: true });
+
     // Check Settings Module
     await page.click('[data-testid="platform-nav-settings"]');
     await expect(page.locator('[data-testid="platform-staff-table"]')).toBeVisible();
 
+    // Test secure operator invitation without default password (P0-03)
+    await page.click('[data-testid="add-staff-open-modal-btn"]');
+    await expect(page.locator('[data-testid="add-staff-modal"]')).toBeVisible();
+    // Default password input is NOT present
+    await expect(page.locator('[data-testid="staff-password-input"]')).not.toBeVisible();
+    await page.fill('[data-testid="staff-email-input"]', `test_sec_${Date.now()}@platform.example.kz`);
+    await page.fill('[data-testid="staff-name-input"]', 'Оператор Безопасный');
+    await page.click('[data-testid="confirm-add-staff-btn"]');
+
+    // Activation URL modal opens with one-time link
+    await expect(page.locator('[data-testid="activation-url-modal"]')).toBeVisible();
+    await expect(page.locator('[data-testid="activation-url-display"]')).toBeVisible();
+    const actUrl = await page.inputValue('[data-testid="activation-url-display"]');
+    expect(actUrl).toContain('/activate-platform?token=');
+    await page.click('[data-testid="close-activation-modal-btn"]');
+
     // Check RBAC Matrix tab
     await page.click('[data-testid="tab-settings-rbac"]');
     await expect(page.locator('[data-testid="rbac-matrix-card"]')).toBeVisible();
+
+    // Capture screenshot platform-10-settings-rbac.png
+    await page.screenshot({ path: 'docs/screenshots/platform-10-settings-rbac.png', fullPage: true });
   });
 
-  test('P9: Role Restrictions Enforcement (Viewer & Support boundaries)', async ({ page }) => {
+  test('P9: Role Restrictions Enforcement (Direct HTTP 403 checks)', async ({ page, request }) => {
     await page.goto(PLATFORM_URL);
     // Login as Viewer (read-only)
     await page.click('[data-testid="quick-login-viewer"]');
@@ -256,12 +348,76 @@ test.describe('Platform Console V1 E2E Suite', () => {
     await page.click('[data-testid="platform-nav-companies"]');
     await expect(page.locator('[data-testid="new-tenant-open-wizard-btn"]')).not.toBeVisible();
 
-    // Navigate to Plans - Verify Create Plan button is hidden
-    await page.click('[data-testid="platform-nav-plans"]');
-    await expect(page.locator('[data-testid="create-new-plan-open-modal-btn"]')).not.toBeVisible();
+    // Direct HTTP 403 check for viewer attempting to suspend tenant
+    const viewerLogin = await request.post(`${API_URL}/api/v1/auth/login`, {
+      data: { email: 'viewer@platform.example.kz', password: 'Password123!' },
+    });
+    const vToken = (await viewerLogin.json()).access_token;
+    const suspResp = await request.post(`${API_URL}/api/v1/platform/tenants/00000000-0000-0000-0000-000000000000/suspend`, {
+      headers: { Authorization: `Bearer ${vToken}` },
+      data: { reason: 'Unauthorized suspend' },
+    });
+    expect(suspResp.status()).toBe(403);
 
-    // Navigate to Settings - Verify Add Staff button is hidden
-    await page.click('[data-testid="platform-nav-settings"]');
-    await expect(page.locator('[data-testid="add-staff-open-modal-btn"]')).not.toBeVisible();
+    // Direct HTTP 403 check for support attempting to record payment
+    const supportLogin = await request.post(`${API_URL}/api/v1/auth/login`, {
+      data: { email: 'support@platform.example.kz', password: 'Password123!' },
+    });
+    const sToken = (await supportLogin.json()).access_token;
+    const pmtResp = await request.post(`${API_URL}/api/v1/platform/charges/00000000-0000-0000-0000-000000000000/record-payment`, {
+      headers: { Authorization: `Bearer ${sToken}` },
+      data: { amount_minor: 100000, evidence_reference: 'Fake' },
+    });
+    expect(pmtResp.status()).toBe(403);
+  });
+
+  test('P10: Responsive Mobile Viewport (390px) & Navigation (P0-05)', async ({ page }) => {
+    // Set mobile viewport 390 x 844
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(PLATFORM_URL);
+
+    // Login as Platform Owner
+    await page.click('[data-testid="quick-login-owner"]');
+    await page.click('[data-testid="platform-login-submit-btn"]');
+
+    // Mobile layout elements check:
+    // Desktop sidebar must be hidden
+    await expect(page.locator('.platform-desktop-sidebar')).toBeHidden();
+
+    // Mobile top header and bottom navigation bar must be visible
+    await expect(page.locator('.platform-mobile-header')).toBeVisible();
+    await expect(page.locator('[data-testid="platform-user-role-badge-mobile"]')).toBeVisible();
+    await expect(page.locator('[data-testid="platform-bottom-nav"]')).toBeVisible();
+
+    // Verify page has no horizontal overflow: scrollWidth <= viewportWidth (390px)
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+
+    // Capture screenshot platform-11-mobile-overview.png at 390px!
+    await page.screenshot({ path: 'docs/screenshots/platform-11-mobile-overview.png' });
+
+    // Test mobile bottom navigation to Companies
+    await page.click('[data-testid="mobile-nav-companies"]');
+    await expect(page.locator('[data-testid="tenants-table"]')).toBeVisible();
+
+    // Test mobile bottom navigation to Subscriptions
+    await page.click('[data-testid="mobile-nav-subs"]');
+    await expect(page.locator('[data-testid="subscriptions-table"]')).toBeVisible();
+
+    // Test mobile bottom navigation to Support
+    await page.click('[data-testid="mobile-nav-support"]');
+    await expect(page.locator('[data-testid="support-tickets-table"]')).toBeVisible();
+
+    // Test mobile drawer (via "Ещё" button)
+    await page.click('[data-testid="mobile-nav-more"]');
+    await expect(page.locator('[data-testid="mobile-drawer"]')).toBeVisible();
+
+    // Navigate to Plans via drawer
+    await page.click('[data-testid="drawer-nav-plans"]');
+    await expect(page.locator('[data-testid="plans-grid"]')).toBeVisible();
+
+    // Test mobile logout
+    await page.click('[data-testid="platform-mobile-logout-btn"]');
+    await expect(page.locator('[data-testid="platform-login-submit-btn"]')).toBeVisible();
   });
 });

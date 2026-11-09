@@ -200,9 +200,10 @@ export const PlatformLoginPage: React.FC<PlatformLoginPageProps> = ({ api, onLog
           </button>
         </form>
 
+        {import.meta.env.DEV && (
         <div style={{ marginTop: '28px', borderTop: '1px solid #334155', paddingTop: '20px' }}>
           <div style={{ fontSize: '12px', color: '#94A3B8', marginBottom: '10px', textAlign: 'center' }}>
-            Быстрый вход для тестирования:
+            ⚡ Быстрый вход (только локальное DEV-окружение):
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             <button
@@ -282,6 +283,7 @@ export const PlatformLoginPage: React.FC<PlatformLoginPageProps> = ({ api, onLog
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

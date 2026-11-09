@@ -648,23 +648,22 @@ export const SupportModule: React.FC<SupportModuleProps> = ({
                         до {new Date(req.expires_at).toLocaleString('ru-RU')}
                       </td>
                       <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                        {req.status === 'pending' && canManageSupport && (
-                          <button
-                            onClick={() => handleApproveAccess(req.id)}
-                            data-testid={`approve-access-btn-${req.id}`}
+                        {req.status === 'pending' && (
+                          <span
+                            data-testid={`pending-owner-consent-${req.id}`}
                             style={{
-                              padding: '5px 10px',
-                              background: '#16A34A',
-                              color: '#FFFFFF',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontSize: '12px',
+                              fontSize: '11px',
+                              color: '#B45309',
+                              background: '#FEF3C7',
+                              border: '1px solid #FCD34D',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
                               fontWeight: 600,
-                              cursor: 'pointer',
+                              display: 'inline-block',
                             }}
                           >
-                            Одобрить (30 мин)
-                          </button>
+                            ⏳ Ожидает согласия владельца (Business CRM)
+                          </span>
                         )}
                         {req.status === 'approved' && canManageSupport && (
                           <button

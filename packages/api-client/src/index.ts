@@ -1234,13 +1234,40 @@ export class PlatformApiClient {
   }
 
   async createStaff(
-    payload: { email: string; display_name: string; platform_role?: string; password?: string },
+    payload: { email: string; display_name: string; platform_role?: string; allow_crm_user_upgrade?: boolean },
     token: string
   ): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/v1/platform/staff`, {
       method: 'POST',
       headers: { ...this.headers(token), 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async activateStaff(
+    payload: { activation_token: string; password: string; display_name?: string }
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/staff/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async approveTenantSupportAccess(requestId: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/business/access-requests/${requestId}/approve`, {
+      method: 'POST',
+      headers: this.headers(token),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async denyTenantSupportAccess(requestId: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/business/access-requests/${requestId}/deny`, {
+      method: 'POST',
+      headers: this.headers(token),
     });
     return handleResponse<any>(res);
   }
