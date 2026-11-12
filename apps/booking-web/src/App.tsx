@@ -143,6 +143,7 @@ export const App: React.FC = () => {
   // Calendar & Call Modal state
   const [isCalOpen, setIsCalOpen] = useState(false);
   const [isCallOpen, setIsCallOpen] = useState(false);
+  const [expandedSvc, setExpandedSvc] = useState<string[]>([]);
   const [calMonthOffset, setCalMonthOffset] = useState(0);
 
   // Loading & error
@@ -813,21 +814,21 @@ export const App: React.FC = () => {
                             {services.map(svc => {
                               const isSelected = selectedServices.some(s => s.id === svc.id);
                               const priceFmt = svc.price_formatted || `${svc.base_price_minor / 100} ₸`;
+                              const isExpanded = expandedSvc.includes(svc.id);
+                              const hasMore = (svc.description || '').length > 90;
                               return (
-                                <button
+                                <div
                                   key={svc.id}
-                                  type="button"
-                                  className="svc-card tap"
-                                  aria-pressed={isSelected}
-                                  onClick={() => handleSelectService(svc)}
+                                  className="svc-card"
+                                  data-selected={isSelected ? 'true' : undefined}
                                 >
-                                  <div className="svc-info">
+                                  <button
+                                    type="button"
+                                    className="svc-main tap"
+                                    aria-pressed={isSelected}
+                                    onClick={() => handleSelectService(svc)}
+                                  >
                                     <span className="svc-name">{svc.name}</span>
-                                    {svc.description && <span className="svc-desc">{svc.description}</span>}
-                                    <span className="svc-dur">{svc.base_duration_minutes} мин</span>
-                                  </div>
-                                  <div className="svc-right">
-                                    <span className="svc-price">{priceFmt}</span>
                                     <span className="svc-check">
                                       {isSelected && (
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -835,8 +836,37 @@ export const App: React.FC = () => {
                                         </svg>
                                       )}
                                     </span>
+                                  </button>
+                                  {svc.description && (
+                                    <div className="svc-desc" data-open={isExpanded ? 'true' : undefined}>
+                                      {svc.description}
+                                    </div>
+                                  )}
+                                  {hasMore && (
+                                    <button
+                                      type="button"
+                                      className="svc-more"
+                                      aria-expanded={isExpanded}
+                                      onClick={() =>
+                                        setExpandedSvc(prev =>
+                                          prev.includes(svc.id) ? prev.filter(i => i !== svc.id) : [...prev, svc.id]
+                                        )
+                                      }
+                                    >
+                                      {isExpanded ? 'Свернуть' : 'Подробнее'}
+                                    </button>
+                                  )}
+                                  <div className="svc-foot">
+                                    <span className="svc-dur">
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="8.5" />
+                                        <path d="M12 7.5V12l3 2" />
+                                      </svg>
+                                      {svc.base_duration_minutes} мин
+                                    </span>
+                                    <span className="svc-price">{priceFmt}</span>
                                   </div>
-                                </button>
+                                </div>
                               );
                             })}
                           </div>
@@ -1091,7 +1121,7 @@ export const App: React.FC = () => {
 
             {/* Facts Table */}
             <div className="facts">
-              <div className="fact">
+              <div className="fact block">
                 <span>Услуга</span>
                 <span>
                   {selectedServices.length > 0
@@ -1099,7 +1129,7 @@ export const App: React.FC = () => {
                     : <span className="none">—</span>}
                 </span>
               </div>
-              <div className="fact">
+              <div className="fact block">
                 <span>Мастер</span>
                 <span id="smaster">
                   {selectedStaff === 'any'
@@ -1109,7 +1139,7 @@ export const App: React.FC = () => {
                     : <span className="none">—</span>}
                 </span>
               </div>
-              <div className="fact">
+              <div className="fact block">
                 <span>Клиент</span>
                 <span id="sClient">
                   {clientName.trim() || <span className="none">—</span>}
@@ -1125,7 +1155,7 @@ export const App: React.FC = () => {
                   <span>{totalDuration} мин</span>
                 </div>
               )}
-              <div className="fact only-done">
+              <div className="fact block only-done">
                 <span>Адрес</span>
                 <span>{selectedBranch?.address || 'Алматы'}</span>
               </div>
