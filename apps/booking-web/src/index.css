@@ -211,6 +211,7 @@ main {
 main[data-start] {
   grid-template-columns: minmax(0, 1fr);
   width: 100%;
+  padding-top: clamp(28px, 7vh, 64px);
 }
 
 main[data-start] .chooser {
