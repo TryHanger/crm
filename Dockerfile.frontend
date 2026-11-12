@@ -30,6 +30,10 @@ RUN mkdir -p /opt/static/booking-web \
 COPY --from=builder --chown=101:101 /build/apps/booking-web/dist /opt/static/booking-web
 COPY --from=builder --chown=101:101 /build/apps/business-crm/dist /opt/static/business-crm
 COPY --from=builder --chown=101:101 /build/apps/platform-console/dist /opt/static/platform-console
+COPY --chown=101:101 scripts/frontend-entrypoint.sh /usr/local/bin/frontend-entrypoint.sh
+
+RUN sed -i 's/\r$//' /usr/local/bin/frontend-entrypoint.sh && \
+    chmod 755 /usr/local/bin/frontend-entrypoint.sh
 
 # Enforce non-root execution (UID 101 is nginx user in alpine)
 USER 101:101
@@ -40,4 +44,4 @@ HEALTHCHECK --interval=2s --timeout=3s --retries=10 --start-period=1s \
       test -s /var/www/business-crm/index.html && \
       test -s /var/www/platform-console/index.html || exit 1
 
-CMD ["sh", "-c", "cp -a /opt/static/booking-web/. /var/www/booking-web/ && cp -a /opt/static/business-crm/. /var/www/business-crm/ && cp -a /opt/static/platform-console/. /var/www/platform-console/ && echo 'Frontend assets synchronized successfully' && sleep infinity"]
+CMD ["/usr/local/bin/frontend-entrypoint.sh"]

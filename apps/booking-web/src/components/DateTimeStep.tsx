@@ -18,7 +18,7 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
   selectedSlot,
   onSelectSlot,
   isLoadingSlots,
-  accentColor = '#2563EB',
+  accentColor = 'var(--accent, #242424)',
 }) => {
   // Generate next 14 days starting from today
   const formatLocalDate = (d: Date): string => {
@@ -97,17 +97,17 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <h1 style={{ margin: 0, fontSize: '32px', lineHeight: 1.2, fontWeight: 700 }}>
+        <h1 style={{ margin: 0, fontSize: '30px', lineHeight: 1.2, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink, #202124)' }}>
           Выберите дату и время
         </h1>
-        <p style={{ margin: 0, color: '#475569', fontSize: '16px' }}>
+        <p style={{ margin: 0, color: 'var(--muted, #646464)', fontSize: '15px' }}>
           Доступные интервалы рассчитаны на основе длительности выбранных услуг
         </p>
       </div>
 
       {/* Date Carousel / Horizontal List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>Дата визита</div>
+        <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--muted, #646464)' }}>Дата визита</div>
         <div
           style={{
             display: 'flex',
@@ -126,17 +126,18 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
                 type="button"
                 onClick={() => onSelectDate(d.dateStr)}
                 style={{
-                  flex: '0 0 80px',
+                  flex: '0 0 78px',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '4px',
                   padding: '12px 8px',
-                  borderRadius: '14px',
-                  border: `1px solid ${isSelected ? accentColor : '#CBD5E1'}`,
-                  background: isSelected ? accentColor : '#FFFFFF',
-                  color: isSelected ? '#FFFFFF' : '#0F172A',
+                  borderRadius: 'var(--r, 14px)',
+                  border: `1px solid ${isSelected ? accentColor : 'var(--hair, #D9D9D5)'}`,
+                  background: isSelected ? accentColor : 'var(--card, #FFFFFF)',
+                  boxShadow: isSelected ? 'var(--sh-acc)' : 'var(--sh1)',
+                  color: isSelected ? 'var(--on-accent, #FFFFFF)' : 'var(--ink, #202124)',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
@@ -145,7 +146,7 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
                   style={{
                     fontSize: '12px',
                     fontWeight: 500,
-                    color: isSelected ? '#FFFFFF' : '#64748B',
+                    color: isSelected ? 'var(--on-accent, #FFFFFF)' : 'var(--muted, #646464)',
                     textTransform: 'capitalize',
                   }}
                 >
@@ -156,7 +157,7 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
                   style={{
                     fontSize: '11px',
                     fontWeight: 500,
-                    color: isSelected ? '#FFFFFF' : '#64748B',
+                    color: isSelected ? 'var(--on-accent, #FFFFFF)' : 'var(--muted, #646464)',
                     textTransform: 'capitalize',
                   }}
                 >
@@ -171,9 +172,10 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
       {/* Time Slots Container */}
       <div
         style={{
-          background: '#FFFFFF',
-          borderRadius: '16px',
-          border: '1px solid #E2E8F0',
+          background: 'var(--card, #FFFFFF)',
+          borderRadius: 'var(--r, 20px)',
+          border: '1px solid var(--hair, #D9D9D5)',
+          boxShadow: 'var(--sh1)',
           padding: '24px',
           display: 'flex',
           flexDirection: 'column',
@@ -268,10 +270,11 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
                           style={{
                             minHeight: '48px',
                             padding: '6px 8px',
-                            borderRadius: '10px',
-                            border: `1px solid ${isSelected ? accentColor : '#CBD5E1'}`,
-                            background: isSelected ? accentColor : '#FFFFFF',
-                            color: isSelected ? '#FFFFFF' : '#0F172A',
+                            borderRadius: '12px',
+                            border: `1px solid ${isSelected ? accentColor : 'var(--hair, #D9D9D5)'}`,
+                            background: isSelected ? accentColor : 'var(--tile, #F0F0EE)',
+                            boxShadow: isSelected ? 'var(--sh-acc)' : 'none',
+                            color: isSelected ? 'var(--on-accent, #FFFFFF)' : 'var(--ink, #202124)',
                             cursor: 'pointer',
                             display: 'flex',
                             flexDirection: 'column',
@@ -286,7 +289,7 @@ export const DateTimeStep: React.FC<DateTimeStepProps> = ({
                             style={{
                               fontSize: '11px',
                               fontWeight: 500,
-                              color: isSelected ? 'rgba(255,255,255,0.9)' : '#64748B',
+                              color: isSelected ? 'var(--on-accent, #FFFFFF)' : 'var(--muted, #646464)',
                               lineHeight: 1,
                             }}
                           >

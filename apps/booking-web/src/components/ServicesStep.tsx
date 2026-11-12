@@ -24,7 +24,7 @@ export const ServicesStep: React.FC<ServicesStepProps> = ({
   onSwitchToMasterFirst,
   preferredTime,
   selectedDate,
-  accentColor = '#2563EB',
+  accentColor = 'var(--accent, #242424)',
 }) => {
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
 
@@ -40,10 +40,10 @@ export const ServicesStep: React.FC<ServicesStepProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <h1 style={{ margin: 0, fontSize: '32px', lineHeight: 1.2, fontWeight: 700 }}>
+        <h1 style={{ margin: 0, fontSize: '30px', lineHeight: 1.2, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink, #202124)' }}>
           Выберите услуги
         </h1>
-        <p style={{ margin: 0, color: '#475569', fontSize: '16px' }}>
+        <p style={{ margin: 0, color: 'var(--muted, #646464)', fontSize: '15px' }}>
           Можно выбрать одну или несколько процедур для визита
         </p>
       </div>
@@ -219,15 +219,16 @@ export const ServicesStep: React.FC<ServicesStepProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '16px',
-                padding: '18px 24px',
-                minHeight: '88px',
-                borderRadius: '16px',
-                border: `1px solid ${isSelected ? accentColor : '#E2E8F0'}`,
-                background: isSelected ? '#F0F9FF' : '#FFFFFF',
-                color: '#0F172A',
+                padding: '18px 22px',
+                minHeight: '84px',
+                borderRadius: 'var(--r, 18px)',
+                border: `1px solid ${isSelected ? accentColor : 'var(--hair, #D9D9D5)'}`,
+                background: isSelected ? 'var(--tile, #F0F0EE)' : 'var(--card, #FFFFFF)',
+                boxShadow: isSelected ? 'var(--sh-acc)' : 'var(--sh1)',
+                color: 'var(--ink, #202124)',
                 textAlign: 'left',
                 cursor: 'pointer',
-                fontSize: '16px',
+                fontSize: '15px',
                 transition: 'all 0.15s ease-in-out',
               }}
             >
@@ -237,10 +238,10 @@ export const ServicesStep: React.FC<ServicesStepProps> = ({
                   width: '24px',
                   height: '24px',
                   flex: 'none',
-                  borderRadius: '6px',
+                  borderRadius: '7px',
                   boxSizing: 'border-box',
-                  border: `2px solid ${isSelected ? accentColor : '#CBD5E1'}`,
-                  background: isSelected ? accentColor : '#FFFFFF',
+                  border: `2px solid ${isSelected ? accentColor : 'var(--hair, #D9D9D5)'}`,
+                  background: isSelected ? accentColor : 'var(--card, #FFFFFF)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -252,7 +253,7 @@ export const ServicesStep: React.FC<ServicesStepProps> = ({
                     height="14"
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="#FFFFFF"
+                    stroke="var(--on-accent, #FFFFFF)"
                     strokeWidth="3.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -265,15 +266,15 @@ export const ServicesStep: React.FC<ServicesStepProps> = ({
 
               {/* Service info */}
               <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span style={{ fontSize: '18px', fontWeight: 600 }}>{s.name}</span>
-                <span style={{ fontSize: '14px', color: '#64748B' }}>
+                <span style={{ fontSize: '17px', fontWeight: 600, color: 'var(--ink, #202124)' }}>{s.name}</span>
+                <span style={{ fontSize: '13.5px', color: 'var(--muted, #646464)' }}>
                   {durationFormatted}
                   {s.description ? ` · ${s.description}` : ''}
                 </span>
               </span>
 
               {/* Price */}
-              <span style={{ fontSize: '18px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '17px', fontWeight: 700, whiteSpace: 'nowrap', color: 'var(--ink, #202124)' }}>
                 {priceFormatted}
               </span>
             </button>

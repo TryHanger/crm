@@ -6,23 +6,49 @@
     <title>Онлайн-запись</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       :root {
+        --bg: #F7F7F5;
+        --card: #FFFFFF;
+        --tile: #F0F0EE;
+        --accent: #242424;
+        --muted: #646464;
+        --hair: #D9D9D5;
+        --ink: #202124;
+        --on-accent: #FFFFFF;
+        --field: var(--tile);
+        --bg2: color-mix(in oklch, var(--bg) 72%, var(--hair));
+        --soft: color-mix(in oklch, var(--card) 62%, transparent);
+        --faint: color-mix(in oklch, var(--muted) 50%, var(--card));
+        --accent-soft: color-mix(in oklch, var(--accent) 9%, var(--card));
+        --shape: color-mix(in oklch, var(--bg) 88%, var(--muted));
+        --sh1: 0 1px 1px rgb(0 0 0 / .04), 0 5px 14px -7px rgb(0 0 0 / .14);
+        --sh2: 0 2px 4px rgb(0 0 0 / .04), 0 22px 44px -20px rgb(0 0 0 / .28);
+        --sh-acc: 0 6px 14px -8px rgb(0 0 0 / .35);
+        --err: #C0392B;
+        --r: 20px;
+        --u: 1;
+        --font: 'Geist', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         color-scheme: light;
         box-sizing: border-box;
       }
       *, *::before, *::after {
         box-sizing: border-box;
       }
+      html {
+        background: var(--bg);
+      }
       body {
         margin: 0;
         padding: 0;
-        background: #F8FAFC;
-        color: #0F172A;
-        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 16px;
+        min-height: 100vh;
+        background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%) fixed;
+        color: var(--ink);
+        font-family: var(--font);
+        font-size: 15px;
         line-height: 1.5;
+        letter-spacing: -0.01em;
         -webkit-font-smoothing: antialiased;
       }
       /* Custom scrollbars */
@@ -31,7 +57,7 @@
         height: 6px;
       }
       ::-webkit-scrollbar-thumb {
-        background: #CBD5E1;
+        background: var(--hair);
         border-radius: 3px;
       }
       /* Shimmer for skeletons */

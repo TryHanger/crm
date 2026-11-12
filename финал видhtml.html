@@ -1,0 +1,1128 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Barber Arslan — запись</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<style>
+/* Six ready themes (bg, surface, tile, accent, secondary text, divider) set by JS; one custom accent derives the rest in OKLCH with a contrast check.
+   Shadows are neutral black, never tinted. Accent colours only selected states and the primary button, never body text. */
+:root{
+  --bg:#F7F7F5;--card:#FFFFFF;--tile:#F0F0EE;--accent:#242424;--muted:#646464;--hair:#D9D9D5;--ink:#202124;--on-accent:#FFFFFF;
+  --field:var(--tile);
+  --bg2:color-mix(in oklch,var(--bg) 72%,var(--hair));
+  --soft:color-mix(in oklch,var(--card) 62%,transparent);
+  --faint:color-mix(in oklch,var(--muted) 50%,var(--card));
+  --accent-soft:color-mix(in oklch,var(--accent) 9%,var(--card));
+  --shape:color-mix(in oklch,var(--bg) 88%,var(--muted));
+  --sh1:0 1px 1px rgb(0 0 0 / .04),0 5px 14px -7px rgb(0 0 0 / .14);
+  --sh2:0 2px 4px rgb(0 0 0 / .04),0 22px 44px -20px rgb(0 0 0 / .28);
+  --sh-acc:0 6px 14px -8px rgb(0 0 0 / .35);
+  --scrim:rgb(0 0 0 / .45);
+  --err:#C0392B;
+  --r:26px;--u:1;
+  --font:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color-scheme:light;
+}
+:root[data-bg="dark"]{
+  color-scheme:dark;
+  --bg2:color-mix(in oklch,var(--bg) 78%,#000);
+  --soft:color-mix(in oklch,var(--card) 70%,transparent);
+  --accent-soft:color-mix(in oklch,var(--accent) 16%,var(--card));
+  --shape:color-mix(in oklch,var(--bg) 91%,var(--muted));
+  --sh1:0 1px 1px rgb(0 0 0 / .25),0 5px 14px -7px rgb(0 0 0 / .5);
+  --sh2:0 2px 4px rgb(0 0 0 / .25),0 22px 44px -20px rgb(0 0 0 / .7);
+  --sh-acc:0 6px 14px -8px rgb(0 0 0 / .6);
+  --scrim:rgb(0 0 0 / .65);
+  --err:#FF8A7A;
+}
+:root[data-r="S"]{--r:18px}
+:root[data-r="L"]{--r:34px}
+:root[data-dens="S"]{--u:.84}
+:root[data-dens="L"]{--u:1.18}
+
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;min-height:100vh;color:var(--ink);font-family:var(--font);letter-spacing:-.01em;-webkit-font-smoothing:antialiased;background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%) fixed}
+html[data-pattern] body{background-image:radial-gradient(color-mix(in oklch,var(--muted) 28%,transparent) 1px,transparent 1.5px),linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);background-size:22px 22px,auto;background-attachment:scroll,fixed}
+button{font-family:inherit;color:inherit;cursor:pointer}
+button:disabled{cursor:not-allowed}
+button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* decorative shapes: two large Bézier forms in the top-right and bottom-left corners, behind everything, static.
+   Same geometry in every theme; only the tint changes (--shape = bg darkened toward the theme's secondary colour). */
+.deco{position:fixed;z-index:0;display:block;height:auto;aspect-ratio:800/760;pointer-events:none;transition:opacity .4s}
+.deco.a{width:clamp(520px,66vw,1040px);right:-10%;top:-12%}
+.deco.b{width:clamp(420px,52vw,820px);left:-12%;bottom:-14%}
+html[data-shape="off"] .deco{display:none}
+html[data-done] .deco{opacity:.5}
+.page{position:relative;z-index:1;max-width:1120px;margin:0 auto;padding:32px max(16px,env(safe-area-inset-right,0px)) 96px max(16px,env(safe-area-inset-left,0px))}
+header{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;padding-bottom:calc(24px*var(--u))}
+h1{margin:0;font:600 28px/1.1 var(--font);letter-spacing:-.03em;text-wrap:balance}
+.addr{display:flex;align-items:center;gap:8px;color:var(--ink);font:500 14px/1.3 var(--font);letter-spacing:-.005em}
+.addr svg{width:24px;height:24px;padding:4px;border-radius:50%;background:var(--card);box-shadow:var(--sh1);color:var(--accent)}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:calc(20px*var(--u));align-items:start}
+.flow{display:grid;gap:calc(10px*var(--u));min-width:0}
+
+/* start screen: one question, two buttons */
+.chooser{order:-2;display:none;gap:calc(22px*var(--u))}
+main[data-start]{grid-template-columns:minmax(0,560px);justify-content:center}
+main[data-start] .chooser{display:grid}
+main[data-start] .step,main[data-start] .modebar,main[data-start] .sum{display:none}
+.ch-t{margin:0;font:600 30px/1.1 var(--font);letter-spacing:-.035em;text-wrap:balance}
+.ch-s{margin:8px 0 0;font:400 16px/1.4 var(--font);color:var(--muted)}
+.ch-grid{display:grid;gap:calc(10px*var(--u))}
+.ch-card{display:flex;align-items:center;gap:16px;min-height:calc(78px*var(--u));padding:0 22px 0 calc(16px*var(--u));border:0;border-radius:var(--r);background:var(--card);box-shadow:var(--sh1);text-align:left;transition:box-shadow .25s,transform .25s;animation:rise .55s cubic-bezier(.2,.8,.2,1) backwards}
+.ch-card:nth-child(2){animation-delay:.06s}
+.ch-card:hover{box-shadow:var(--sh2);transform:translateY(-2px)}
+.ch-ic{flex:none;width:46px;height:46px;border-radius:50%;background:var(--tile);display:flex;align-items:center;justify-content:center}
+.ch-n{flex:1;font:600 19px/1.2 var(--font);letter-spacing:-.025em}
+.ch-go{flex:none;color:var(--faint)}
+.modebar{order:-1;display:flex;align-items:center;gap:10px;padding:0 6px;font:500 14px var(--font);color:var(--muted)}
+.modebar b{color:var(--ink);font-weight:600}
+
+/* steps */
+.step{border-radius:var(--r);background:var(--soft);box-shadow:0 1px 2px rgb(0 0 0 / .04);transition:background .3s,box-shadow .3s;animation:rise .55s cubic-bezier(.2,.8,.2,1) backwards}
+.step[data-state="active"]{background:var(--card);box-shadow:var(--sh2)}
+.step[data-state="todo"]{background:color-mix(in oklch,var(--card) 35%,transparent);box-shadow:none}
+.step-h{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:14px;padding:calc(16px*var(--u)) calc(20px*var(--u));border:0;background:transparent;text-align:left;border-radius:var(--r)}
+.step-h:disabled{cursor:default}
+.num{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:600 14px var(--font);background:var(--tile);color:var(--faint);transition:background .3s,color .3s}
+.step[data-state="active"] .num{background:var(--accent);color:var(--on-accent);box-shadow:var(--sh-acc)}
+.step[data-state="done"] .num{background:var(--card);color:var(--ink);box-shadow:var(--sh1)}
+.st-t{font:600 18px var(--font);letter-spacing:-.02em}
+.step[data-state="todo"] .st-t{color:var(--muted)}
+.st-v{font:500 15px var(--font);color:var(--ink);text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chg{font:500 13px var(--font);color:var(--faint)}
+.step:not([data-state="done"]) .chg,.step[data-state="active"] .st-v{display:none}
+.step-b{display:grid;grid-template-rows:0fr;transition:grid-template-rows .38s cubic-bezier(.2,.8,.2,1)}
+.step[data-state="active"] .step-b{grid-template-rows:1fr}
+.inner{min-height:0;overflow:hidden;visibility:hidden;transition:visibility 0s .38s}
+.step[data-state="active"] .inner{visibility:visible;transition:none}
+.pad{padding:calc(4px*var(--u)) calc(20px*var(--u)) calc(22px*var(--u))}
+
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sub-t{font:600 22px/1.1 var(--font);letter-spacing:-.03em}
+.tools{display:flex;align-items:center;gap:8px}
+.round{width:42px;height:42px;padding:0;border-radius:50%;border:0;background:var(--card);box-shadow:var(--sh1);display:flex;align-items:center;justify-content:center;transition:background .2s,transform .15s}
+.round:hover:not(:disabled){background:var(--accent-soft)}
+.round:disabled{color:var(--faint);box-shadow:none;background:var(--tile)}
+.pill{height:42px;padding:0 16px 0 13px;border-radius:21px;border:0;background:var(--card);box-shadow:var(--sh1);display:flex;align-items:center;gap:8px;font:600 14px var(--font);transition:background .2s}
+.pill:hover{background:var(--accent-soft)}
+.tap:active:not(:disabled){transform:scale(.98)}
+
+#dates{margin-top:calc(18px*var(--u));display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:calc(8px*var(--u))}
+.chip{height:calc(100px*var(--u));padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border-radius:calc(var(--r)*.68);border:0;background:var(--tile);transition:background .2s,color .2s}
+.chip:hover:not(:disabled):not([aria-pressed="true"]){background:var(--accent-soft)}
+.chip .wd,.chip .sb{font:500 12px/1 var(--font);color:var(--muted)}
+.chip .day{font:600 26px/1 var(--font);letter-spacing:-.04em}
+.chip:disabled{opacity:.5}
+.chip[aria-pressed="true"],.mst[aria-pressed="true"],.slot[aria-pressed="true"],.cc[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);box-shadow:var(--sh-acc)}
+.chip[aria-pressed="true"] .wd,.chip[aria-pressed="true"] .sb,.mst[aria-pressed="true"] .nx{color:color-mix(in oklch,var(--on-accent) 78%,transparent)}
+
+#masters{margin-top:calc(14px*var(--u));display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:calc(8px*var(--u))}
+.mst{min-height:calc(76px*var(--u));padding:12px 16px 12px 14px;border-radius:calc(var(--r)*.68);border:0;background:var(--tile);display:flex;align-items:center;gap:12px;text-align:left;transition:background .2s,color .2s}
+.mst:hover:not(:disabled):not([aria-pressed="true"]){background:var(--accent-soft)}
+.mst:disabled{opacity:.5}
+.av{flex:none;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:600 15px var(--font);background:var(--card);color:var(--ink);box-shadow:var(--sh1)}
+.mst[aria-pressed="true"] .av{background:var(--on-accent);color:var(--accent);box-shadow:none}
+.mst .nm{display:block;font:600 15px/1.2 var(--font);letter-spacing:-.01em}
+.mst .nx{display:block;margin-top:4px;font:500 13px/1.25 var(--font);color:var(--muted)}
+
+.live{display:flex;align-items:center;gap:8px;font:500 13px var(--font);color:var(--muted)}
+.live i{display:block;width:7px;height:7px;border-radius:50%;background:var(--accent);animation:ping 2s ease-out infinite}
+.grp{margin-top:calc(20px*var(--u))}
+.grp-h{display:flex;align-items:center;gap:12px;margin-bottom:10px;color:var(--muted);font:500 13px var(--font)}
+.grp-h span:last-child{flex:1;height:1px;background:var(--hair)}
+.slots{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:calc(8px*var(--u))}
+.slot{height:calc(48px*var(--u));padding:0;border:0;border-radius:calc(var(--r)*.55);background:var(--tile);font:500 16px var(--font);font-variant-numeric:tabular-nums;transition:background .2s,color .2s}
+.slot:hover:not([aria-pressed="true"]){background:var(--accent-soft)}
+
+.fields{margin-top:6px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:calc(14px*var(--u))}
+.fld{display:grid;gap:7px;min-width:0;align-content:start}
+.fld.wide{grid-column:1/-1}
+.fld label{font:500 13px var(--font);color:var(--muted)}
+.fld label i{font-style:normal;color:var(--faint);margin-left:6px}
+.fld input{width:100%;height:calc(52px*var(--u));padding:0 16px;border-radius:calc(var(--r)*.6);border:0;background:var(--tile);color:var(--ink);font:500 16px var(--font);letter-spacing:-.01em;font-variant-numeric:tabular-nums;transition:background .2s,box-shadow .2s}
+.fld input::placeholder{color:var(--faint)}
+.fld input:hover{background:var(--accent-soft)}
+.fld input:focus{outline:none;background:var(--card);box-shadow:0 0 0 2px var(--accent)}
+.fld[data-bad] input{background:var(--card);box-shadow:0 0 0 2px var(--err)}
+.err{font:500 13px var(--font);color:var(--err)}
+.err:empty{display:none}
+.next{grid-column:1/-1;height:calc(54px*var(--u));margin-top:4px;border:0;border-radius:calc(var(--r)*.62);background:var(--accent);color:var(--on-accent);box-shadow:var(--sh-acc);font:600 16px var(--font);transition:filter .2s,transform .15s}
+.next:hover{filter:brightness(1.12)}
+.cta-hint{margin:10px 0 0;text-align:center;font:500 13px var(--font);color:var(--muted)}
+.sum[data-review]{background:var(--card);box-shadow:var(--sh2)}
+
+/* summary / receipt */
+.sum{position:sticky;top:16px;border-radius:var(--r);padding:calc(26px*var(--u)) calc(24px*var(--u)) calc(24px*var(--u));background:var(--tile);animation:rise .55s cubic-bezier(.2,.8,.2,1) .08s backwards;min-width:0}
+.sum .top{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px}
+.sum .top .label{font:500 13px var(--font);color:var(--muted)}
+.rel{padding:5px 11px;border-radius:14px;background:var(--card);box-shadow:var(--sh1);color:var(--ink);font:600 13px var(--font)}
+.sday{margin-top:18px;font:500 15px/1.3 var(--font);color:var(--muted)}
+.stime{margin-top:6px;font:600 72px/.95 var(--font);letter-spacing:-.05em;color:var(--ink);font-variant-numeric:tabular-nums}
+.stime.empty{color:var(--faint)}
+.send{margin-top:8px;min-height:22px;font:500 17px/1.2 var(--font);color:var(--muted)}
+.facts{margin-top:20px;border-top:1px solid var(--hair)}
+.fact{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--hair);font:400 15px/1.3 var(--font)}
+.fact span:first-child{color:var(--muted)}
+.fact span:last-child{font-weight:600;text-align:right}
+.fact .none{color:var(--faint);font-weight:500}
+.total{margin-top:18px;display:flex;align-items:baseline;justify-content:space-between}
+.total span:first-child{font:500 15px var(--font);color:var(--muted)}
+.total span:last-child{font:600 30px/1 var(--font);letter-spacing:-.04em}
+.cta{margin-top:20px;width:100%;height:56px;border:0;border-radius:calc(var(--r)*.62);background:var(--accent);color:var(--on-accent);box-shadow:var(--sh-acc);display:flex;align-items:center;justify-content:center;gap:12px;font:600 16px var(--font);transition:filter .2s,transform .15s,background .2s,color .2s}
+.cta:hover:not(:disabled){filter:brightness(1.12)}
+.cta:disabled{background:var(--card);color:var(--muted);box-shadow:none}
+.perks{margin-top:16px;display:flex;flex-direction:column;gap:7px;font:400 13px/1.35 var(--font);color:var(--muted)}
+.perks div{display:flex;gap:9px;align-items:flex-start}
+.perks svg{flex:none;margin-top:1px;color:var(--accent)}
+.only-done{display:none}
+.sum[data-done] .only-edit{display:none!important}
+.sum[data-done] .only-done{display:block}
+.sum[data-done] .fact.only-done{display:flex}
+.sum[data-done] .ok-badge{display:flex}
+.sum[data-done] .acts{display:flex}
+main[data-done]{grid-template-columns:minmax(0,460px);justify-content:center}
+main[data-done] .flow{display:none}
+.sum[data-done]{position:static;overflow:hidden;background:var(--card);box-shadow:var(--sh2);padding:30px 28px 26px;animation:pop .5s cubic-bezier(.2,.8,.2,1) backwards}
+.sum[data-done] .sday{margin-top:26px}
+.sum[data-done] .facts{margin-top:0;border-top:0}
+.ok-badge{align-items:center;gap:14px}
+.ok-ic{flex:none;width:46px;height:46px;border-radius:50%;background:var(--accent);color:var(--on-accent);box-shadow:var(--sh-acc);display:flex;align-items:center;justify-content:center}
+.ok-t{font:600 20px/1.2 var(--font);letter-spacing:-.02em}
+.ok-s{margin-top:3px;font:400 14px/1.35 var(--font);color:var(--muted)}
+.perf{position:relative;height:0;margin:22px -28px 8px;border-top:2px dashed var(--hair)}
+.perf::before,.perf::after{content:"";position:absolute;top:-13px;width:24px;height:24px;border-radius:50%;background:var(--bg2)}
+.perf::before{left:-13px}
+.perf::after{right:-13px}
+.acts{margin-top:22px;justify-content:center;gap:22px;flex-wrap:wrap}
+.lnk{padding:6px 2px;border:0;background:transparent;font:500 14px var(--font);color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.lnk:hover{color:var(--ink)}
+
+.foot{margin-top:32px;padding:4px 6px 0;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+main[data-start]~.foot{max-width:560px;margin-inline:auto}
+.lbl{margin-bottom:4px;font:500 13px var(--font);color:var(--muted)}
+.foot a.big{display:block;color:inherit;text-decoration:none;font:600 22px/1.3 var(--font);letter-spacing:-.03em}
+.foot a.big:hover{text-decoration:underline;text-underline-offset:4px}
+.phone-row{display:flex;align-items:center;gap:6px}
+.cp{width:32px;height:32px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:background .2s,color .2s}
+.cp:hover{background:var(--accent-soft);color:var(--ink)}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{height:46px;padding:0 22px 0 18px;border-radius:23px;display:inline-flex;align-items:center;justify-content:center;gap:10px;text-decoration:none;color:var(--ink);background:var(--card);box-shadow:var(--sh1);font:600 15px var(--font);transition:background .2s,transform .15s}
+.btn:visited{color:var(--ink)}
+.btn:hover{background:var(--accent-soft)}
+.btn svg{flex:none}
+
+/* calendar sheet */
+.modal{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal[hidden]{display:none}
+.scrim{position:absolute;inset:0;width:100%;height:100%;border:0;padding:0;background:var(--scrim);animation:fade .25s ease backwards}
+.dlg{position:relative;width:100%;max-width:400px;padding:24px 20px 22px;border-radius:var(--r);background:var(--card);box-shadow:var(--sh2);animation:pop .32s cubic-bezier(.2,.8,.2,1) backwards}
+.dlg-h{display:flex;align-items:center;gap:6px;padding:0 4px}
+.dlg-h .t{flex:1;font:600 22px var(--font);letter-spacing:-.03em}
+.dlg .round{background:var(--tile);box-shadow:none}
+.wdh{margin-top:18px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center;font:500 12px var(--font);color:var(--muted)}
+.cal{margin-top:8px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cc{height:46px;padding:0;border-radius:calc(var(--r)*.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:600 15px var(--font);border:0;background:transparent;transition:background .2s,color .2s}
+.cc:hover:not(:disabled):not([aria-pressed="true"]){background:var(--accent-soft)}
+.cc:disabled{color:var(--faint)}
+.cc.today:not([aria-pressed="true"]){background:var(--tile)}
+.cc .dot{display:block;width:4px;height:4px;border-radius:50%;background:var(--accent)}
+
+/* settings panel */
+.set-fab{position:fixed;z-index:15;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));height:44px;padding:0 18px 0 14px;border:0;border-radius:22px;background:var(--card);box-shadow:var(--sh2);display:flex;align-items:center;gap:8px;font:600 14px var(--font)}
+.set{position:fixed;z-index:15;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(72px + env(safe-area-inset-bottom,0px));width:min(380px,calc(100vw - 32px));max-height:min(78vh,680px);overflow:auto;padding:22px;border-radius:var(--r);background:var(--card);box-shadow:var(--sh2)}
+.set[hidden]{display:none}
+.set-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.set-t{font:600 22px/1.15 var(--font);letter-spacing:-.03em}
+.set-s{margin-top:6px;font:400 14px/1.4 var(--font);color:var(--muted)}
+.sg{margin-top:22px}
+.sg h3{margin:0 0 12px;font:600 14px var(--font)}
+.sg .hint{margin:-4px 0 12px;font:400 12.5px/1.4 var(--font);color:var(--muted)}
+.base-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:var(--tile);border-radius:14px;margin-bottom:4px}
+.base-card-info{display:flex;flex-direction:column;gap:2px}
+.base-pill{font:600 13px var(--font);color:var(--ink);display:flex;align-items:center;gap:6px}
+.base-pill::before{content:"";width:8px;height:8px;border-radius:50%;background:#242424;display:inline-block}
+.base-desc{font:400 11.5px var(--font);color:var(--muted)}
+.btn-reset-base{height:32px;padding:0 12px;border:1px solid var(--hair);border-radius:16px;background:var(--card);font:500 12px var(--font);color:var(--ink);cursor:pointer;transition:all .2s}
+.btn-reset-base:hover{border-color:var(--ink)}
+
+.clr-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.clr-picker{width:42px;height:42px;padding:0;border:0;border-radius:50%;cursor:pointer;background:transparent;flex:none}
+.clr-picker::-webkit-color-swatch-wrapper{padding:0}
+.clr-picker::-webkit-color-swatch{border:2px solid var(--card);border-radius:50%;box-shadow:var(--sh1)}
+.clr-hex{flex:1;height:42px;padding:0 14px;border:1px solid var(--hair);border-radius:12px;background:var(--tile);font:600 14px ui-monospace,monospace;color:var(--ink);letter-spacing:.02em}
+.clr-hex:focus{outline:2px solid var(--accent);background:var(--card)}
+
+.harm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.harm-btn{height:40px;padding:0 10px;border:0;border-radius:12px;background:var(--tile);font:500 12.5px var(--font);color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:box-shadow .2s}
+.harm-btn[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink);font-weight:600;background:var(--card)}
+
+.ext-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.ext-btn{height:38px;padding:0 10px;border:1px solid var(--hair);border-radius:12px;background:var(--tile);font:500 11.5px var(--font);color:var(--ink);text-decoration:none;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .2s}
+.ext-btn:hover{background:var(--card);border-color:var(--ink)}
+
+.import-row{display:flex;gap:8px}
+.import-input{flex:1;height:38px;padding:0 12px;border:1px solid var(--hair);border-radius:12px;background:var(--tile);font:400 12px var(--font);color:var(--ink)}
+.import-input:focus{outline:2px solid var(--accent);background:var(--card)}
+.btn-import{flex:none;height:38px;padding:0 14px;border:0;border-radius:12px;background:var(--ink);color:var(--card);font:600 12px var(--font);cursor:pointer}
+.import-status{margin-top:6px;font:500 11px var(--font);color:var(--muted);min-height:16px}
+.hue{display:grid;gap:6px;margin-top:14px;font:500 12px var(--font);color:var(--muted)}
+.hue[hidden]{display:none}
+.hue span{display:flex;justify-content:space-between}
+.hue output{color:var(--ink);font-variant-numeric:tabular-nums}
+.hue input{width:100%;margin:0;accent-color:var(--accent)}
+.seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.seg button{height:48px;border:0;border-radius:14px;background:var(--tile);font:500 13px var(--font);display:flex;align-items:center;justify-content:center;transition:box-shadow .2s}
+.seg button[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink);font-weight:600}
+.tg{display:flex;align-items:center;justify-content:space-between;gap:12px;font:500 14px var(--font)}
+.sw-t{position:relative;width:52px;height:30px;padding:0;border:0;border-radius:15px;background:var(--tile);box-shadow:inset 0 1px 2px rgb(0 0 0 / .12);transition:background .2s}
+.sw-t::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--card);box-shadow:var(--sh1);transition:transform .2s}
+.sw-t[aria-checked="true"]{background:var(--accent)}
+.sw-t[aria-checked="true"]::after{transform:translateX(22px)}
+.read{margin-top:20px;display:flex;flex-wrap:wrap;gap:4px 12px;font:500 12px var(--font);color:var(--muted);font-variant-numeric:tabular-nums}
+.read b{color:var(--ink);font-weight:600}
+.read code{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
+
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes chipN{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+@keyframes chipP{from{opacity:0;transform:translateX(-24px)}to{opacity:1;transform:none}}
+@keyframes slotIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes timeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes ping{0%{box-shadow:0 0 0 0 color-mix(in oklch,var(--accent) 50%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+@media (max-width:900px){
+  main{grid-template-columns:minmax(0,1fr)}
+  .sum{position:static}
+  #dates{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .slots{grid-template-columns:repeat(4,minmax(0,1fr))}
+  main[data-done]{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:600px){
+  .fields{grid-template-columns:minmax(0,1fr)}
+  .ch-t{font-size:27px}
+}
+@media (max-width:480px){
+  .step-h{padding:14px 14px;gap:10px}
+  .pad{padding:2px 14px 18px}
+  .slots{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .stime{font-size:64px}
+  .st-t{font-size:17px}
+}
+</style>
+</head>
+<body>
+<svg class="deco a" viewBox="0 0 800 760" aria-hidden="true" focusable="false">
+  <defs><linearGradient id="gA" x1="1" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--shape);stop-opacity:.95"/><stop offset="1" style="stop-color:var(--shape);stop-opacity:0"/></linearGradient></defs>
+  <path d="M800 0V760C640 740 520 640 470 500C420 360 330 300 210 270C90 240 20 130 0 0Z" fill="url(#gA)"/>
+</svg>
+<svg class="deco b" viewBox="0 0 800 760" aria-hidden="true" focusable="false">
+  <defs><linearGradient id="gB" x1="0" y1="1" x2="1" y2="0"><stop offset="0" style="stop-color:var(--shape);stop-opacity:.95"/><stop offset="1" style="stop-color:var(--shape);stop-opacity:0"/></linearGradient></defs>
+  <path d="M0 760V180C90 150 200 190 280 280C380 390 380 520 470 600C540 660 660 690 800 760Z" fill="url(#gB)"/>
+</svg>
+
+<div class="page">
+<header>
+  <h1>Barber Arslan</h1>
+  <div class="addr">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>
+    <span>Алматы, ул. Тимирязева, 42</span>
+  </div>
+</header>
+
+<main id="main" data-start>
+  <div class="flow">
+
+    <section class="chooser" id="chooser" aria-label="С чего начать">
+      <div>
+        <h2 class="ch-t">Как удобнее записаться?</h2>
+        <p class="ch-s">Выберите, с чего начать</p>
+      </div>
+      <div class="ch-grid">
+        <button class="ch-card" data-act="mode" data-v="master">
+          <span class="ch-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.8 3.6-5.6 7-5.6s6.2 1.8 7 5.6"/></svg></span>
+          <span class="ch-n">Выбрать мастера</span>
+          <svg class="ch-go" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button class="ch-card" data-act="mode" data-v="date">
+          <span class="ch-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></span>
+          <span class="ch-n">Выбрать дату</span>
+          <svg class="ch-go" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <div class="modebar" id="modebar"><b id="modeName"></b><button class="lnk" data-act="modeReset">Сменить</button></div>
+
+    <section class="step" id="s-date">
+      <button class="step-h" data-act="open" data-v="date" aria-expanded="false">
+        <span class="num"></span><span class="st-t">Дата</span><span class="st-v" id="v-date"></span><span class="chg">Изменить</span>
+      </button>
+      <div class="step-b"><div class="inner"><div class="pad">
+        <div class="row">
+          <div class="sub-t" id="month"></div>
+          <div class="tools">
+            <button class="round tap" id="prev" data-act="shift" data-v="-4" aria-label="Предыдущие дни"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <button class="round tap" id="next" data-act="shift" data-v="4" aria-label="Следующие дни"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+            <button class="pill tap" data-act="openCal"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Календарь</button>
+          </div>
+        </div>
+        <div id="dates"></div>
+      </div></div></div>
+    </section>
+
+    <section class="step" id="s-master">
+      <button class="step-h" data-act="open" data-v="master" aria-expanded="false">
+        <span class="num"></span><span class="st-t">Мастер</span><span class="st-v" id="v-master"></span><span class="chg">Изменить</span>
+      </button>
+      <div class="step-b"><div class="inner"><div class="pad">
+        <div id="masters"></div>
+      </div></div></div>
+    </section>
+
+    <section class="step" id="s-time">
+      <button class="step-h" data-act="open" data-v="time" aria-expanded="false">
+        <span class="num"></span><span class="st-t">Время</span><span class="st-v" id="v-time"></span><span class="chg">Изменить</span>
+      </button>
+      <div class="step-b"><div class="inner"><div class="pad">
+        <div class="row">
+          <div class="sub-t" id="count"></div>
+          <div class="live"><i aria-hidden="true"></i>обновляется онлайн</div>
+        </div>
+        <div id="groups"></div>
+      </div></div></div>
+    </section>
+
+    <section class="step" id="s-contacts">
+      <button class="step-h" data-act="open" data-v="contacts" aria-expanded="false">
+        <span class="num"></span><span class="st-t">Контакты</span><span class="st-v" id="v-contacts"></span><span class="chg">Изменить</span>
+      </button>
+      <div class="step-b"><div class="inner"><div class="pad">
+        <form class="fields" id="contacts" novalidate>
+          <div class="fld"><label for="f-name">Имя</label><input id="f-name" name="name" type="text" autocomplete="name" maxlength="60" placeholder="Как к вам обращаться"><span class="err" id="e-name"></span></div>
+          <div class="fld"><label for="f-phone">Телефон</label><input id="f-phone" name="tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 (___) ___-__-__"><span class="err" id="e-phone"></span></div>
+          <div class="fld wide"><label for="f-mail">Почта <i>по желанию</i></label><input id="f-mail" name="email" type="email" autocomplete="email" placeholder="name@mail.com"><span class="err" id="e-mail"></span></div>
+          <button type="button" class="next tap" id="btnNext" data-act="next">Продолжить</button>
+        </form>
+      </div></div></div>
+    </section>
+
+  </div>
+
+  <aside class="sum" id="sum">
+    <div class="ok-badge only-done"><span class="ok-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><div><div class="ok-t">Вы записаны</div><div class="ok-s" id="okSub"></div></div></div>
+    <div class="top only-edit"><span class="label" id="sumLabel">Ваша запись</span><span class="rel" id="rel" hidden></span></div>
+    <div class="sday" id="sday"></div>
+    <div class="stime" id="stime"></div>
+    <div class="send" id="send"></div>
+    <div class="perf only-done"></div>
+    <div class="facts">
+      <div class="fact"><span>Услуга</span><span>Мужская стрижка</span></div>
+      <div class="fact"><span>Мастер</span><span id="smaster"></span></div>
+      <div class="fact"><span>Клиент</span><span id="sClient"></span></div>
+      <div class="fact only-done"><span>Телефон</span><span id="sPhone"></span></div>
+      <div class="fact"><span>Длительность</span><span>45 мин</span></div>
+      <div class="fact only-done"><span>Адрес</span><span>Алматы, ул. Тимирязева, 42</span></div>
+    </div>
+    <div class="total"><span>Итого</span><span>7 000 ₸</span></div>
+    <button class="cta tap only-edit" id="cta" data-act="go"><span id="ctaText"></span><svg id="ctaIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    <p class="cta-hint only-edit" id="ctaHint" hidden>Нажмите «Продолжить» в шаге «Контакты»</p>
+    <div class="acts only-done"><button class="lnk" data-act="undo">Изменить запись</button><button class="lnk" id="cancelBtn" data-act="cancel">Отменить запись</button></div>
+    <div class="perks only-edit">
+      <div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Подтверждение сразу после записи</span></div>
+      <div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Бесплатная отмена и перенос</span></div>
+    </div>
+  </aside>
+</main>
+
+<footer class="foot">
+  <div>
+    <div class="lbl">Телефон</div>
+    <div class="phone-row">
+      <a class="big" id="phone" href="tel:+77015550123">+7 (701) 555-01-23</a>
+      <button class="cp" data-act="copyPhone" aria-label="Скопировать номер" title="Скопировать номер"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="3"/><path d="M5 15V7a3 3 0 0 1 3-3h8"/></svg></button>
+    </div>
+  </div>
+  <div class="btns">
+    <a class="btn tap" href="tel:+77015550123"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>Позвонить</a>
+    <a class="btn tap" href="https://2gis.kz/almaty/search/%D0%A2%D0%B8%D0%BC%D0%B8%D1%80%D1%8F%D0%B7%D0%B5%D0%B2%D0%B0%2042" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l16-7-7 16-2-7z"/></svg>Маршрут</a>
+  </div>
+</footer>
+</div>
+
+<button class="set-fab tap" id="setBtn" aria-expanded="false" aria-controls="setPanel"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Оформление</button>
+<section class="set" id="setPanel" hidden aria-label="Настройка оформления">
+  <div class="set-h">
+    <div><div class="set-t">Настройка оформления</div><div class="set-s">Основа проекта — нейтральная. Индивидуальный стиль настраивается под бренд.</div></div>
+    <button class="round tap" id="setClose" aria-label="Закрыть настройки"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+
+  <div class="sg">
+    <h3>Основа дизайна</h3>
+    <div class="base-card">
+      <div class="base-card-info">
+        <span class="base-pill" id="baseIndicator">Нейтральный (по умолчанию)</span>
+        <span class="base-desc">Чистый нейтральный стиль без лишних тем</span>
+      </div>
+      <button type="button" class="btn-reset-base" id="btnResetBase">Сброс к основе</button>
+    </div>
+  </div>
+
+  <div class="sg">
+    <h3>Свой брендовый цвет</h3>
+    <p class="hint">Выберите цвет или введите HEX. Остальные цвета интерфейса и контраст вычисляются автоматически.</p>
+    <div class="clr-row">
+      <input type="color" class="clr-picker" id="clrPicker" value="#242424" aria-label="Пикер цвета">
+      <input type="text" class="clr-hex" id="clrHex" value="#242424" maxlength="7" spellcheck="false" placeholder="#242424">
+    </div>
+    <label class="hue" id="hueWrap">
+      <span>Цветовой спектр (Hue) <output id="hueOut">200°</output></span>
+      <input type="range" id="hue" min="0" max="360" step="1" value="200">
+    </label>
+  </div>
+
+  <div class="sg">
+    <h3>Цветовая гармония (Adobe / Realtime)</h3>
+    <p class="hint">Правило сочетания фона, плашек и акцента по цветовому кругу.</p>
+    <div class="harm-grid" id="harmGrid">
+      <button type="button" class="harm-btn" data-harm="mono" aria-pressed="true">Монохромная</button>
+      <button type="button" class="harm-btn" data-harm="analogous" aria-pressed="false">Аналоговая</button>
+      <button type="button" class="harm-btn" data-harm="complementary" aria-pressed="false">Комплемент</button>
+      <button type="button" class="harm-btn" data-harm="triad" aria-pressed="false">Триадная</button>
+    </div>
+  </div>
+
+  <div class="sg">
+    <h3>Связка с Realtime Colors & Adobe</h3>
+    <p class="hint">Подбор в сервисах и экспорт/импорт в сайт брони.</p>
+    <div class="ext-links">
+      <a id="btnRtcExport" href="https://www.realtimecolors.com" target="_blank" rel="noopener" class="ext-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+        В Realtime Colors ↗
+      </a>
+      <a href="https://color.adobe.com/create/color-wheel" target="_blank" rel="noopener" class="ext-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+        Adobe Color Wheel ↗
+      </a>
+    </div>
+    <div class="import-row">
+      <input type="text" class="import-input" id="importInput" placeholder="Ссылка Realtime Colors / Adobe или HEX" spellcheck="false">
+      <button type="button" class="btn-import" id="btnImport">Применить</button>
+    </div>
+    <div class="import-status" id="importStatus"></div>
+  </div>
+
+  <div class="sg"><h3>Скругление</h3><div class="seg" id="segR"></div></div>
+  <div class="sg"><h3>Плотность (отступы)</h3><div class="seg" id="segD"></div></div>
+  <div class="sg tg"><span>Фоновый паттерн</span><button class="sw-t" id="tPattern" role="switch" aria-checked="false" aria-label="Фоновый паттерн"></button></div>
+  <div class="sg tg"><span>Декоративные формы</span><button class="sw-t" id="tShape" role="switch" aria-checked="true" aria-label="Декоративная фигура"></button></div>
+  <div class="read" id="read"></div>
+</section>
+
+<div class="modal" id="modal" hidden>
+  <button class="scrim" data-act="closeCal" aria-label="Закрыть календарь"></button>
+  <div class="dlg" role="dialog" aria-label="Календарь">
+    <div class="dlg-h">
+      <div class="t" id="calTitle"></div>
+      <button class="round tap" id="pm" data-act="prevMonth" aria-label="Предыдущий месяц"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <button class="round tap" id="nm" data-act="nextMonth" aria-label="Следующий месяц"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <button class="round tap" data-act="closeCal" aria-label="Закрыть"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="wdh" aria-hidden="true"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+    <div class="cal" id="cal"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var MASTERS=[{id:'any',name:'Любой мастер',ini:'',idx:0},{id:'a',name:'Арслан',ini:'А',idx:1},{id:'t',name:'Тимур',ini:'Т',idx:2},{id:'dn',name:'Данияр',ini:'Д',idx:3}];
+  var MONTHS=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  var MONTHS_G=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  var WD=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  var ORDERS={master:['master','date','time','contacts'],date:['date','time','master','contacts']};
+  var CHECK='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  var $=function(id){return document.getElementById(id)};
+
+  /* demo schedule: which half-hour slots each master has on a given day offset from today (10 Nov 2026) */
+  function one(d,idx){
+    if(d<0||d>45||d===3||d===11||d===19)return [];
+    var out=[];
+    for(var i=0;i<22;i++){
+      var mins=600+i*30;
+      if(d===0&&mins<1050)continue;
+      var h=Math.floor(mins/60),mm=mins%60;
+      var forced=d===0&&idx===1&&(mins===1050||mins===1140);
+      var hash=(d*37+idx*19+i*23+((d*i)%5))%9;
+      if(forced||hash<4)out.push((h<10?'0':'')+h+':'+(mm===0?'00':'30'));
+    }
+    return out;
+  }
+  function avail(d,m){
+    if(m!=='any')return one(d,{a:1,t:2,dn:3}[m]);
+    var set={};
+    [1,2,3].forEach(function(i){one(d,i).forEach(function(t){set[t]=1})});
+    return Object.keys(set).sort();
+  }
+  function plural(n,f){
+    var a=n%10,b=n%100;
+    var w=(a===1&&b!==11)?f[0]:((a>=2&&a<=4&&(b<10||b>=20))?f[1]:f[2]);
+    return n+' '+w;
+  }
+  var WINDOW=['окно','окна','окон'],WINDOW_L=['свободное окно','свободных окна','свободных окон'];
+  function toMin(t){return parseInt(t.slice(0,2),10)*60+parseInt(t.slice(3),10)}
+  function fromMin(x){var h=Math.floor(x/60),m=x%60;return (h<10?'0':'')+h+':'+(m<10?'0':'')+m}
+  function dateOf(d){return new Date(2026,10,10+d)}
+  function wd(d){return WD[dateOf(d).getDay()]}
+  function dm(d){var x=dateOf(d);return x.getDate()+' '+MONTHS_G[x.getMonth()]}
+  function longDay(d){var base=wd(d)+', '+dm(d);return d===0?'Сегодня · '+base:(d===1?'Завтра · '+base:base)}
+  function shortDay(d){return d===0?'Сегодня, '+dm(d):(d===1?'Завтра, '+dm(d):wd(d)+', '+dm(d))}
+  function mname(id){return MASTERS.filter(function(m){return m.id===id})[0].name}
+
+  var S={mode:null,d:null,m:null,t:null,open:null,sheet:false,cal:0,cs:0,dir:'N',done:false,review:false,name:'',phone:'',mail:'',touched:{}};
+  var timer=null;
+
+  function nameOk(){return S.name.trim().length>=2}
+  function phoneOk(){return S.phone.length===10}
+  function mailOk(){var m=S.mail.trim();return m===''||/^\S+@\S+\.\S+$/.test(m)}
+  function contactsOk(){return nameOk()&&phoneOk()&&mailOk()}
+  function fmtPhone(d){var a=d.slice(0,3),b=d.slice(3,6),c=d.slice(6,8),e=d.slice(8,10),s='+7';if(a)s+=' ('+a;if(a.length===3)s+=')';if(b)s+=' '+b;if(c)s+='-'+c;if(e)s+='-'+e;return s}
+
+  function order(){return ORDERS[S.mode||'master']}
+  function have(id){return id==='date'?S.d!==null:(id==='master'?S.m!==null:(id==='time'?S.t!==null:contactsOk()))}
+  function firstIncomplete(){var o=order();for(var i=0;i<o.length;i++)if(!have(o[i]))return o[i];return null}
+  function unlocked(id){var o=order(),i=o.indexOf(id);for(var k=0;k<i;k++)if(!have(o[k]))return false;return true}
+  function effM(){return S.m===null?'any':S.m}
+
+  /* keep the chosen values consistent after any change */
+  function reconcile(){
+    if(S.m!==null&&S.m!=='any'&&S.d!==null){
+      var idx=MASTERS.filter(function(x){return x.id===S.m})[0].idx;
+      if(S.mode==='master'){if(!avail(S.d,S.m).length){S.d=null;S.t=null}}
+      else if(S.t!==null?one(S.d,idx).indexOf(S.t)<0:!avail(S.d,S.m).length)S.m=null;
+    }
+    if(S.t!==null&&(S.d===null||avail(S.d,effM()).indexOf(S.t)<0))S.t=null;
+  }
+
+  function renderDates(anim){
+    var h='';
+    for(var k=0;k<8;k++){
+      var d=S.cs+k;if(d>45)break;
+      var n=avail(d,effM()).length,off=n===0,x=dateOf(d);
+      var label=longDay(d)+(off?', нет мест':', '+plural(n,WINDOW_L));
+      h+='<button class="chip" data-act="date" data-v="'+d+'"'+(off?' disabled':'')+' aria-pressed="'+(d===S.d)+'" aria-label="'+label+'"'
+        +(anim?' style="animation:chip'+S.dir+' .5s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:'+(k*40)+'ms"':'')+'>'
+        +'<span class="wd">'+(d===0?'Сегодня':(d===1?'Завтра':wd(d)))+'</span>'
+        +'<span class="day">'+x.getDate()+'</span>'
+        +'<span class="sb">'+(off?'нет мест':plural(n,WINDOW))+'</span></button>';
+    }
+    $('dates').innerHTML=h;
+    var f=dateOf(S.cs);$('month').textContent=MONTHS[f.getMonth()]+' '+f.getFullYear();
+    $('prev').disabled=S.cs<=0;$('next').disabled=S.cs>=38;
+  }
+
+  var ANY_ICON='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8.5" r="3.2"/><path d="M3 19c.6-3.4 3-5 6-5s5.4 1.6 6 5"/><path d="M16.5 5.6a3 3 0 0 1 0 5.8M18 14.3c1.7.5 2.7 2 3 4.7"/></svg>';
+  /* what to show under a master depends on how far the booking has got */
+  function masterSub(m){
+    if(S.d!==null&&S.t!==null&&S.mode==='date'){
+      var ok=m.id==='any'||one(S.d,m.idx).indexOf(S.t)>=0;
+      return {off:!ok,text:ok?(m.id==='any'?'первый свободный':'свободен в '+S.t):'занят в '+S.t};
+    }
+    if(S.d!==null){var l=avail(S.d,m.id);return {off:!l.length,text:l.length?'с '+l[0]:'нет мест'}}
+    for(var d=0;d<=45;d++){
+      var l2=avail(d,m.id);
+      if(l2.length)return {off:false,text:'ближайшее: '+(d===0?'сегодня':(d===1?'завтра':dm(d)))+', '+l2[0]};
+    }
+    return {off:true,text:'нет мест'};
+  }
+  function renderMasters(){
+    $('masters').innerHTML=MASTERS.map(function(m){
+      var s=masterSub(m);
+      return '<button class="mst" data-act="master" data-v="'+m.id+'"'+(s.off?' disabled':'')+' aria-pressed="'+(S.m===m.id)+'">'
+        +'<span class="av">'+(m.id==='any'?ANY_ICON:m.ini)+'</span>'
+        +'<span style="display:block;min-width:0"><span class="nm">'+m.name+'</span><span class="nx">'+s.text+'</span></span></button>';
+    }).join('');
+  }
+
+  function renderTimes(anim){
+    if(S.d===null){$('groups').innerHTML='';$('count').textContent='';return}
+    var list=avail(S.d,effM()),parts=[['Утро',0,720],['День',720,1020],['Вечер',1020,1440]],c=0,h='';
+    parts.forEach(function(p){
+      var items=list.filter(function(t){var m=toMin(t);return m>=p[1]&&m<p[2]});
+      if(!items.length)return;
+      h+='<div class="grp"><div class="grp-h"><span>'+p[0]+'</span><span></span></div><div class="slots">'
+        +items.map(function(t){
+          return '<button class="slot" data-act="time" data-v="'+t+'" aria-pressed="'+(t===S.t)+'"'
+            +(anim?' style="animation:slotIn .42s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:'+((c++)*24)+'ms"':'')+'>'+t+'</button>';
+        }).join('')+'</div></div>';
+    });
+    $('groups').innerHTML=h;
+    $('count').textContent=plural(list.length,WINDOW_L);
+  }
+
+  function renderSteps(){
+    $('main').toggleAttribute('data-start',S.mode===null);
+    $('modeName').textContent=S.mode==='date'?'Сначала дата':'Сначала мастер';
+    var vals={date:S.d!==null?shortDay(S.d):'',master:S.m!==null?mname(S.m):'',time:S.t||'',contacts:contactsOk()?S.name.trim():''};
+    order().forEach(function(id,i){
+      var el=$('s-'+id),state=S.open===id?'active':(have(id)?'done':'todo');
+      el.style.order=i+1;
+      el.setAttribute('data-state',state);
+      var hd=el.querySelector('.step-h');
+      hd.disabled=!unlocked(id)||state==='active';
+      hd.setAttribute('aria-expanded',String(state==='active'));
+      el.querySelector('.num').innerHTML=state==='done'?CHECK:(i+1);
+      $('v-'+id).textContent=vals[id];
+      var inner=el.querySelector('.inner');
+      if(state==='active')inner.removeAttribute('inert');else inner.setAttribute('inert','');
+    });
+  }
+
+  function renderSummary(anim){
+    var picked=S.d!==null&&S.m!==null&&S.t!==null,ready=picked&&contactsOk();
+    var sum=$('sum');if(S.done)sum.setAttribute('data-done','');else sum.removeAttribute('data-done');
+    if(!ready)S.review=false;
+    var rv=S.review&&!S.done;
+    if(rv)sum.setAttribute('data-review','');else sum.removeAttribute('data-review');
+    $('sumLabel').textContent=rv?'Проверьте запись':'Ваша запись';
+    $('main').toggleAttribute('data-done',S.done);
+    document.documentElement.toggleAttribute('data-done',S.done);
+    var nm=S.name.trim();
+    $('sClient').textContent=nm||'—';$('sClient').className=nm?'':'none';
+    $('sPhone').textContent=S.phone?fmtPhone(S.phone):'—';
+    $('okSub').textContent=nm?'Ждём вас, '+nm.split(/\s+/)[0]:'Ждём вас';
+    $('sday').textContent=S.d!==null?longDay(S.d):'Дата не выбрана';
+    var st=$('stime');st.textContent=S.t||'--:--';st.className='stime'+(S.t?'':' empty');
+    if(anim&&S.t){st.style.animation='none';void st.offsetWidth;st.style.animation='timeIn .4s cubic-bezier(.2,.8,.2,1) backwards'}
+    $('send').textContent=S.t?'до '+fromMin(toMin(S.t)+45):'';
+    var sm=$('smaster');
+    if(S.m===null){sm.textContent='—';sm.className='none'}else{sm.textContent=S.m==='any'?'Любой свободный':mname(S.m);sm.className=''}
+    var miss={date:'Выберите дату',master:'Выберите мастера',time:'Выберите время'},label='';
+    if(!picked)order().some(function(id){if(id!=='contacts'&&!have(id)){label=miss[id];return true}});
+    $('cta').disabled=!(S.review&&ready)||S.done;
+    $('ctaHint').hidden=!(ready&&!S.review&&!S.done);
+    $('ctaText').textContent=ready?'Записаться на '+S.t:(picked?'Заполните контакты':label);
+    var diff=S.t?toMin(S.t)-1016:0,show=S.d===0&&S.t&&diff>0;
+    var r=$('rel');r.hidden=!show;
+    if(show)r.textContent=diff<60?'через '+diff+' мин':'через '+Math.floor(diff/60)+' ч'+(diff%60?' '+(diff%60)+' мин':'');
+  }
+
+  function renderCal(){
+    var cm=new Date(2026,10+S.cal,1),lead=(cm.getDay()+6)%7,dim=new Date(2026,10+S.cal+1,0).getDate(),h='';
+    for(var i=0;i<lead;i++)h+='<div></div>';
+    for(var day=1;day<=dim;day++){
+      var d=Math.round((Date.UTC(cm.getFullYear(),cm.getMonth(),day)-Date.UTC(2026,10,10))/86400000);
+      var ok=avail(d,effM()).length>0,sel=d===S.d;
+      h+='<button class="cc'+(d===0?' today':'')+'" data-act="calPick" data-v="'+d+'"'+(ok?'':' disabled')+' aria-pressed="'+sel+'" aria-label="'+day+' '+MONTHS_G[cm.getMonth()]+(ok?'':', нет мест')+'">'
+        +'<span style="display:block;line-height:1">'+day+'</span>'+(ok&&!sel?'<span class="dot" aria-hidden="true"></span>':'')+'</button>';
+    }
+    $('cal').innerHTML=h;
+    $('calTitle').textContent=MONTHS[cm.getMonth()]+' '+cm.getFullYear();
+    $('pm').disabled=S.cal<=0;$('nm').disabled=S.cal>=1;
+  }
+
+  function renderAll(o){
+    o=o||{};
+    renderDates(o.chips);renderMasters();renderTimes(o.slots);renderSteps();renderSummary(o.time);
+    $('modal').hidden=!S.sheet;
+    if(S.sheet)renderCal();
+  }
+
+  function advance(){
+    clearTimeout(timer);
+    timer=setTimeout(function(){
+      S.open=firstIncomplete()||'contacts';renderSteps();
+      if(S.open==='contacts'&&!S.name&&window.matchMedia&&matchMedia('(pointer:fine)').matches)$('f-name').focus({preventScroll:true});
+    },240);
+  }
+
+  function setDay(d,fromCal){
+    S.d=d;S.done=false;S.review=false;reconcile();
+    var chips=false;
+    if(fromCal){
+      if(d<S.cs||d>=S.cs+8){S.dir=d<S.cs?'P':'N';S.cs=Math.max(0,Math.min(d,38));chips=true}
+      S.sheet=false;
+    }
+    renderAll({chips:chips,slots:true,time:true});
+    advance();
+  }
+
+  document.addEventListener('click',function(e){
+    var b=e.target.closest('[data-act]');if(!b||b.disabled)return;
+    var a=b.getAttribute('data-act'),v=b.getAttribute('data-v');
+    if(a==='mode'){
+      S.mode=v;S.done=false;S.review=false;reconcile();S.open=firstIncomplete()||'contacts';
+      renderAll({chips:true,slots:true,time:true});window.scrollTo(0,0);
+    }
+    else if(a==='modeReset'){clearTimeout(timer);S.mode=null;S.open=null;S.done=false;S.review=false;renderAll()}
+    else if(a==='date')setDay(+v,false);
+    else if(a==='master'){S.m=v;S.done=false;S.review=false;reconcile();renderAll({chips:true,slots:true,time:true});advance()}
+    else if(a==='time'){S.t=v;S.done=false;S.review=false;renderTimes(false);renderSteps();renderSummary(true);advance()}
+    else if(a==='open'){clearTimeout(timer);S.open=v;S.done=false;S.review=false;renderAll({slots:v==='time',chips:v==='date'})}
+    else if(a==='shift'){var by=+v;S.cs=Math.max(0,Math.min(38,S.cs+by));S.dir=by>0?'N':'P';renderDates(true)}
+    else if(a==='openCal'){var x=dateOf(S.d===null?S.cs:S.d);S.cal=(x.getFullYear()-2026)*12+x.getMonth()-10;S.sheet=true;$('modal').hidden=false;renderCal()}
+    else if(a==='closeCal'){S.sheet=false;$('modal').hidden=true}
+    else if(a==='go'){
+      if(!contactsOk()){
+        S.touched={name:1,phone:1,mail:1};S.open='contacts';S.done=false;S.review=false;renderSteps();showErr();
+        var bad=!nameOk()?$('f-name'):(!phoneOk()?$('f-phone'):$('f-mail'));
+        setTimeout(function(){bad.focus()},60);
+      }else{S.done=true;S.open=null;renderSteps();renderSummary(false);window.scrollTo(0,0)}
+    }
+    else if(a==='next'){
+      if(!contactsOk()){
+        S.touched={name:1,phone:1,mail:1};showErr();
+        var bad2=!nameOk()?$('f-name'):(!phoneOk()?$('f-phone'):$('f-mail'));bad2.focus();
+      }else{
+        S.review=true;S.open=null;renderSteps();renderSummary(false);
+        try{$('sum').scrollIntoView({behavior:'smooth',block:'nearest'})}catch(err){}
+      }
+    }
+    else if(a==='undo'){S.done=false;S.review=true;S.open=null;renderAll({slots:true})}
+    else if(a==='cancel'){
+      if(b.getAttribute('data-arm')){
+        S.mode=null;S.d=null;S.m=null;S.t=null;S.done=false;S.review=false;S.open=null;S.cs=0;S.name='';S.phone='';S.mail='';S.touched={};
+        $('f-name').value='';$('f-phone').value='';$('f-mail').value='';showErr();renderAll({chips:true});
+      }else{
+        b.setAttribute('data-arm','1');b.textContent='Нажмите ещё раз, чтобы отменить';
+        setTimeout(function(){b.removeAttribute('data-arm');b.textContent='Отменить запись'},3000);
+      }
+    }
+    else if(a==='copyPhone'){
+      var txt='+7 (701) 555-01-23';
+      var COPY='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="3"/><path d="M5 15V7a3 3 0 0 1 3-3h8"/></svg>';
+      var ok=function(){b.innerHTML=CHECK;b.title='Скопировано';setTimeout(function(){b.innerHTML=COPY;b.title='Скопировать номер'},1600)};
+      var fail=function(){var r=document.createRange();r.selectNodeContents($('phone'));var sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);b.title='Номер выделен, нажмите Ctrl+C'};
+      try{navigator.clipboard.writeText(txt).then(ok,fail)}catch(err){fail()}
+    }
+    else if(a==='prevMonth'){S.cal=Math.max(0,S.cal-1);renderCal()}
+    else if(a==='nextMonth'){S.cal=Math.min(1,S.cal+1);renderCal()}
+    else if(a==='calPick')setDay(+v,true);
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Escape')return;
+    if(S.sheet){S.sheet=false;$('modal').hidden=true}
+    else if(!$('setPanel').hidden)closePanel();
+  });
+
+  /* contact fields */
+  var fName=$('f-name'),fPhone=$('f-phone'),fMail=$('f-mail');
+  function showErr(){
+    [['name',nameOk(),'Введите имя'],['phone',phoneOk(),'Введите номер полностью'],['mail',mailOk(),'Проверьте адрес почты']].forEach(function(x){
+      var show=!!S.touched[x[0]]&&!x[1],input=$('f-'+x[0]);
+      input.parentNode.toggleAttribute('data-bad',show);
+      input.setAttribute('aria-invalid',show?'true':'false');
+      $('e-'+x[0]).textContent=show?x[2]:'';
+    });
+  }
+  function refresh(){S.done=false;S.review=false;showErr();renderSteps();renderSummary(false)}
+  fName.addEventListener('input',function(){S.name=fName.value;refresh()});
+  fName.addEventListener('blur',function(){S.touched.name=1;showErr()});
+  fMail.addEventListener('input',function(){S.mail=fMail.value;refresh()});
+  fMail.addEventListener('blur',function(){S.touched.mail=1;showErr()});
+  fPhone.addEventListener('focus',function(){if(!S.phone)fPhone.value='+7'});
+  fPhone.addEventListener('blur',function(){if(!S.phone)fPhone.value='';S.touched.phone=1;showErr()});
+  fPhone.addEventListener('input',function(e){
+    var prev=S.phone,d=fPhone.value.replace(/\D/g,'');
+    if(d.charAt(0)==='7'||d.charAt(0)==='8')d=d.slice(1);
+    d=d.slice(0,10);
+    if(e.inputType==='deleteContentBackward'&&d===prev&&prev.length)d=prev.slice(0,-1);
+    S.phone=d;fPhone.value=fmtPhone(d);refresh();
+  });
+  $('contacts').addEventListener('submit',function(e){e.preventDefault();$('btnNext').click()});
+
+  /* ---------- themes & custom styling ---------- */
+  var root=document.documentElement;
+  /* Baseline design: Neutral - the sole pre-built theme of the project */
+  var NEUTRAL_THEME = {
+    id: 'neutral',
+    n: 'Нейтральный',
+    s: 'основа проекта',
+    mode: 'light',
+    bg: '#F7F7F5',
+    card: '#FFFFFF',
+    tile: '#F0F0EE',
+    accent: '#242424',
+    muted: '#646464',
+    hair: '#D9D9D5',
+    ink: '#202124',
+    on: '#FFFFFF'
+  };
+
+  var P = {
+    isCustom: false,
+    hex: '#242424',
+    hue: 200,
+    harmony: 'mono',
+    mode: 'light',
+    r: 'M',
+    dens: 'M',
+    pattern: false,
+    shape: true,
+    imported: null
+  };
+  var KEY = 'crm-style-neutral-v1';
+
+  function enc(x){x=Math.min(1,Math.max(0,x));return Math.round((x<=.0031308?12.92*x:1.055*Math.pow(x,1/2.4)-.055)*255)}
+  function hex(r,g,b){return '#'+[r,g,b].map(function(v){var n=enc(v).toString(16);return n.length<2?'0'+n:n}).join('')}
+  /* OKLCH to sRGB hex; chroma is reduced until the colour fits the gamut */
+  function ok2hex(L,C,H){
+    var h=H*Math.PI/180,r,g,bl;
+    for(var k=0;k<80;k++){
+      var a=C*Math.cos(h),b=C*Math.sin(h);
+      var l_=L+.3963377774*a+.2158037573*b,m_=L-.1055613458*a-.0638541728*b,s_=L-.0894841775*a-1.291485548*b;
+      var l=l_*l_*l_,m=m_*m_*m_,s=s_*s_*s_;
+      r=4.0767416621*l-3.3077115913*m+.2309699292*s;g=-1.2684380046*l+2.6097574011*m-.3413193965*s;bl=-.0041960863*l-.7034186147*m+1.707614701*s;
+      if((r>=-.001&&r<=1.001&&g>=-.001&&g<=1.001&&bl>=-.001&&bl<=1.001)||C<=0)break;
+      C=Math.max(0,C-.004);
+    }
+    return hex(r,g,bl);
+  }
+  function lum(h){
+    if(!h || typeof h !== 'string') return 0.5;
+    var clean = h.replace(/^#/, '');
+    if(clean.length === 3) clean = clean[0]+clean[0]+clean[1]+clean[1]+clean[2]+clean[2];
+    var v=[0,2,4].map(function(i){var c=parseInt(clean.slice(i,i+2),16)/255;return c<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4)});
+    return .2126*v[0]+.7152*v[1]+.0722*v[2];
+  }
+  function cr(a,b){var x=lum(a),y=lum(b),hi=Math.max(x,y),lo=Math.min(x,y);return (hi+.05)/(lo+.05)}
+
+  function hexToHsl(hStr){
+    var c=(hStr||'').replace(/^#/,'');
+    if(c.length===3)c=c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
+    var num=parseInt(c,16);
+    if(isNaN(num))return [200,0,.5];
+    var r=((num>>16)&255)/255,g=((num>>8)&255)/255,b=(num&255)/255;
+    var max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
+    var h=0,s=0,l=(max+min)/2;
+    if(d!==0){
+      s=l>.5?d/(2-max-min):d/(max+min);
+      if(max===r)h=(g-b)/d+(g<b?6:0);
+      else if(max===g)h=(b-r)/d+2;
+      else h=(r-g)/d+4;
+      h*=60;
+    }
+    return [Math.round(h),s,l];
+  }
+
+  function deriveHarmony(h, hexVal, harm, mode){
+    var t={};
+    t.mode=mode||'light';
+    t.accent=hexVal||ok2hex(0.48,0.14,h);
+    t.ink='#202124';
+    t.card='#FFFFFF';
+
+    var hTile=h,hBg=h,hMuted=h;
+    if(harm==='analogous'){
+      hTile=(h+30)%360;hBg=(h+15)%360;hMuted=(h+30)%360;
+    } else if(harm==='complementary'){
+      hTile=(h+180)%360;hBg=(h+180)%360;hMuted=(h+180)%360;
+    } else if(harm==='triad'){
+      hTile=(h+120)%360;hBg=(h+240)%360;hMuted=(h+120)%360;
+    }
+
+    t.bg=ok2hex(0.974,0.007,hBg);
+    t.tile=ok2hex(0.952,0.014,hTile);
+    t.hair=ok2hex(0.895,0.016,hTile);
+    t.muted=ok2hex(0.48,0.03,hMuted);
+    t.on=cr(t.accent,'#FFFFFF')>=3.5?'#FFFFFF':'#202124';
+    return t;
+  }
+
+  function currentTheme(){
+    if(!P.isCustom) return NEUTRAL_THEME;
+    if(P.imported) return P.imported;
+    return deriveHarmony(P.hue, P.hex, P.harmony, P.mode);
+  }
+
+  function badge(v){return '<b>'+v.toFixed(1)+':1'+(v>=4.5?' ✓':'')+'</b>'}
+
+  function updateRtcLink(t){
+    var cl=function(x){return (x||'').replace('#','').toLowerCase();};
+    var url='https://www.realtimecolors.com/?colors='
+      +cl(t.ink)+'-'
+      +cl(t.bg)+'-'
+      +cl(t.accent)+'-'
+      +cl(t.tile)+'-'
+      +cl(t.accent)+'&mode='+(t.mode||'light');
+    var btn=$('btnRtcExport');
+    if(btn)btn.href=url;
+  }
+
+  function parsePalette(raw){
+    if(!raw)return null;
+    raw=raw.trim();
+    var rtc=raw.match(/colors=([0-9a-fA-F]{3,6}(?:-[0-9a-fA-F]{3,6})+)/i);
+    if(rtc){
+      var p=rtc[1].split('-');
+      if(p.length>=3){
+        var n=function(s){return '#'+(s.length===3?s[0]+s[0]+s[1]+s[1]+s[2]+s[2]:s);};
+        var ink=n(p[0]),bg=n(p[1]),acc=n(p[2]),tile=p.length>3?n(p[3]):bg;
+        return {
+          bg:bg,card:'#FFFFFF',tile:tile,accent:acc,
+          muted:cr(ink,'#FFFFFF')>6?'#646464':ink,
+          hair:tile,ink:ink,
+          on:cr(acc,'#FFFFFF')>=3.5?'#FFFFFF':'#202124',
+          mode:lum(bg)<0.2?'dark':'light'
+        };
+      }
+    }
+    if(raw.indexOf('--')!==-1){
+      var gv=function(name){
+        var m=raw.match(new RegExp(name+'\\s*:\\s*(#[0-9a-fA-F]{3,6})','i'));
+        return m?m[1]:null;
+      };
+      var a=gv('--accent')||gv('--primary');
+      var b=gv('--bg')||gv('--background');
+      var k=gv('--text')||gv('--ink');
+      var tl=gv('--secondary')||gv('--tile');
+      if(a||b){
+        a=a||'#242424';b=b||'#F7F7F5';k=k||'#202124';tl=tl||'#F0F0EE';
+        return {bg:b,card:'#FFFFFF',tile:tl,accent:a,muted:'#646464',hair:'#D9D9D5',ink:k,on:cr(a,'#FFFFFF')>=3.5?'#FFFFFF':'#202124',mode:lum(b)<0.2?'dark':'light'};
+      }
+    }
+    var hxs=raw.match(/#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}/g);
+    if(!hxs){
+      var bare=raw.match(/\b[0-9a-fA-F]{6}\b/g);
+      if(bare)hxs=bare.map(function(h){return '#'+h;});
+    }
+    if(hxs&&hxs.length>0){
+      if(hxs.length===1)return {accentOnly:hxs[0]};
+      var ac=hxs[0],bg2=hxs[1]||'#F7F7F5',tl2=hxs[2]||'#F0F0EE',k2=hxs[3]||'#202124';
+      return {bg:bg2,card:'#FFFFFF',tile:tl2,accent:ac,muted:'#646464',hair:'#D9D9D5',ink:k2,on:cr(ac,'#FFFFFF')>=3.5?'#FFFFFF':'#202124',mode:lum(bg2)<0.2?'dark':'light'};
+    }
+    return null;
+  }
+
+  function applyStyle(save){
+    var t=currentTheme(),st=root.style;
+    st.setProperty('--bg',t.bg);st.setProperty('--card',t.card);st.setProperty('--tile',t.tile);st.setProperty('--accent',t.accent);
+    st.setProperty('--muted',t.muted);st.setProperty('--hair',t.hair);st.setProperty('--ink',t.ink);st.setProperty('--on-accent',t.on);
+    if(t.mode==='dark')root.setAttribute('data-bg','dark');else root.removeAttribute('data-bg');
+    root.setAttribute('data-r',P.r);root.setAttribute('data-dens',P.dens);
+    if(P.pattern)root.setAttribute('data-pattern','');else root.removeAttribute('data-pattern');
+    root.setAttribute('data-shape',P.shape?'on':'off');
+
+    // UI State updates
+    var isBase = !P.isCustom;
+    $('baseIndicator').textContent = isBase ? 'Нейтральный (активен)' : 'Кастомный стиль (активен)';
+    $('baseIndicator').style.color = isBase ? 'var(--ink)' : 'var(--accent)';
+    $('btnResetBase').style.display = isBase ? 'none' : 'block';
+
+    $('clrPicker').value = t.accent.length === 7 ? t.accent : '#242424';
+    $('clrHex').value = t.accent;
+    $('hue').value = P.hue;
+    $('hueOut').textContent = Math.round(P.hue)+'°';
+
+    var hb = $('harmGrid').children;
+    for(var i=0; i<hb.length; i++){
+      hb[i].setAttribute('aria-pressed', String(!isBase && hb[i].getAttribute('data-harm') === P.harmony));
+    }
+
+    var rb=$('segR').children;for(var j=0;j<rb.length;j++)rb[j].setAttribute('aria-pressed',String(['S','M','L'][j]===P.r));
+    var db=$('segD').children;for(var k=0;k<db.length;k++)db[k].setAttribute('aria-pressed',String(['S','M','L'][k]===P.dens));
+    $('tPattern').setAttribute('aria-checked',String(P.pattern));
+    $('tShape').setAttribute('aria-checked',String(P.shape));
+
+    updateRtcLink(t);
+
+    $('read').innerHTML='<span>Акцент <code>'+t.accent+'</code></span>'
+      +'<span>Фон <code>'+t.bg+'</code></span>'
+      +'<span>Текст на кнопке '+badge(cr(t.on,t.accent))+'</span>'
+      +'<span>Основной текст '+badge(cr(t.ink,t.card))+'</span>'
+      +'<span>Акцент на карточке '+badge(cr(t.accent,t.card))+'</span>';
+
+    if(save){try{localStorage.setItem(KEY,JSON.stringify(P))}catch(e){}}
+  }
+
+  $('segR').innerHTML=['S','M','L'].map(function(x){return '<button data-r="'+x+'" aria-pressed="false">'+x+'</button>'}).join('');
+  $('segD').innerHTML=[['S','Компактно'],['M','Стандартно'],['L','Просторно']].map(function(x){return '<button data-d="'+x[0]+'" aria-pressed="false">'+x[1]+'</button>'}).join('');
+
+  // Events: Customizer
+  $('btnResetBase').addEventListener('click',function(){
+    P.isCustom=false;P.imported=null;P.hex='#242424';P.hue=200;P.harmony='mono';
+    applyStyle(true);
+  });
+
+  $('clrPicker').addEventListener('input',function(e){
+    var val=e.target.value;
+    P.isCustom=true;P.imported=null;P.hex=val;
+    P.hue=hexToHsl(val)[0];
+    applyStyle(true);
+  });
+
+  $('clrHex').addEventListener('change',function(e){
+    var val=e.target.value.trim();
+    if(!/^#[0-9a-fA-F]{3,6}$/.test(val)){
+      if(/^[0-9a-fA-F]{3,6}$/.test(val)) val='#'+val;
+      else return;
+    }
+    P.isCustom=true;P.imported=null;P.hex=val;
+    P.hue=hexToHsl(val)[0];
+    applyStyle(true);
+  });
+
+  $('hue').addEventListener('input',function(e){
+    var h=parseFloat(e.target.value);
+    P.isCustom=true;P.imported=null;P.hue=h;
+    P.hex=ok2hex(0.48,0.14,h);
+    applyStyle(true);
+  });
+
+  $('harmGrid').addEventListener('click',function(e){
+    var b=e.target.closest('button');if(!b)return;
+    P.isCustom=true;P.imported=null;
+    P.harmony=b.getAttribute('data-harm');
+    applyStyle(true);
+  });
+
+  $('btnImport').addEventListener('click',function(){
+    var val=$('importInput').value;
+    var res=parsePalette(val);
+    var st=$('importStatus');
+    if(!res){
+      st.textContent='⚠️ Не удалось распознать цвета. Вставьте ссылку Realtime Colors, Adobe или HEX.';
+      st.style.color='var(--err)';
+      return;
+    }
+    P.isCustom=true;
+    if(res.accentOnly){
+      P.imported=null;P.hex=res.accentOnly;P.hue=hexToHsl(res.accentOnly)[0];
+      st.textContent='✓ Акцент '+res.accentOnly+' применён';
+    } else {
+      P.imported=res;P.hex=res.accent;P.hue=hexToHsl(res.accent)[0];
+      st.textContent='✓ Палитра успешно импортирована';
+    }
+    st.style.color='var(--accent)';
+    applyStyle(true);
+  });
+
+  $('segR').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;P.r=b.getAttribute('data-r');applyStyle(true)});
+  $('segD').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;P.dens=b.getAttribute('data-d');applyStyle(true)});
+  $('tPattern').addEventListener('click',function(){P.pattern=!P.pattern;applyStyle(true)});
+  $('tShape').addEventListener('click',function(){P.shape=!P.shape;applyStyle(true)});
+
+  function openPanel(){$('setPanel').hidden=false;$('setBtn').setAttribute('aria-expanded','true')}
+  function closePanel(){$('setPanel').hidden=true;$('setBtn').setAttribute('aria-expanded','false')}
+  $('setBtn').addEventListener('click',function(){if($('setPanel').hidden)openPanel();else closePanel()});
+  $('setClose').addEventListener('click',closePanel);
+
+  var saved=null;
+  try{saved=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){}
+  if(saved&&typeof saved==='object') P=Object.assign(P,saved);
+  applyStyle(false);
+
+  renderAll({chips:true});
+})();
+</script>
+</body>
+</html>
+
+</body></html>

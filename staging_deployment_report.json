@@ -1,11 +1,11 @@
 {
   "status": "SUCCESS",
-  "verified_at_utc": "2026-11-09T19:16:55Z",
+  "verified_at_utc": "2026-11-10T07:21:17Z",
   "container_states": {
-    "saas_crm_staging_api": "up 9 seconds (healthy)",
-    "saas_crm_staging_frontend": "up 5 minutes (healthy)",
-    "saas_crm_staging_migrations": "exited (0) 9 seconds ago",
-    "saas_crm_staging_pg": "up 5 minutes (healthy)",
+    "saas_crm_staging_api": "up 6 seconds (healthy)",
+    "saas_crm_staging_frontend": "up 16 seconds (healthy)",
+    "saas_crm_staging_migrations": "exited (0) 6 seconds ago",
+    "saas_crm_staging_pg": "up 16 seconds (healthy)",
     "saas_crm_staging_proxy": "up less than a second"
   },
   "asset_volume_check": "PASS",
@@ -66,9 +66,9 @@
   ],
   "e2e_container_https_flow": {
     "status": "SUCCESS",
-    "verified_at_utc": "2026-11-09T19:17:33.156074+00:00",
-    "tenant_slug": "pilot-47e210",
-    "booking_id": "4368f6bf-99ed-48f8-9e03-3b54c395537a",
+    "verified_at_utc": "2026-11-10T07:21:45.556753+00:00",
+    "tenant_slug": "pilot-b4e41e",
+    "booking_id": "df773f7e-8b46-4d42-aa40-24818297a3ae",
     "steps": [
       {
         "step": "platform_owner_login",
@@ -77,8 +77,8 @@
       },
       {
         "step": "tenant_provisioning",
-        "tenant_id": "76065870-ceeb-47c0-900c-6ed5112b6bc2",
-        "slug": "pilot-47e210",
+        "tenant_id": "5444fe7e-a575-4189-9c30-075d1f554c2d",
+        "slug": "pilot-b4e41e",
         "passed": true
       },
       {
@@ -93,9 +93,9 @@
       },
       {
         "step": "configure_entities",
-        "branch_id": "464cfd6d-7c65-4e2d-96a0-e8738eb0a771",
-        "service_id": "041eada8-22f4-47b6-9169-f5e905ca40a8",
-        "staff_id": "d56ec886-8507-49b9-85ee-0cffcafe00ee",
+        "branch_id": "048f76ed-96d5-455e-817e-82c795b9e034",
+        "service_id": "aac39cd7-4ca3-41c5-a0e5-f92c41329ec8",
+        "staff_id": "bc0d49cf-84e6-4ba6-8ddf-dee2c8269b78",
         "passed": true
       },
       {
@@ -109,13 +109,13 @@
       },
       {
         "step": "public_booking_created",
-        "booking_id": "4368f6bf-99ed-48f8-9e03-3b54c395537a",
+        "booking_id": "df773f7e-8b46-4d42-aa40-24818297a3ae",
         "passed": true
       },
       {
         "step": "crm_intake_verified",
-        "booking_id": "4368f6bf-99ed-48f8-9e03-3b54c395537a",
-        "public_ref": "PI-188188",
+        "booking_id": "df773f7e-8b46-4d42-aa40-24818297a3ae",
+        "public_ref": "PI-339386",
         "passed": true
       },
       {
@@ -130,8 +130,8 @@
       },
       {
         "step": "cross_tenant_isolation_with_valid_jwt",
-        "tenant_a_slug": "pilot-47e210",
-        "tenant_b_slug": "pilot-b-a1582c",
+        "tenant_a_slug": "pilot-b4e41e",
+        "tenant_b_slug": "pilot-b-007dc9",
         "cross_access_status": 404,
         "passed": true
       }

@@ -36,7 +36,7 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
   onSubmit,
   isSubmitting,
   error,
-  accentColor = '#2563EB',
+  accentColor = 'var(--accent, #242424)',
 }) => {
   const staffName =
     typeof selectedStaff === 'object' && selectedStaff !== null
@@ -59,10 +59,10 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <h1 style={{ margin: 0, fontSize: '32px', lineHeight: 1.2, fontWeight: 700 }}>
+        <h1 style={{ margin: 0, fontSize: '30px', lineHeight: 1.2, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink, #202124)' }}>
           Контактные данные
         </h1>
-        <p style={{ margin: 0, color: '#475569', fontSize: '16px' }}>
+        <p style={{ margin: 0, color: 'var(--muted, #646464)', fontSize: '15px' }}>
           Укажите контактные данные для связи и подтверждения бронирования
         </p>
       </div>
@@ -132,9 +132,10 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
       {/* Form Fields */}
       <div
         style={{
-          background: '#FFFFFF',
-          borderRadius: '16px',
-          border: '1px solid #E2E8F0',
+          background: 'var(--card, #FFFFFF)',
+          borderRadius: 'var(--r, 20px)',
+          border: '1px solid var(--hair, #D9D9D5)',
+          boxShadow: 'var(--sh1)',
           padding: '24px',
           display: 'flex',
           flexDirection: 'column',
@@ -142,8 +143,8 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>
-            Ваше имя <span style={{ color: '#DC2626' }}>*</span>
+          <label style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--ink, #202124)' }}>
+            Ваше имя <span style={{ color: 'var(--err, #C0392B)' }}>*</span>
           </label>
           <input
             type="text"
@@ -151,20 +152,21 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
             onChange={e => onChangeName(e.target.value)}
             placeholder="Иван Петров"
             style={{
-              height: '48px',
+              height: '46px',
               padding: '0 16px',
               borderRadius: '12px',
-              border: '1px solid #CBD5E1',
-              fontSize: '16px',
-              color: '#0F172A',
+              border: '1px solid var(--hair, #D9D9D5)',
+              background: 'var(--tile, #F0F0EE)',
+              fontSize: '15px',
+              color: 'var(--ink, #202124)',
               outline: 'none',
             }}
           />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>
-            Номер телефона <span style={{ color: '#DC2626' }}>*</span>
+          <label style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--ink, #202124)' }}>
+            Номер телефона <span style={{ color: 'var(--err, #C0392B)' }}>*</span>
           </label>
           <input
             type="tel"
@@ -172,20 +174,21 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
             onChange={e => onChangePhone(e.target.value)}
             placeholder="+7 (701) 000-00-00"
             style={{
-              height: '48px',
+              height: '46px',
               padding: '0 16px',
               borderRadius: '12px',
-              border: '1px solid #CBD5E1',
-              fontSize: '16px',
-              color: '#0F172A',
+              border: '1px solid var(--hair, #D9D9D5)',
+              background: 'var(--tile, #F0F0EE)',
+              fontSize: '15px',
+              color: 'var(--ink, #202124)',
               outline: 'none',
             }}
           />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>
-            Электронная почта (необязательно)
+          <label style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--ink, #202124)' }}>
+            Электронная почта <span style={{ color: 'var(--muted, #646464)', fontWeight: 400 }}>(по желанию)</span>
           </label>
           <input
             type="email"
@@ -193,20 +196,21 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
             onChange={e => onChangeEmail(e.target.value)}
             placeholder="client@example.com"
             style={{
-              height: '48px',
+              height: '46px',
               padding: '0 16px',
               borderRadius: '12px',
-              border: '1px solid #CBD5E1',
-              fontSize: '16px',
-              color: '#0F172A',
+              border: '1px solid var(--hair, #D9D9D5)',
+              background: 'var(--tile, #F0F0EE)',
+              fontSize: '15px',
+              color: 'var(--ink, #202124)',
               outline: 'none',
             }}
           />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>
-            Комментарий к визиту
+          <label style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--ink, #202124)' }}>
+            Комментарий к визиту <span style={{ color: 'var(--muted, #646464)', fontWeight: 400 }}>(по желанию)</span>
           </label>
           <textarea
             value={clientNote}
@@ -216,9 +220,10 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
             style={{
               padding: '12px 16px',
               borderRadius: '12px',
-              border: '1px solid #CBD5E1',
+              border: '1px solid var(--hair, #D9D9D5)',
+              background: 'var(--tile, #F0F0EE)',
               fontSize: '15px',
-              color: '#0F172A',
+              color: 'var(--ink, #202124)',
               outline: 'none',
               resize: 'vertical',
             }}
@@ -226,7 +231,7 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
         </div>
 
         {/* Policy note */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '13px', color: '#64748B' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '13px', color: 'var(--muted, #646464)' }}>
           <svg
             width="18"
             height="18"
@@ -251,12 +256,13 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
           onClick={onSubmit}
           disabled={!isValid || isSubmitting}
           style={{
-            height: '56px',
+            height: '52px',
             border: 0,
-            borderRadius: '14px',
-            background: isValid && !isSubmitting ? accentColor : '#CBD5E1',
-            color: '#FFFFFF',
-            fontSize: '17px',
+            borderRadius: 'var(--r, 16px)',
+            background: isValid && !isSubmitting ? accentColor : 'var(--tile, #F0F0EE)',
+            color: isValid && !isSubmitting ? 'var(--on-accent, #FFFFFF)' : 'var(--muted, #646464)',
+            boxShadow: isValid && !isSubmitting ? 'var(--sh-acc)' : 'none',
+            fontSize: '16px',
             fontWeight: 600,
             cursor: isValid && !isSubmitting ? 'pointer' : 'not-allowed',
             display: 'flex',

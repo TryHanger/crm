@@ -14,7 +14,7 @@ export const StaffStep: React.FC<StaffStepProps> = ({
   selectedStaff,
   onSelectStaff,
   selectedServices,
-  accentColor = '#2563EB',
+  accentColor = 'var(--accent, #242424)',
 }) => {
   const isAnySelected = selectedStaff === 'any';
   const selectedStaffId = typeof selectedStaff === 'object' && selectedStaff !== null ? selectedStaff.id : null;
@@ -26,10 +26,10 @@ export const StaffStep: React.FC<StaffStepProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <h1 style={{ margin: 0, fontSize: '32px', lineHeight: 1.2, fontWeight: 700 }}>
+        <h1 style={{ margin: 0, fontSize: '30px', lineHeight: 1.2, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink, #202124)' }}>
           Выберите специалиста
         </h1>
-        <p style={{ margin: 0, color: '#475569', fontSize: '16px' }}>
+        <p style={{ margin: 0, color: 'var(--muted, #646464)', fontSize: '15px' }}>
           К кому вы хотите записаться на стрижку или уход
         </p>
       </div>
@@ -46,15 +46,16 @@ export const StaffStep: React.FC<StaffStepProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '16px',
-            padding: '18px 24px',
-            minHeight: '104px',
-            borderRadius: '16px',
-            border: `1px solid ${isAnySelected ? accentColor : '#E2E8F0'}`,
-            background: isAnySelected ? '#F0F9FF' : '#FFFFFF',
-            color: '#0F172A',
+            padding: '18px 22px',
+            minHeight: '96px',
+            borderRadius: 'var(--r, 18px)',
+            border: `1px solid ${isAnySelected ? accentColor : 'var(--hair, #D9D9D5)'}`,
+            background: isAnySelected ? 'var(--tile, #F0F0EE)' : 'var(--card, #FFFFFF)',
+            boxShadow: isAnySelected ? 'var(--sh-acc)' : 'var(--sh1)',
+            color: 'var(--ink, #202124)',
             textAlign: 'left',
             cursor: 'pointer',
-            fontSize: '16px',
+            fontSize: '15px',
             transition: 'all 0.15s ease-in-out',
           }}
         >
@@ -158,15 +159,16 @@ export const StaffStep: React.FC<StaffStepProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '16px',
-                padding: '18px 24px',
-                minHeight: '104px',
-                borderRadius: '16px',
-                border: `1px solid ${isSelected ? accentColor : '#E2E8F0'}`,
-                background: isSelected ? '#F0F9FF' : '#FFFFFF',
-                color: '#0F172A',
+                padding: '18px 22px',
+                minHeight: '96px',
+                borderRadius: 'var(--r, 18px)',
+                border: `1px solid ${isSelected ? accentColor : 'var(--hair, #D9D9D5)'}`,
+                background: isSelected ? 'var(--tile, #F0F0EE)' : 'var(--card, #FFFFFF)',
+                boxShadow: isSelected ? 'var(--sh-acc)' : 'var(--sh1)',
+                color: 'var(--ink, #202124)',
                 textAlign: 'left',
                 cursor: 'pointer',
-                fontSize: '16px',
+                fontSize: '15px',
                 transition: 'all 0.15s ease-in-out',
               }}
             >

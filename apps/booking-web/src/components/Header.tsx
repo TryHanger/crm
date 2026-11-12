@@ -18,7 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   branch,
   branches,
   onSelectBranch,
-  accentColor = '#2563EB',
+  accentColor = 'var(--accent, #242424)',
   flow = 'service-first',
   onChangeFlow,
   step = 'services',
@@ -39,12 +39,12 @@ export const Header: React.FC<HeaderProps> = ({
   const phone = branch?.phone || '+7 (701) 555-01-23';
 
   return (
-    <header style={{ background: '#FFFFFF', borderBottom: '1px solid #E2E8F0', width: '100%' }}>
+    <header style={{ background: 'var(--card, #FFFFFF)', borderBottom: '1px solid var(--hair, #D9D9D5)', width: '100%', position: 'relative', zIndex: 10 }}>
       <div
         style={{
           maxWidth: '1040px',
           margin: '0 auto',
-          padding: '14px 24px',
+          padding: '16px 24px',
           boxSizing: 'border-box',
           display: 'flex',
           alignItems: 'center',
@@ -56,18 +56,19 @@ export const Header: React.FC<HeaderProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div
             style={{
-              width: '48px',
-              height: '48px',
+              width: '46px',
+              height: '46px',
               flex: 'none',
-              borderRadius: '12px',
-              background: '#0F172A',
-              color: '#FFFFFF',
+              borderRadius: '14px',
+              background: 'var(--tile, #F0F0EE)',
+              color: 'var(--accent, #242424)',
+              boxShadow: 'var(--sh1)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: '17px',
               fontWeight: 700,
-              letterSpacing: '0.04em',
+              letterSpacing: '0.02em',
             }}
           >
             {initials}
@@ -75,11 +76,11 @@ export const Header: React.FC<HeaderProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span
               style={{
-                fontSize: '18px',
-                lineHeight: 1.3,
+                fontSize: '19px',
+                lineHeight: 1.2,
                 fontWeight: 700,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
+                letterSpacing: '-0.02em',
+                color: 'var(--ink, #202124)',
               }}
             >
               {tenantName}
@@ -92,8 +93,8 @@ export const Header: React.FC<HeaderProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  color: '#64748B',
-                  fontSize: '14px',
+                  color: 'var(--muted, #646464)',
+                  fontSize: '13.5px',
                   background: 'none',
                   border: 'none',
                   padding: 0,
@@ -130,10 +131,10 @@ export const Header: React.FC<HeaderProps> = ({
                     top: 'calc(100% + 8px)',
                     left: 0,
                     zIndex: 50,
-                    background: '#FFFFFF',
-                    borderRadius: '12px',
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-                    border: '1px solid #E2E8F0',
+                    background: 'var(--card, #FFFFFF)',
+                    borderRadius: 'var(--r, 14px)',
+                    boxShadow: 'var(--sh2)',
+                    border: '1px solid var(--hair, #D9D9D5)',
                     minWidth: '240px',
                     padding: '6px',
                   }}

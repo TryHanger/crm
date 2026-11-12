@@ -17,7 +17,7 @@ export const Stepper: React.FC<StepperProps> = ({
   flow,
   currentStep,
   onStepClick,
-  accentColor = '#2563EB',
+  accentColor = 'var(--accent, #242424)',
 }) => {
   let steps: StepItem[] = [];
 
@@ -58,7 +58,7 @@ export const Stepper: React.FC<StepperProps> = ({
           flexWrap: 'wrap',
           alignItems: 'center',
           gap: '8px 12px',
-          fontSize: '16px',
+          fontSize: '15px',
         }}
       >
         {steps.map((st, idx) => {
@@ -67,10 +67,10 @@ export const Stepper: React.FC<StepperProps> = ({
           const isPrefTime = flow === 'time-first' && idx === 0 && !isDone;
           const isClickable = isDone;
 
-          const bg = isCurrent ? accentColor : isDone ? '#0F172A' : '#E2E8F0';
-          const fg = isCurrent || isDone ? '#FFFFFF' : '#64748B';
-          const labelColor = isCurrent ? '#0F172A' : isDone ? '#334155' : '#64748B';
-          const weight = isCurrent ? 700 : isDone ? 600 : 400;
+          const bg = isCurrent ? accentColor : isDone ? 'var(--tile, #F0F0EE)' : 'var(--card, #FFFFFF)';
+          const fg = isCurrent ? 'var(--on-accent, #FFFFFF)' : isDone ? 'var(--ink, #202124)' : 'var(--muted, #646464)';
+          const labelColor = isCurrent ? 'var(--ink, #202124)' : isDone ? 'var(--ink, #202124)' : 'var(--muted, #646464)';
+          const weight = isCurrent ? 700 : isDone ? 600 : 500;
 
           return (
             <li

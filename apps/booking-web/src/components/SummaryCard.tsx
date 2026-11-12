@@ -19,7 +19,7 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
   selectedSlot,
   currentStep,
   onNext,
-  accentColor = '#2563EB',
+  accentColor = 'var(--accent, #242424)',
 }) => {
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
@@ -73,25 +73,27 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
         position: 'sticky',
         top: '24px',
         boxSizing: 'border-box',
-        background: '#FFFFFF',
-        border: '1px solid #E2E8F0',
-        borderRadius: '16px',
+        background: 'var(--card, #FFFFFF)',
+        border: '1px solid var(--hair, #D9D9D5)',
+        borderRadius: 'var(--r, 20px)',
+        boxShadow: 'var(--sh2)',
+        color: 'var(--ink, #202124)',
         padding: '24px',
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
       }}
     >
-      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700 }}>Ваша запись</h2>
+      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, letterSpacing: '-0.02em' }}>Ваша запись</h2>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '15px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '14.5px' }}>
         <span style={{ minWidth: 0 }}>
-          <span style={{ color: '#64748B' }}>Филиал: </span>
+          <span style={{ color: 'var(--muted, #646464)' }}>Филиал: </span>
           <span style={{ fontWeight: 600 }}>{branch?.name || 'Главный филиал'}</span>
         </span>
       </div>
 
-      <div style={{ height: '1px', background: '#E2E8F0' }} />
+      <div style={{ height: '1px', background: 'var(--hair, #D9D9D5)' }} />
 
       {/* Summary Rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '15px' }}>
@@ -172,10 +174,10 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
       )}
 
       {/* Total amount */}
-      <div style={{ height: '1px', background: '#E2E8F0' }} />
+      <div style={{ height: '1px', background: 'var(--hair, #D9D9D5)' }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontSize: '16px', fontWeight: 600 }}>Итого:</span>
-        <span style={{ fontSize: '24px', fontWeight: 800 }}>
+        <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--ink, #202124)' }}>Итого:</span>
+        <span style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink, #202124)' }}>
           {(totalAmountMinor / 100).toLocaleString('ru-RU')} ₸
         </span>
       </div>
@@ -187,12 +189,13 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
           onClick={onNext}
           disabled={!canProceed}
           style={{
-            height: '56px',
+            height: '52px',
             border: 0,
-            borderRadius: '12px',
-            background: canProceed ? accentColor : '#E2E8F0',
-            color: canProceed ? '#FFFFFF' : '#94A3B8',
-            fontSize: '17px',
+            borderRadius: 'var(--r, 16px)',
+            background: canProceed ? accentColor : 'var(--tile, #F0F0EE)',
+            color: canProceed ? 'var(--on-accent, #FFFFFF)' : 'var(--muted, #646464)',
+            boxShadow: canProceed ? 'var(--sh-acc)' : 'none',
+            fontSize: '16px',
             fontWeight: 600,
             display: 'flex',
             alignItems: 'center',
