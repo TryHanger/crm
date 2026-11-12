@@ -537,7 +537,7 @@ main[data-start] .sum {
 }
 
 .chip[aria-pressed="true"],
-.mst[aria-pressed="true"],
+.mst[data-selected="true"],
 .slot[aria-pressed="true"],
 .cc[aria-pressed="true"],
 .svc-card[data-selected="true"] {
@@ -548,7 +548,8 @@ main[data-start] .sum {
 
 .chip[aria-pressed="true"] .wd,
 .chip[aria-pressed="true"] .sb,
-.mst[aria-pressed="true"] .nx,
+.mst[data-selected="true"] .nx,
+.mst[data-selected="true"] .mst-more,
 .svc-card[data-selected="true"] .svc-desc,
 .svc-card[data-selected="true"] .svc-dur,
 .svc-card[data-selected="true"] .svc-more {
@@ -564,24 +565,66 @@ main[data-start] .sum {
 }
 
 .mst {
+  position: relative;
   min-height: calc(76px * var(--u));
   padding: 12px 16px 12px 14px;
   border-radius: calc(var(--r) * 0.68);
-  border: 0;
   background: var(--tile);
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
   text-align: left;
+  min-width: 0;
   transition: background 0.2s, color 0.2s;
 }
 
-.mst:hover:not(:disabled):not([aria-pressed="true"]) {
+.mst:hover:not([data-selected="true"]) {
   background: var(--accent-soft);
 }
 
-.mst:disabled {
-  opacity: 0.5;
+.mst-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Whole card stays clickable while "О мастере" is a separate control */
+.mst-main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.mst-text {
+  display: block;
+  min-width: 0;
+  flex: 1;
+}
+
+.mst-more {
+  position: relative;
+  z-index: 1;
+  align-self: flex-start;
+  margin-left: 54px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  font: 600 13px var(--font);
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
 .av {
@@ -598,7 +641,7 @@ main[data-start] .sum {
   box-shadow: var(--sh1);
 }
 
-.mst[aria-pressed="true"] .av {
+.mst[data-selected="true"] .av {
   background: var(--on-accent);
   color: var(--accent);
   box-shadow: none;
@@ -606,15 +649,20 @@ main[data-start] .sum {
 
 .mst .nm {
   display: block;
-  font: 600 15px/1.2 var(--font);
+  font: 600 15px/1.3 var(--font);
   letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
 }
 
 .mst .nx {
-  display: block;
+  display: -webkit-box;
   margin-top: 4px;
-  font: 500 13px/1.25 var(--font);
+  font: 500 13px/1.3 var(--font);
   color: var(--muted);
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Services */
@@ -1693,4 +1741,22 @@ h1.clamp,
 .step[data-state="todo"] .num {
   color: var(--muted);
   background: color-mix(in oklch, var(--tile) 80%, var(--muted) 8%);
+}
+
+/* Master details sheet reuses the service sheet layout */
+.mst-sheet-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mst-sheet-role {
+  margin-top: 4px;
+  font: 500 14px/1.4 var(--font);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.mst-sheet-foot .cta {
+  margin-top: 0;
 }

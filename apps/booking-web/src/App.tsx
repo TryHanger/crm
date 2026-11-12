@@ -30,6 +30,8 @@ function getLocalDateString(dateObj: Date = new Date(), timeZone: string = 'Asia
   }
 }
 
+type StaffView = StaffPublicResponse & { bio?: string | null };
+
 function parseYMD(ymd: string): Date {
   const [y, m, d] = ymd.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -144,6 +146,7 @@ export const App: React.FC = () => {
   const [isCalOpen, setIsCalOpen] = useState(false);
   const [isCallOpen, setIsCallOpen] = useState(false);
   const [detailSvc, setDetailSvc] = useState<ServiceItemResponse | null>(null);
+  const [detailStaff, setDetailStaff] = useState<StaffView | null>(null);
   const [headerOpen, setHeaderOpen] = useState(false);
   const [calMonthOffset, setCalMonthOffset] = useState(0);
 
@@ -779,43 +782,60 @@ export const App: React.FC = () => {
                         {stepId === 'master' && (
                           <div id="masters">
                             {/* Any master card */}
-                            <button
-                              type="button"
-                              className="mst tap"
-                              aria-pressed={selectedStaff === 'any'}
-                              onClick={() => handleSelectStaff('any')}
+                            <div
+                              className="mst"
+                              data-selected={selectedStaff === 'any' ? 'true' : undefined}
                             >
-                              <span className="av">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <circle cx="9" cy="8.5" r="3.2" />
-                                  <path d="M3 19c.6-3.4 3-5 6-5s5.4 1.6 6 5" />
-                                  <path d="M16.5 5.6a3 3 0 0 1 0 5.8M18 14.3c1.7.5 2.7 2 3 4.7" />
-                                </svg>
-                              </span>
-                              <span style={{ display: 'block', minWidth: 0 }}>
-                                <span className="nm">Любой мастер</span>
-                                <span className="nx">первый свободный специалист</span>
-                              </span>
-                            </button>
+                              <button
+                                type="button"
+                                className="mst-main tap"
+                                aria-pressed={selectedStaff === 'any'}
+                                onClick={() => handleSelectStaff('any')}
+                              >
+                                <span className="av">
+                                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <circle cx="9" cy="8.5" r="3.2" />
+                                    <path d="M3 19c.6-3.4 3-5 6-5s5.4 1.6 6 5" />
+                                    <path d="M16.5 5.6a3 3 0 0 1 0 5.8M18 14.3c1.7.5 2.7 2 3 4.7" />
+                                  </svg>
+                                </span>
+                                <span className="mst-text">
+                                  <span className="nm">Любой мастер</span>
+                                  <span className="nx">первый свободный специалист</span>
+                                </span>
+                              </button>
+                            </div>
 
                             {/* Specific masters */}
                             {staffList.map(st => {
                               const isSelected = typeof selectedStaff === 'object' && selectedStaff !== null && selectedStaff.id === st.id;
                               const ini = (st.display_name || 'М')[0].toUpperCase();
+                              const bio = ((st as StaffView).bio || '').trim();
+                              const hasMore = bio.length > 0 || (st.role_title || '').length > 90;
                               return (
-                                <button
+                                <div
                                   key={st.id}
-                                  type="button"
-                                  className="mst tap"
-                                  aria-pressed={isSelected}
-                                  onClick={() => handleSelectStaff(st)}
+                                  className="mst"
+                                  data-selected={isSelected ? 'true' : undefined}
                                 >
-                                  <span className="av">{ini}</span>
-                                  <span style={{ display: 'block', minWidth: 0 }}>
-                                    <span className="nm">{st.display_name}</span>
-                                    <span className="nx">{st.role_title || 'Специалист'}</span>
-                                  </span>
-                                </button>
+                                  <button
+                                    type="button"
+                                    className="mst-main tap"
+                                    aria-pressed={isSelected}
+                                    onClick={() => handleSelectStaff(st)}
+                                  >
+                                    <span className="av">{ini}</span>
+                                    <span className="mst-text">
+                                      <span className="nm">{st.display_name}</span>
+                                      <span className="nx">{st.role_title || 'Специалист'}</span>
+                                    </span>
+                                  </button>
+                                  {hasMore && (
+                                    <button type="button" className="mst-more" onClick={() => setDetailStaff(st as StaffView)}>
+                                      О мастере
+                                    </button>
+                                  )}
+                                </div>
                               );
                             })}
                           </div>
@@ -1360,6 +1380,48 @@ export const App: React.FC = () => {
                 }}
               >
                 {selectedServices.some(s => s.id === detailSvc.id) ? 'Готово' : 'Выбрать услугу'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Master Details Bottom Sheet */}
+      <div className="sheet-backdrop" hidden={!detailStaff}>
+        <button
+          type="button"
+          className="scrim"
+          onClick={() => setDetailStaff(null)}
+          aria-label="Закрыть окно"
+        />
+        {detailStaff && (
+          <div className="sheet-panel svc-sheet mst-sheet" role="dialog" aria-label="О мастере">
+            <div className="sheet-head">
+              <h3 className="sheet-title">О мастере</h3>
+              <button type="button" className="sheet-close" onClick={() => setDetailStaff(null)} aria-label="Закрыть">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+            <div className="svc-sheet-body mst-sheet-body">
+              <div className="svc-sheet-name">{detailStaff.display_name}</div>
+              {detailStaff.role_title && <div className="mst-sheet-role">{detailStaff.role_title}</div>}
+              {detailStaff.bio && detailStaff.bio.trim() && (
+                <div className="svc-sheet-desc">{detailStaff.bio}</div>
+              )}
+            </div>
+            <div className="svc-sheet-foot mst-sheet-foot">
+              <button
+                type="button"
+                className="cta"
+                onClick={() => {
+                  const st = detailStaff;
+                  setDetailStaff(null);
+                  handleSelectStaff(st);
+                }}
+              >
+                Выбрать мастера
               </button>
             </div>
           </div>
