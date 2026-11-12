@@ -30,7 +30,16 @@ function getLocalDateString(dateObj: Date = new Date(), timeZone: string = 'Asia
   }
 }
 
-type StaffView = StaffPublicResponse & { bio?: string | null };
+type StaffView = StaffPublicResponse & {
+  bio?: string | null;
+  description?: string | null;
+  about?: string | null;
+};
+
+function getStaffBio(st?: StaffView | null): string {
+  if (!st) return '';
+  return (st.bio || st.description || st.about || '').trim();
+}
 
 function parseYMD(ymd: string): Date {
   const [y, m, d] = ymd.split('-').map(Number);
@@ -810,7 +819,7 @@ export const App: React.FC = () => {
                             {staffList.map(st => {
                               const isSelected = typeof selectedStaff === 'object' && selectedStaff !== null && selectedStaff.id === st.id;
                               const ini = (st.display_name || 'М')[0].toUpperCase();
-                              const bio = ((st as StaffView).bio || '').trim();
+                              const bio = getStaffBio(st as StaffView);
                               const hasMore = bio.length > 0 || (st.role_title || '').length > 90;
                               return (
                                 <div
@@ -1407,8 +1416,8 @@ export const App: React.FC = () => {
             <div className="svc-sheet-body mst-sheet-body">
               <div className="svc-sheet-name">{detailStaff.display_name}</div>
               {detailStaff.role_title && <div className="mst-sheet-role">{detailStaff.role_title}</div>}
-              {detailStaff.bio && detailStaff.bio.trim() && (
-                <div className="svc-sheet-desc">{detailStaff.bio}</div>
+              {getStaffBio(detailStaff) && (
+                <div className="svc-sheet-desc">{getStaffBio(detailStaff)}</div>
               )}
             </div>
             <div className="svc-sheet-foot mst-sheet-foot">
