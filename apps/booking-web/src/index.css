@@ -1144,42 +1144,47 @@ main[data-start] ~ .foot {
   color: var(--muted);
 }
 
-.foot a.big {
+.foot .big {
   display: block;
-  color: inherit;
+  color: var(--ink);
   text-decoration: none;
   font: 600 22px/1.3 var(--font);
   letter-spacing: -0.03em;
-}
-
-.foot a.big:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
+  user-select: text;
 }
 
 .phone-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .cp {
-  width: 32px;
-  height: 32px;
-  padding: 0;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 18px;
   background: transparent;
   color: var(--muted);
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, color 0.2s;
+  gap: 6px;
+  font: 500 13px var(--font);
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
 }
 
 .cp:hover {
   background: var(--accent-soft);
   color: var(--ink);
+}
+
+.cp[data-copied] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--sh1);
+  padding: 0 12px 0 10px;
 }
 
 .btns {
