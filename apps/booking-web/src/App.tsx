@@ -143,7 +143,8 @@ export const App: React.FC = () => {
   // Calendar & Call Modal state
   const [isCalOpen, setIsCalOpen] = useState(false);
   const [isCallOpen, setIsCallOpen] = useState(false);
-  const [expandedSvc, setExpandedSvc] = useState<string[]>([]);
+  const [detailSvc, setDetailSvc] = useState<ServiceItemResponse | null>(null);
+  const [headerOpen, setHeaderOpen] = useState(false);
   const [calMonthOffset, setCalMonthOffset] = useState(0);
 
   // Loading & error
@@ -365,6 +366,8 @@ export const App: React.FC = () => {
   };
 
   // Format total price
+  const nameLong = (site?.display_name || '').length > 100;
+  const addrLong = (selectedBranch?.address || '').length > 120;
   const totalPriceFormatted = useMemo(() => {
     if (selectedSlot && selectedSlot.price_minor > 0) {
       const cur = selectedSlot.currency === 'KZT' ? '₸' : selectedSlot.currency;
@@ -614,7 +617,7 @@ export const App: React.FC = () => {
         {/* Header */}
         <header>
           <div className="header-left">
-            <h1>{site?.display_name || 'Онлайн-запись'}</h1>
+            <h1 className={nameLong && !headerOpen ? 'clamp' : undefined}>{site?.display_name || 'Онлайн-запись'}</h1>
             {branches.length > 1 ? (
               <select
                 className="branch-select"
@@ -636,8 +639,18 @@ export const App: React.FC = () => {
                   <path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z" />
                   <circle cx="12" cy="11" r="2.2" />
                 </svg>
-                <span>{selectedBranch?.address || 'Алматы'}</span>
+                <span className={addrLong && !headerOpen ? 'clamp' : undefined}>{selectedBranch?.address || 'Алматы'}</span>
               </div>
+            )}
+            {(nameLong || addrLong) && (
+              <button
+                type="button"
+                className="hdr-more"
+                aria-expanded={headerOpen}
+                onClick={() => setHeaderOpen(o => !o)}
+              >
+                {headerOpen ? 'Свернуть' : 'Полное название и адрес'}
+              </button>
             )}
           </div>
         </header>
@@ -814,8 +827,8 @@ export const App: React.FC = () => {
                             {services.map(svc => {
                               const isSelected = selectedServices.some(s => s.id === svc.id);
                               const priceFmt = svc.price_formatted || `${svc.base_price_minor / 100} ₸`;
-                              const isExpanded = expandedSvc.includes(svc.id);
-                              const hasMore = (svc.description || '').length > 90;
+                              const isExpanded = false;
+                              const hasMore = (svc.description || '').length > 90 || svc.name.length > 110;
                               return (
                                 <div
                                   key={svc.id}
@@ -838,22 +851,15 @@ export const App: React.FC = () => {
                                     </span>
                                   </button>
                                   {svc.description && (
-                                    <div className="svc-desc" data-open={isExpanded ? 'true' : undefined}>
-                                      {svc.description}
-                                    </div>
+                                    <div className="svc-desc">{svc.description}</div>
                                   )}
                                   {hasMore && (
                                     <button
                                       type="button"
                                       className="svc-more"
-                                      aria-expanded={isExpanded}
-                                      onClick={() =>
-                                        setExpandedSvc(prev =>
-                                          prev.includes(svc.id) ? prev.filter(i => i !== svc.id) : [...prev, svc.id]
-                                        )
-                                      }
+                                      onClick={() => setDetailSvc(svc)}
                                     >
-                                      {isExpanded ? 'Свернуть' : 'Подробнее'}
+                                      Подробнее
                                     </button>
                                   )}
                                   <div className="svc-foot">
@@ -1120,52 +1126,52 @@ export const App: React.FC = () => {
             <div className="perf only-done" />
 
             {/* Facts Table */}
-            <div className="facts">
-              <div className="fact block">
-                <span>Услуга</span>
-                <span>
-                  {selectedServices.length > 0
-                    ? selectedServices.map(s => s.name).join(', ')
-                    : <span className="none">—</span>}
-                </span>
-              </div>
-              <div className="fact block">
-                <span>Мастер</span>
-                <span id="smaster">
-                  {selectedStaff === 'any'
-                    ? 'Любой свободный'
-                    : selectedStaff
-                    ? selectedStaff.display_name
-                    : <span className="none">—</span>}
-                </span>
-              </div>
-              <div className="fact block">
-                <span>Клиент</span>
-                <span id="sClient">
-                  {clientName.trim() || <span className="none">—</span>}
-                </span>
-              </div>
-              <div className="fact only-done">
-                <span>Телефон</span>
-                <span id="sPhone">{clientPhone || '—'}</span>
-              </div>
-              {totalDuration > 0 && (
-                <div className="fact">
-                  <span>Длительность</span>
-                  <span>{totalDuration} мин</span>
+            {(selectedServices.length > 0 || selectedStaff || clientName.trim() || totalDuration > 0 || isDone) && (
+              <div className="facts">
+                {selectedServices.length > 0 && (
+                  <div className="fact block">
+                    <span>Услуга</span>
+                    <span>{selectedServices.map(s => s.name).join(', ')}</span>
+                  </div>
+                )}
+                {selectedStaff && (
+                  <div className="fact block">
+                    <span>Мастер</span>
+                    <span id="smaster">
+                      {selectedStaff === 'any' ? 'Любой свободный' : selectedStaff.display_name}
+                    </span>
+                  </div>
+                )}
+                {clientName.trim() && (
+                  <div className="fact block">
+                    <span>Клиент</span>
+                    <span id="sClient">{clientName.trim()}</span>
+                  </div>
+                )}
+                <div className="fact only-done">
+                  <span>Телефон</span>
+                  <span id="sPhone">{clientPhone || '—'}</span>
                 </div>
-              )}
-              <div className="fact block only-done">
-                <span>Адрес</span>
-                <span>{selectedBranch?.address || 'Алматы'}</span>
+                {totalDuration > 0 && (
+                  <div className="fact">
+                    <span>Длительность</span>
+                    <span>{totalDuration} мин</span>
+                  </div>
+                )}
+                <div className="fact block only-done">
+                  <span>Адрес</span>
+                  <span>{selectedBranch?.address || 'Алматы'}</span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Total Price */}
-            <div className="total">
-              <span>Итого</span>
-              <span>{totalPriceFormatted}</span>
-            </div>
+            {selectedServices.length > 0 && (
+              <div className="total">
+                <span>Итого</span>
+                <span>{totalPriceFormatted}</span>
+              </div>
+            )}
 
             {/* Error banner if any */}
             {error && (
@@ -1315,6 +1321,49 @@ export const App: React.FC = () => {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Service Details Bottom Sheet */}
+      <div className="sheet-backdrop" hidden={!detailSvc}>
+        <button
+          type="button"
+          className="scrim"
+          onClick={() => setDetailSvc(null)}
+          aria-label="Закрыть окно"
+        />
+        {detailSvc && (
+          <div className="sheet-panel svc-sheet" role="dialog" aria-label="Подробности услуги">
+            <div className="sheet-head">
+              <h3 className="sheet-title">Об услуге</h3>
+              <button type="button" className="sheet-close" onClick={() => setDetailSvc(null)} aria-label="Закрыть">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+            <div className="svc-sheet-body">
+              <div className="svc-sheet-name">{detailSvc.name}</div>
+              {detailSvc.description && <div className="svc-sheet-desc">{detailSvc.description}</div>}
+            </div>
+            <div className="svc-sheet-foot">
+              <div className="svc-sheet-meta">
+                <span>{detailSvc.base_duration_minutes} мин</span>
+                <b>{detailSvc.price_formatted || `${detailSvc.base_price_minor / 100} ₸`}</b>
+              </div>
+              <button
+                type="button"
+                className="cta"
+                onClick={() => {
+                  const svc = detailSvc;
+                  setDetailSvc(null);
+                  if (!selectedServices.some(s => s.id === svc.id)) handleSelectService(svc);
+                }}
+              >
+                {selectedServices.some(s => s.id === detailSvc.id) ? 'Готово' : 'Выбрать услугу'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Calendar Modal */}
