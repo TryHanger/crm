@@ -561,13 +561,13 @@ main[data-start] .sum {
   margin-top: calc(14px * var(--u));
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: start;
   gap: calc(8px * var(--u));
 }
 
 .mst {
   position: relative;
-  min-height: calc(76px * var(--u));
-  padding: 12px 16px 12px 14px;
+  padding: 14px 16px 14px 14px;
   border-radius: calc(var(--r) * 0.68);
   background: var(--tile);
   display: flex;
@@ -1686,7 +1686,13 @@ h1.clamp,
   max-height: 85dvh;
 }
 
+.svc-sheet .sheet-head,
+.svc-sheet-foot {
+  flex: none;
+}
+
 .svc-sheet-body {
+  flex: 1 1 auto;
   padding: 0 16px 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
