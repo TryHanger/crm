@@ -141,8 +141,8 @@ header {
 
 .header-left {
   display: flex;
-  align-items: baseline;
-  gap: 16px;
+  align-items: center;
+  gap: 10px 16px;
   flex-wrap: wrap;
 }
 
@@ -1128,7 +1128,7 @@ main[data-done] .flow {
   padding: 4px 6px 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 16px;
   flex-wrap: wrap;
 }
@@ -1138,64 +1138,17 @@ main[data-start] ~ .foot {
   margin-inline: auto;
 }
 
-.lbl {
-  margin-bottom: 4px;
-  font: 500 13px var(--font);
-  color: var(--muted);
-}
-
-.foot .big {
-  display: block;
-  color: var(--ink);
-  text-decoration: none;
-  font: 600 22px/1.3 var(--font);
-  letter-spacing: -0.03em;
-  user-select: text;
-}
-
-.phone-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.cp {
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 18px;
-  background: transparent;
-  color: var(--muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font: 500 13px var(--font);
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-}
-
-.cp:hover {
-  background: var(--accent-soft);
-  color: var(--ink);
-}
-
-.cp[data-copied] {
-  background: var(--card);
-  color: var(--ink);
-  box-shadow: var(--sh1);
-  padding: 0 12px 0 10px;
-}
-
 .btns {
   display: flex;
-  gap: 8px;
+  justify-content: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .btn {
   height: 46px;
   padding: 0 22px 0 18px;
+  border: 0;
   border-radius: 23px;
   display: inline-flex;
   align-items: center;
@@ -1207,6 +1160,129 @@ main[data-start] ~ .foot {
   box-shadow: var(--sh1);
   font: 600 15px var(--font);
   transition: background 0.2s, transform 0.15s;
+}
+
+/* Bottom Sheet for Call */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sheet-backdrop[hidden] {
+  display: none;
+}
+
+.sheet-panel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 480px;
+  background: var(--card);
+  border-radius: var(--r) var(--r) 0 0;
+  padding: 20px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  box-shadow: var(--sh2);
+  animation: sheetUp 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sheet-title {
+  margin: 0;
+  font: 600 20px/1.2 var(--font);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.sheet-panel .round {
+  background: var(--tile);
+  box-shadow: none;
+}
+
+.sheet-call-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: calc(var(--r) * 0.65);
+  background: var(--tile);
+  text-decoration: none;
+  color: var(--ink);
+  transition: background 0.2s, transform 0.15s;
+}
+
+.sheet-call-row:hover {
+  background: var(--accent-soft);
+}
+
+.sheet-call-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sheet-call-ic {
+  color: #16A34A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-call-num {
+  font: 600 18px/1.2 var(--font);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-call-arrow {
+  color: var(--muted);
+}
+
+.sheet-copy-btn {
+  margin-top: 10px;
+  width: 100%;
+  height: 46px;
+  border: 0;
+  border-radius: calc(var(--r) * 0.65);
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: 500 14px var(--font);
+  transition: background 0.2s, color 0.2s;
+}
+
+.sheet-copy-btn:hover {
+  background: var(--tile);
+  color: var(--ink);
+}
+
+.sheet-copy-btn[data-copied] {
+  color: #16A34A;
+  font-weight: 600;
+}
+
+@keyframes sheetUp {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .btn:visited {
