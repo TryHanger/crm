@@ -138,7 +138,6 @@ export const App: React.FC = () => {
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
   const [domainNotFound, setDomainNotFound] = useState(false);
   const [tenantSuspended, setTenantSuspended] = useState(false);
-  const [copiedPhone, setCopiedPhone] = useState(false);
 
   // Step ordering: service is always first in both variants
   const stepOrder = useMemo(() => {
@@ -440,14 +439,6 @@ export const App: React.FC = () => {
     if (d) res += `-${d}`;
 
     setClientPhone(res);
-  };
-
-  // Copy phone handler
-  const handleCopyPhone = () => {
-    const p = selectedBranch?.phone || selectedBranch?.phone_number || '+7 (701) 555-01-23';
-    navigator.clipboard?.writeText(p);
-    setCopiedPhone(true);
-    setTimeout(() => setCopiedPhone(false), 2000);
   };
 
   // 8 Date chips array
@@ -1249,17 +1240,17 @@ export const App: React.FC = () => {
             <h3 className="sheet-title">Телефон</h3>
             <button
               type="button"
-              className="round tap"
+              className="sheet-close"
               onClick={() => setIsCallOpen(false)}
               aria-label="Закрыть"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                 <path d="M6 6l12 12M18 6L6 18" />
               </svg>
             </button>
           </div>
           <a
-            className="sheet-call-row tap"
+            className="sheet-call-row"
             href={`tel:${(selectedBranch?.phone || selectedBranch?.phone_number || '+77015550123').replace(/[^+\d]/g, '')}`}
           >
             <span className="sheet-call-left">
@@ -1276,29 +1267,6 @@ export const App: React.FC = () => {
               <path d="M9 6l6 6-6 6" />
             </svg>
           </a>
-          <button
-            type="button"
-            className="sheet-copy-btn tap"
-            data-copied={copiedPhone ? '' : undefined}
-            onClick={handleCopyPhone}
-          >
-            {copiedPhone ? (
-              <>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M5 12.5l4.5 4.5L19 7.5" />
-                </svg>
-                <span>Скопировано</span>
-              </>
-            ) : (
-              <>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="9" y="9" width="11" height="11" rx="3" />
-                  <path d="M5 15V7a3 3 0 0 1 3-3h8" />
-                </svg>
-                <span>Скопировать номер</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
 

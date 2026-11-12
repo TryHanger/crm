@@ -117,8 +117,12 @@ html[data-done] .deco {
   position: relative;
   z-index: 1;
   max-width: 1120px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   margin: 0 auto;
-  padding: 32px max(16px, env(safe-area-inset-right, 0px)) 96px max(16px, env(safe-area-inset-left, 0px));
+  padding: 32px max(16px, env(safe-area-inset-right, 0px)) max(28px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
   transition: max-width 0.25s ease;
 }
 
@@ -183,10 +187,12 @@ h1 {
 }
 
 main {
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: calc(20px * var(--u));
   align-items: start;
+  align-content: start;
 }
 
 .flow {
@@ -1183,7 +1189,7 @@ main[data-start] ~ .foot {
   max-width: 480px;
   background: var(--card);
   border-radius: var(--r) var(--r) 0 0;
-  padding: 20px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  padding: 20px 0 calc(20px + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--sh2);
   animation: sheetUp 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
@@ -1193,7 +1199,8 @@ main[data-start] ~ .foot {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  padding: 0 16px;
+  margin-bottom: 14px;
 }
 
 .sheet-title {
@@ -1203,22 +1210,34 @@ main[data-start] ~ .foot {
   color: var(--ink);
 }
 
-.sheet-panel .round {
-  background: var(--tile);
-  box-shadow: none;
+.sheet-close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-close:hover {
+  color: var(--ink);
 }
 
 .sheet-call-row {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 16px 18px;
-  border-radius: calc(var(--r) * 0.65);
+  padding: 16px 16px;
+  border-radius: 0;
   background: var(--tile);
   text-decoration: none;
   color: var(--ink);
-  transition: background 0.2s, transform 0.15s;
+  transition: background 0.2s;
 }
 
 .sheet-call-row:hover {
@@ -1246,32 +1265,6 @@ main[data-start] ~ .foot {
 
 .sheet-call-arrow {
   color: var(--muted);
-}
-
-.sheet-copy-btn {
-  margin-top: 10px;
-  width: 100%;
-  height: 46px;
-  border: 0;
-  border-radius: calc(var(--r) * 0.65);
-  background: transparent;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font: 500 14px var(--font);
-  transition: background 0.2s, color 0.2s;
-}
-
-.sheet-copy-btn:hover {
-  background: var(--tile);
-  color: var(--ink);
-}
-
-.sheet-copy-btn[data-copied] {
-  color: #16A34A;
-  font-weight: 600;
 }
 
 @keyframes sheetUp {
