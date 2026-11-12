@@ -1237,6 +1237,13 @@ main[data-start] ~ .foot {
   color: var(--ink);
 }
 
+.sheet-call-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
 .sheet-call-row {
   width: 100%;
   display: flex;
@@ -1245,14 +1252,20 @@ main[data-start] ~ .foot {
   gap: 14px;
   padding: 16px 16px;
   border-radius: 0;
-  background: var(--tile);
+  background: transparent;
   text-decoration: none;
   color: var(--ink);
   transition: background 0.2s;
 }
 
-.sheet-call-row:hover {
-  background: var(--accent-soft);
+.sheet-call-row + .sheet-call-row {
+  border-top: 1px solid var(--hair);
+}
+
+.sheet-call-row:hover,
+.sheet-call-row:active,
+.sheet-call-row:focus-visible {
+  background: var(--tile);
 }
 
 .sheet-call-left {

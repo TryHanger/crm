@@ -35,6 +35,20 @@ function parseYMD(ymd: string): Date {
   return new Date(y, m - 1, d);
 }
 
+function getBranchPhones(branch?: (BranchResponse & { phones?: string[] | null }) | null): string[] {
+  if (!branch) return ['+7 (701) 555-01-23'];
+  if (Array.isArray(branch.phones) && branch.phones.length > 0) {
+    const cleaned = branch.phones.map((p) => p.trim()).filter(Boolean);
+    if (cleaned.length > 0) return cleaned;
+  }
+  const raw = String(branch.phone || branch.phone_number || '');
+  const list = raw
+    .split(/[,;\n]+/)
+    .map((p: string) => p.trim())
+    .filter(Boolean);
+  return list.length > 0 ? list : ['+7 (701) 555-01-23'];
+}
+
 function formatDayTitle(ymd: string, todayYmd: string): string {
   if (!ymd) return 'Дата не выбрана';
   const d = parseYMD(ymd);
@@ -1249,24 +1263,27 @@ export const App: React.FC = () => {
               </svg>
             </button>
           </div>
-          <a
-            className="sheet-call-row"
-            href={`tel:${(selectedBranch?.phone || selectedBranch?.phone_number || '+77015550123').replace(/[^+\d]/g, '')}`}
-          >
-            <span className="sheet-call-left">
-              <span className="sheet-call-ic">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24c1.12.37 2.33.57 3.58.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.46.57 3.58a1 1 0 0 1-.25 1.01l-2.2 2.2z" />
+          <div className="sheet-call-list">
+            {getBranchPhones(selectedBranch).map((phone) => (
+              <a
+                key={phone}
+                className="sheet-call-row"
+                href={`tel:${phone.replace(/[^+\d]/g, '')}`}
+              >
+                <span className="sheet-call-left">
+                  <span className="sheet-call-ic">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24c1.12.37 2.33.57 3.58.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.46.57 3.58a1 1 0 0 1-.25 1.01l-2.2 2.2z" />
+                    </svg>
+                  </span>
+                  <span className="sheet-call-num">{phone}</span>
+                </span>
+                <svg className="sheet-call-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" />
                 </svg>
-              </span>
-              <span className="sheet-call-num">
-                {selectedBranch?.phone || selectedBranch?.phone_number || '+7 (701) 555-01-23'}
-              </span>
-            </span>
-            <svg className="sheet-call-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M9 6l6 6-6 6" />
-            </svg>
-          </a>
+              </a>
+            ))}
+          </div>
         </div>
       </div>
 
