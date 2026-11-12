@@ -630,6 +630,8 @@ export const App: React.FC = () => {
         <header>
           <div className="header-left">
             <h1 className={nameLong && !headerOpen ? 'clamp' : undefined}>{site?.display_name || 'Онлайн-запись'}</h1>
+          </div>
+          <div className="header-right">
             {branches.length > 1 ? (
               <select
                 className="branch-select"
@@ -654,17 +656,17 @@ export const App: React.FC = () => {
                 <span className={addrLong && !headerOpen ? 'clamp' : undefined}>{selectedBranch?.address || 'Алматы'}</span>
               </div>
             )}
-            {(nameLong || addrLong) && (
-              <button
-                type="button"
-                className="hdr-more"
-                aria-expanded={headerOpen}
-                onClick={() => setHeaderOpen(o => !o)}
-              >
-                {headerOpen ? 'Свернуть' : 'Полное название и адрес'}
-              </button>
-            )}
           </div>
+          {(nameLong || addrLong) && (
+            <button
+              type="button"
+              className="hdr-more"
+              aria-expanded={headerOpen}
+              onClick={() => setHeaderOpen(o => !o)}
+            >
+              {headerOpen ? 'Свернуть' : 'Полное название и адрес'}
+            </button>
+          )}
         </header>
 
         {/* Main Grid: Left Flow + Right Summary */}
