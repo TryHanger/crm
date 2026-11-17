@@ -50,6 +50,17 @@ Production-grade modular backend powering three independent frontend experiences
 
 ---
 
+## 🛠 Локальный запуск всего продукта (одна команда)
+```bash
+pip install -r requirements.txt && npm ci
+python scripts/dev_stack.py            # PostgreSQL (docker, :5433) + миграции + демо-данные + API + 3 SPA
+python scripts/dev_stack.py --smoke    # то же и smoke-тест изоляции двух компаний
+```
+- Запись: http://barberhouse.localhost:3000 и http://moderncut.localhost:3000
+- CRM: http://localhost:3001 (owner@barberhouse.kz / owner@moderncut.kz, `Password123!`)
+- Platform Console: http://localhost:3002, API docs: http://localhost:8000/docs
+- Схема БД создаётся только миграциями (`alembic upgrade head`); изменение модели требует новой ревизии, иначе падает `test_migrations.py` и `alembic check` в CI.
+
 ## 🛠 Quick Start (Docker Compose)
 ```bash
 # 1. Start PostgreSQL and API service

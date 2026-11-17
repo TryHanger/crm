@@ -194,6 +194,8 @@ jobs:
             done
           done
           curl -s http://127.0.0.1:8000/api/v1/public/site -H "Host: barberhouse.book.example.kz"
+          # M01 smoke: public booking for tenant A through Booking Web origin, CRM A sees it, tenant B isolated
+          python scripts/smoke_two_tenants.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots
