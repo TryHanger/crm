@@ -17,6 +17,7 @@ from apps.api.app.infrastructure.db.models import (
 )
 from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineError
 from apps.api.app.infrastructure.security.rate_limiter import rate_limit
+from apps.api.app.modules.finance import money
 from apps.api.app.modules.schemas import (
     PublicSiteResponse, BranchResponse, ServiceItemResponse, StaffPublicResponse,
     AvailabilitySearchRequest, AvailabilitySearchResponse, CreatePublicBookingRequest,
@@ -93,7 +94,11 @@ async def get_public_services(
     pub_ctx: ResolvedPublicTenant = Depends(resolve_public_tenant),
     db: AsyncSession = Depends(get_db)
 ):
-    """Returns services published for online booking."""
+    """Returns services published for online booking.
+
+    With branch_id: only services that an active, online-bookable master actually offers
+    in that branch of this company (M04 branch separation).
+    """
     stmt = select(Service, ServiceCategory).outerjoin(
         ServiceCategory, ServiceCategory.id == Service.category_id
     ).where(
@@ -102,11 +107,31 @@ async def get_public_services(
         Service.online_visible == True,
         Service.archived_at.is_(None)
     ).order_by(Service.sort_order, Service.name)
+    if branch_id is not None:
+        branch_ok = (await db.execute(select(Branch.id).where(
+            Branch.id == branch_id, Branch.tenant_id == pub_ctx.tenant.id))).first()
+        if not branch_ok:
+            raise HTTPException(status_code=404, detail={"code": "BRANCH_NOT_FOUND", "message": "Филиал не найден"})
+        offered_here = select(StaffServiceOffer.id).join(
+            StaffBranch, and_(StaffBranch.tenant_id == StaffServiceOffer.tenant_id,
+                              StaffBranch.staff_id == StaffServiceOffer.staff_id,
+                              StaffBranch.branch_id == StaffServiceOffer.branch_id,
+                              StaffBranch.active == True)
+        ).join(
+            StaffProfile, and_(StaffProfile.id == StaffServiceOffer.staff_id,
+                               StaffProfile.active == True, StaffProfile.online_bookable == True)
+        ).where(
+            StaffServiceOffer.tenant_id == pub_ctx.tenant.id,
+            StaffServiceOffer.branch_id == branch_id,
+            StaffServiceOffer.service_id == Service.id,
+            StaffServiceOffer.active == True,
+            StaffServiceOffer.online_visible == True,
+        ).exists()
+        stmt = stmt.where(offered_here)
 
     res = await db.execute(stmt)
     items = []
     for s, cat in res.all():
-        price_tenge = s.base_price_minor / 100
         items.append(ServiceItemResponse(
             id=s.id,
             category_id=cat.id if cat else None,
@@ -114,7 +139,7 @@ async def get_public_services(
             name=s.name,
             description=s.description,
             base_price_minor=s.base_price_minor,
-            price_formatted=f"{price_tenge:,.0f} ₸".replace(",", " "),
+            price_formatted=money.format_minor(s.base_price_minor, s.currency),
             currency=s.currency,
             base_duration_minutes=s.base_duration_minutes
         ))
@@ -198,7 +223,6 @@ async def get_staff_services(
     for s, offer, cat in res.all():
         effective_price = offer.price_override_minor if offer.price_override_minor is not None else s.base_price_minor
         effective_duration = offer.duration_override_minutes if offer.duration_override_minutes is not None else s.base_duration_minutes
-        price_tenge = effective_price / 100
 
         results.append(ServiceItemResponse(
             id=s.id,
@@ -207,7 +231,7 @@ async def get_staff_services(
             name=s.name,
             description=s.description,
             base_price_minor=effective_price,
-            price_formatted=f"{price_tenge:,.0f} ₸".replace(",", " "),
+            price_formatted=money.format_minor(effective_price, s.currency),
             currency=s.currency,
             base_duration_minutes=effective_duration
         ))

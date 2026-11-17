@@ -3,7 +3,7 @@ from datetime import datetime, time
 from typing import Optional, List, Any
 from sqlalchemy import (
     String, Integer, Boolean, DateTime, Time, ForeignKey, Index, Text, JSON,
-    UniqueConstraint, CheckConstraint, text
+    UniqueConstraint, CheckConstraint, ForeignKeyConstraint, text
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, TSRANGE
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -466,7 +466,7 @@ class ServiceCategory(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    services: Mapped[List["Service"]] = relationship("Service", back_populates="category", cascade="all, delete-orphan")
+    services: Mapped[List["Service"]] = relationship("Service", back_populates="category", cascade="all, delete-orphan", foreign_keys="Service.category_id")
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_cat_tenant_id"),
@@ -489,10 +489,13 @@ class Service(Base):
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    category: Mapped[Optional["ServiceCategory"]] = relationship("ServiceCategory", back_populates="services")
+    category: Mapped[Optional["ServiceCategory"]] = relationship("ServiceCategory", back_populates="services", foreign_keys=[category_id])
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_service_tenant_id"),
+        # M04: category must belong to the same company (single FK alone does not check tenant)
+        ForeignKeyConstraint(["tenant_id", "category_id"], ["service_categories.tenant_id", "service_categories.id"],
+                             name="fk_service_category_same_tenant"),
     )
 
 
@@ -509,7 +512,7 @@ class StaffProfile(Base):
     color: Mapped[str] = mapped_column(String(16), default="#3B82F6", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
-    offers: Mapped[List["StaffServiceOffer"]] = relationship("StaffServiceOffer", back_populates="staff", cascade="all, delete-orphan")
+    offers: Mapped[List["StaffServiceOffer"]] = relationship("StaffServiceOffer", back_populates="staff", cascade="all, delete-orphan", foreign_keys="StaffServiceOffer.staff_id")
     shifts: Mapped[List["WeeklyShift"]] = relationship("WeeklyShift", back_populates="staff", cascade="all, delete-orphan")
     time_off: Mapped[List["StaffTimeOff"]] = relationship("StaffTimeOff", back_populates="staff", cascade="all, delete-orphan")
 
@@ -531,6 +534,11 @@ class StaffBranch(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "staff_id", "branch_id", name="uq_staff_branch_pair"),
+        # M04: a staff member can be assigned only to a branch of the same company
+        ForeignKeyConstraint(["tenant_id", "staff_id"], ["staff_profiles.tenant_id", "staff_profiles.id"],
+                             name="fk_staff_branch_staff_same_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"],
+                             name="fk_staff_branch_branch_same_tenant", ondelete="CASCADE"),
     )
 
 
@@ -547,10 +555,17 @@ class StaffServiceOffer(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     online_visible: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    staff: Mapped["StaffProfile"] = relationship("StaffProfile", back_populates="offers")
+    staff: Mapped["StaffProfile"] = relationship("StaffProfile", back_populates="offers", foreign_keys=[staff_id])
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "staff_id", "branch_id", "service_id", name="uq_staff_branch_service_offer"),
+        # M04: staff, branch and service of a price offer must belong to the offer's company
+        ForeignKeyConstraint(["tenant_id", "staff_id"], ["staff_profiles.tenant_id", "staff_profiles.id"],
+                             name="fk_offer_staff_same_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"],
+                             name="fk_offer_branch_same_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["tenant_id", "service_id"], ["services.tenant_id", "services.id"],
+                             name="fk_offer_service_same_tenant", ondelete="CASCADE"),
     )
 
 
@@ -685,6 +700,9 @@ class BookingItem(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_bitem_tenant_id"),
+        # M04: the price snapshot always refers to a service of the same company
+        ForeignKeyConstraint(["tenant_id", "service_id"], ["services.tenant_id", "services.id"],
+                             name="fk_bitem_service_same_tenant"),
     )
 
 

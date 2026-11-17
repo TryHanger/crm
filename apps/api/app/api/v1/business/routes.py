@@ -3,6 +3,9 @@ import datetime
 import zoneinfo
 from typing import List, Optional, Any, Union, Dict
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
+from fastapi.encoders import jsonable_encoder
+from pydantic import ValidationError
+from apps.api.app.modules.catalog import ownership
 from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -833,6 +836,8 @@ async def create_staff(
         color=req.color,
         online_bookable=req.online_bookable
     )
+    for b_id in req.branch_ids:
+        await ownership.require_branch(db, crm_user.tenant_id, b_id)
     db.add(staff)
     await db.flush()
 
@@ -879,13 +884,30 @@ async def update_staff_services(
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Sets master-specific price and duration overrides."""
+    """Sets master-specific price and duration overrides.
+
+    Staff, branch and service must belong to the caller's company and the staff member
+    must work in that branch; prices are validated as integer minor units (M04).
+    """
     await check_crm_write_permitted(crm_user.tenant_id, db)
     raw_offers = payload.get("offers", []) if isinstance(payload, dict) else payload
-    offers: List[StaffServiceOfferUpdateRequest] = [
-        off if isinstance(off, StaffServiceOfferUpdateRequest) else StaffServiceOfferUpdateRequest(**off)
-        for off in raw_offers
-    ]
+    try:
+        offers: List[StaffServiceOfferUpdateRequest] = [
+            off if isinstance(off, StaffServiceOfferUpdateRequest) else StaffServiceOfferUpdateRequest(**off)
+            for off in raw_offers
+        ]
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=jsonable_encoder(e.errors(include_url=False, include_context=False)))
+    await ownership.require_staff(db, crm_user.tenant_id, staff_id)
+    seen_pairs = set()
+    for off in offers:
+        pair = (off.branch_id, off.service_id)
+        if pair in seen_pairs:
+            raise HTTPException(status_code=422, detail={"code": "DUPLICATE_OFFER", "message": "Одна и та же услуга филиала указана дважды"})
+        seen_pairs.add(pair)
+        await ownership.require_branch(db, crm_user.tenant_id, off.branch_id)
+        await ownership.require_service(db, crm_user.tenant_id, off.service_id)
+        await ownership.require_staff_in_branch(db, crm_user.tenant_id, staff_id, off.branch_id)
     for off in offers:
         stmt = select(StaffServiceOffer).where(
             StaffServiceOffer.tenant_id == crm_user.tenant_id,
@@ -967,12 +989,14 @@ async def create_service(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
+    await ownership.require_category(db, crm_user.tenant_id, req.category_id)
     svc = Service(
         tenant_id=crm_user.tenant_id,
         category_id=req.category_id,
-        name=req.name,
+        name=req.name.strip(),
         description=req.description,
         base_price_minor=req.base_price_minor,
+        currency=await ownership.tenant_currency(db, crm_user.tenant_id),
         base_duration_minutes=req.base_duration_minutes,
         active=req.active,
         online_visible=req.online_visible
@@ -1672,10 +1696,14 @@ async def update_staff_profile(
     if req.active is not None: staff.active = req.active
 
     if req.branch_ids is not None:
+        for b_id in req.branch_ids:
+            await ownership.require_branch(db, crm_user.tenant_id, b_id)
         stmt_del = select(StaffBranch).where(StaffBranch.staff_id == staff.id)
         existing_sb = (await db.execute(stmt_del)).scalars().all()
         for sb in existing_sb:
             await db.delete(sb)
+        # deletes must reach the DB before re-inserting the same (staff, branch) pairs
+        await db.flush()
         for b_id in req.branch_ids:
             new_sb = StaffBranch(tenant_id=crm_user.tenant_id, staff_id=staff.id, branch_id=b_id)
             db.add(new_sb)
@@ -1809,7 +1837,9 @@ async def update_service(
     if not svc:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    if req.name is not None: svc.name = req.name
+    if req.category_id is not None:
+        await ownership.require_category(db, crm_user.tenant_id, req.category_id)
+    if req.name is not None: svc.name = req.name.strip()
     if req.category_id is not None: svc.category_id = req.category_id
     if req.description is not None: svc.description = req.description
     if req.base_price_minor is not None: svc.base_price_minor = req.base_price_minor

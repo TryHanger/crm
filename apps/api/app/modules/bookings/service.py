@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from fastapi import HTTPException, status
 
+from apps.api.app.modules.finance import money
 from apps.api.app.infrastructure.db.session import set_tenant_context
 from apps.api.app.infrastructure.db.models import (
     Tenant, Subscription, Booking, BookingItem, StaffOccupancy, CalendarBlock, BookingEvent,
@@ -108,6 +109,12 @@ class BookingEngine:
                 "price_minor": price,
                 "currency": service.currency
             })
+
+        # M04 money contract: one currency per booking/order, never a silent mixed sum
+        try:
+            money.sum_same_currency([(it["price_minor"], it["currency"]) for it in items])
+        except money.MoneyError as e:
+            raise BookingEngineError(e.code, e.message, 422)
 
         return total_duration, total_price, items
 

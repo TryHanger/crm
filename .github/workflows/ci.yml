@@ -198,6 +198,8 @@ jobs:
           python scripts/smoke_two_tenants.py
           # M02 smoke: operator creates company, owner accepts the invite once and logs in
           python scripts/smoke_onboarding.py
+          # M04 smoke: 8000 KZT service created in CRM is visible in its branch on the booking site
+          python scripts/smoke_pricing.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots

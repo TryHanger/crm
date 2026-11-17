@@ -2,6 +2,12 @@ import uuid
 import datetime
 from typing import Optional, List, Any, Dict
 from pydantic import BaseModel, Field, EmailStr, model_validator
+from apps.api.app.modules.finance.money import MAX_PRICE_MINOR
+
+# M04 money/catalog contract: prices are integer minor units (KZT tiyn), 0..MAX_PRICE_MINOR;
+# durations are whole minutes within one working day.
+MIN_DURATION_MINUTES = 5
+MAX_DURATION_MINUTES = 720
 
 # Standard Error Envelope
 class ErrorDetail(BaseModel):
@@ -212,22 +218,22 @@ class StaffCreateRequest(BaseModel):
 class StaffServiceOfferUpdateRequest(BaseModel):
     branch_id: uuid.UUID
     service_id: uuid.UUID
-    price_override_minor: Optional[int] = None
-    duration_override_minutes: Optional[int] = None
+    price_override_minor: Optional[int] = Field(default=None, ge=0, le=MAX_PRICE_MINOR)
+    duration_override_minutes: Optional[int] = Field(default=None, ge=MIN_DURATION_MINUTES, le=MAX_DURATION_MINUTES)
     active: bool = True
     online_visible: bool = True
 
 class ServiceCreateRequest(BaseModel):
     category_id: Optional[uuid.UUID] = None
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
-    base_price_minor: int
-    base_duration_minutes: int
+    base_price_minor: int = Field(ge=0, le=MAX_PRICE_MINOR)
+    base_duration_minutes: int = Field(ge=MIN_DURATION_MINUTES, le=MAX_DURATION_MINUTES)
     active: bool = True
     online_visible: bool = True
 
 class ServiceCategoryCreateRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     sort_order: int = 0
 
 class BookingPolicyUpdateRequest(BaseModel):
@@ -375,10 +381,10 @@ class StaffScheduleUpdateRequest(BaseModel):
 
 class ServiceUpdateRequest(BaseModel):
     category_id: Optional[uuid.UUID] = None
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = None
-    base_price_minor: Optional[int] = None
-    base_duration_minutes: Optional[int] = None
+    base_price_minor: Optional[int] = Field(default=None, ge=0, le=MAX_PRICE_MINOR)
+    base_duration_minutes: Optional[int] = Field(default=None, ge=MIN_DURATION_MINUTES, le=MAX_DURATION_MINUTES)
     active: Optional[bool] = None
     online_visible: Optional[bool] = None
 

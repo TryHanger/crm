@@ -603,6 +603,10 @@ async def test_crm_revenue_semantics_and_multi_branch_pricing_isolation():
             }]
         }, headers=mc_headers)
 
+        # The master must work in Branch 2 before a Branch 2 price can be set (M04)
+        assign = await client.patch(f"/api/v1/business/staff/{staff_id}", json={"branch_ids": [b1_id, b2_id]}, headers=mc_headers)
+        assert assign.status_code == 200, assign.text
+
         # Set price in Branch 2 to 12 000 KZT
         await client.put(f"/api/v1/business/staff/{staff_id}/services", json={
             "offers": [{
