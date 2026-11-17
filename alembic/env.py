@@ -10,10 +10,13 @@ from apps.api.app.core.config import settings
 from apps.api.app.infrastructure.db.models import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.ADMIN_SYNC_DATABASE_URL.replace("%", "%%"))
+# init_db.alembic_config() can point the run at another database (migration tests)
+_url = config.attributes.get("database_url") or settings.ADMIN_SYNC_DATABASE_URL
+config.set_main_option("sqlalchemy.url", _url.replace("%", "%%"))
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # keep application loggers alive when migrations run inside the app/test process
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
