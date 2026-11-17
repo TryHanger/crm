@@ -205,6 +205,13 @@ class Settings(BaseSettings):
 
     BOOKING_DOMAIN_SUFFIX: str = Field(default=os.getenv("BOOKING_DOMAIN_SUFFIX", ".book.example.kz"))
 
+    API_DOMAIN: str = Field(default=os.getenv("API_DOMAIN", "api.example.kz"))
+
+    # Host -> API group routing (host_policy). None = strict everywhere except development/test.
+    STRICT_HOST_ROUTING: Optional[bool] = Field(
+        default={"true": True, "1": True, "false": False, "0": False}.get(os.getenv("STRICT_HOST_ROUTING", "").strip().lower())
+    )
+
 
 
     # SMTP & Transactional Delivery Transport

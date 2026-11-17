@@ -203,6 +203,10 @@ def test_https_request(
     return status_code, resp_headers, body_part
 
 
+# host port of the proxy HTTP listener (80 may be taken locally, e.g. by http.sys on Windows)
+HTTP_PORT = int(os.environ.get("PROXY_HTTP_PORT", "80"))
+
+
 def test_http_request(host_header: str, path: str = "/", port: int = 80) -> Tuple[int, str, str]:
     """Executes a plain HTTP request against 127.0.0.1."""
     conn = http.client.HTTPConnection("127.0.0.1", port=port, timeout=10)
@@ -220,14 +224,14 @@ def run_deployment_smoke_tests(ca_cert: str, env_vars: Dict[str, str]) -> List[D
 
     # Probe 1: HTTP Port 80 Health Probe
     print("\n[*] Probe 1: HTTP Port 80 -> Health Probe (/healthz)...")
-    st, loc, body = test_http_request("console.staging.crm.internal", "/healthz", 80)
+    st, loc, body = test_http_request("console.staging.crm.internal", "/healthz", HTTP_PORT)
     print(f"    Status: {st}, Body: {body.strip()}")
     assert st == 200 and "healthy" in body, f"Expected 200 healthy, got {st}: {body}"
     results.append({"probe": "http_healthz", "status": st, "passed": True})
 
     # Probe 2: HTTP Port 80 Redirect
     print("[*] Probe 2: HTTP Port 80 -> HTTPS 301 Redirect...")
-    st, loc, _ = test_http_request("app.staging.crm.internal", "/", 80)
+    st, loc, _ = test_http_request("app.staging.crm.internal", "/", HTTP_PORT)
     print(f"    Status: {st}, Location: {loc}")
     assert st == 301 and "https://" in (loc or ""), f"Expected 301 redirect to HTTPS, got {st}: {loc}"
     results.append({"probe": "http_redirect_301", "status": st, "location": loc, "passed": True})
@@ -306,6 +310,34 @@ def run_deployment_smoke_tests(ca_cert: str, env_vars: Dict[str, str]) -> List[D
     assert "access_token" in token_data, "access_token not found in login response"
     print(f"    [+] Initial Platform Owner login successful via HTTPS! Token received.")
     results.append({"probe": "api_login_via_nginx_https", "status": st, "passed": True})
+
+    # M03: strict host -> API group routing through nginx (and the API's own host policy)
+    print("[*] Probe 10 (M03): host routing matrix through Nginx...")
+    routing_cases = [
+        # host, method, path, expected status, description
+        ("barberhouse.book.staging.crm.internal", "POST", "/api/v1/auth/login", 404, "booking host cannot reach auth"),
+        ("barberhouse.book.staging.crm.internal", "GET", "/api/v1/platform/overview", 404, "booking host cannot reach platform"),
+        ("barberhouse.book.staging.crm.internal", "GET", "/api/v1/business/branches", 404, "booking host cannot reach CRM API"),
+        ("app.staging.crm.internal", "GET", "/api/v1/platform/overview", 404, "CRM host cannot reach platform API"),
+        ("app.staging.crm.internal", "GET", "/api/v1/public/site", 404, "CRM host does not serve public booking API"),
+        ("console.staging.crm.internal", "GET", "/api/v1/business/branches", 404, "console host cannot reach CRM API"),
+        ("api.staging.crm.internal", "GET", "/api/v1/public/site", 404, "api host does not serve public booking API"),
+        ("no-such-salon.book.staging.crm.internal", "GET", "/api/v1/public/site", 404, "unknown salon is not served"),
+    ]
+    for host, method, path, expected, desc in routing_cases:
+        st, _, body = test_https_request(host, path, 443, method=method, body="{}" if method == "POST" else None,
+                                         headers={"Content-Type": "application/json"} if method == "POST" else None,
+                                         ca_cert=ca_cert, check_hostname=True)
+        assert st == expected, f"{desc}: expected {expected}, got {st}: {body[:200]}"
+        print(f"    [+] {desc}: {st}")
+        results.append({"probe": f"host_routing:{host}{path}", "status": st, "passed": True})
+
+    st, _, body = test_https_request("api.staging.crm.internal", "/api/v1/auth/login", 443, method="POST",
+                                     body=login_payload, headers={"Content-Type": "application/json"},
+                                     ca_cert=ca_cert, check_hostname=True)
+    assert st == 200, f"api host must serve auth: got {st}: {body[:200]}"
+    print(f"    [+] api host serves auth: {st}")
+    results.append({"probe": "host_routing:api_host_login", "status": st, "passed": True})
 
     return results
 

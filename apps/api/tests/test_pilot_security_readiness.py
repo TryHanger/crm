@@ -192,7 +192,8 @@ async def test_platform_route_protected_by_ip_allowlist_e2e():
         settings.PLATFORM_IP_ALLOWLIST = ["10.50.0.0/16"]
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # platform API is served only on the console host in staging/production (M03 host routing)
+        async with AsyncClient(transport=transport, base_url=f"http://{settings.PLATFORM_DOMAIN}") as client:
             # 1. Direct connection from unauthorized client IP (default testclient / loopback)
             resp = await client.get("/api/v1/platform/overview", headers={"x-test-force-ip-check": "1"})
             assert resp.status_code == 403
@@ -501,7 +502,8 @@ async def test_unregistered_domain_rejection_in_staging_and_production():
             attacker_headers = {"Host": "barberhouse.unregistered-malicious-domain.com"}
             resp_attacker = await client.get("/api/v1/public/site", headers=attacker_headers)
             assert resp_attacker.status_code == 404
-            assert resp_attacker.json()["detail"]["code"] == "SITE_NOT_FOUND"
+            # since M03 the host is rejected before tenant lookup
+            assert resp_attacker.json()["detail"]["code"] == "HOST_NOT_ALLOWED"
 
             # 2. Registered domain resolves properly
             registered_headers = {"Host": "barberhouse.book.example.kz"}
