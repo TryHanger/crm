@@ -29,7 +29,7 @@ SPAS = [
 ]
 API_PORT = 8000
 # smoke-сценарии спринтов, по порядку
-SMOKES = ["smoke_two_tenants.py", "smoke_onboarding.py", "smoke_pricing.py"]
+SMOKES = ["smoke_two_tenants.py", "smoke_onboarding.py", "smoke_pricing.py", "smoke_schedules.py"]
 
 
 def build_env(db_port: int) -> dict:

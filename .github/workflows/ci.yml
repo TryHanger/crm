@@ -200,6 +200,8 @@ jobs:
           python scripts/smoke_onboarding.py
           # M04 smoke: 8000 KZT service created in CRM is visible in its branch on the booking site
           python scripts/smoke_pricing.py
+          # M05 smoke: two masters with different shifts and prices show their own hours on the booking site
+          python scripts/smoke_schedules.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots

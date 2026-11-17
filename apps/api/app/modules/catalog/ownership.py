@@ -7,6 +7,7 @@ RLS ограничивает чтение и запись строк своим 
 from __future__ import annotations
 
 import uuid
+import zoneinfo
 from typing import Optional
 
 from fastapi import HTTPException
@@ -66,3 +67,13 @@ async def require_staff_in_branch(db: AsyncSession, tenant_id: uuid.UUID, staff_
 async def tenant_currency(db: AsyncSession, tenant_id: uuid.UUID) -> str:
     cur = (await db.execute(select(TenantSettings.currency).where(TenantSettings.tenant_id == tenant_id))).scalar_one_or_none()
     return money.normalize_currency(cur or money.DEFAULT_CURRENCY)
+
+
+def require_timezone(name: Optional[str]) -> str:
+    """IANA-пояс филиала (M05). Неверное имя раньше молча превращалось в UTC и сдвигало все часы."""
+    key = (name or "").strip()
+    try:
+        zoneinfo.ZoneInfo(key)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError, TypeError, OSError):
+        raise _err(422, "TIMEZONE_INVALID", f"Часовой пояс «{name}» не найден в базе IANA (пример: Asia/Almaty)")
+    return key

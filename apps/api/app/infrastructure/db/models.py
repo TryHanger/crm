@@ -814,3 +814,116 @@ class BookingPublication(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "slug", name="uq_tenant_pub_slug"),
     )
+
+
+# =========================================================================
+# FINANCE (M05-D2): order = what was sold, ledger = what happened with money.
+# Contract: docs/finance/MONEY_AND_ORDER_CONTRACT.md. No ORM relationships on purpose:
+# finance rows are written only through apps/api/app/modules/finance/*.
+# =========================================================================
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    branch_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    booking_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)  # open, completed, cancelled
+    source: Mapped[str] = mapped_column(String(16), nullable=False)  # booking, walk_in, manual
+    created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_order_tenant_id"),
+        UniqueConstraint("tenant_id", "booking_id", name="uq_order_per_booking"),
+        CheckConstraint("status IN ('open', 'completed', 'cancelled')", name="ck_order_status"),
+        CheckConstraint("source IN ('booking', 'walk_in', 'manual')", name="ck_order_source"),
+        CheckConstraint("source <> 'booking' OR booking_id IS NOT NULL", name="ck_order_booking_source"),
+        ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"], name="fk_order_branch_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "customer_id"], ["customers.tenant_id", "customers.id"], name="fk_order_customer_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "booking_id"], ["bookings.tenant_id", "bookings.id"], name="fk_order_booking_same_tenant"),
+        Index("ix_orders_tenant_branch_created", "tenant_id", "branch_id", "created_at"),
+    )
+
+
+class OrderItem(Base):
+    """Immutable price snapshot of what was sold. Changes go through new items or ledger adjustments."""
+    __tablename__ = "order_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    order_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), default="service", nullable=False)
+    service_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    staff_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    booking_item_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    duration_minutes_snapshot: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    unit_price_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    discount_minor: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    price_source: Mapped[str] = mapped_column(String(16), nullable=False)  # base, staff_override, manual
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_order_item_tenant_id"),
+        UniqueConstraint("tenant_id", "order_id", "sequence", name="uq_order_item_sequence"),
+        CheckConstraint("kind IN ('service')", name="ck_order_item_kind"),
+        CheckConstraint("price_source IN ('base', 'staff_override', 'manual')", name="ck_order_item_price_source"),
+        CheckConstraint("quantity >= 1", name="ck_order_item_quantity"),
+        CheckConstraint("unit_price_minor >= 0", name="ck_order_item_unit_price"),
+        CheckConstraint("discount_minor >= 0 AND discount_minor <= unit_price_minor::bigint * quantity", name="ck_order_item_discount"),
+        CheckConstraint("total_minor = unit_price_minor::bigint * quantity - discount_minor", name="ck_order_item_total"),
+        ForeignKeyConstraint(["tenant_id", "order_id"], ["orders.tenant_id", "orders.id"], name="fk_order_item_order_same_tenant", ondelete="CASCADE"),
+        ForeignKeyConstraint(["tenant_id", "service_id"], ["services.tenant_id", "services.id"], name="fk_order_item_service_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "staff_id"], ["staff_profiles.tenant_id", "staff_profiles.id"], name="fk_order_item_staff_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "booking_item_id"], ["booking_items.tenant_id", "booking_items.id"], name="fk_order_item_bitem_same_tenant"),
+    )
+
+
+class LedgerEntry(Base):
+    """Append-only money journal. Corrections are reversal entries, never UPDATE/DELETE (DB trigger)."""
+    __tablename__ = "ledger_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    branch_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    order_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    reverses_entry_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_ledger_tenant_id"),
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_ledger_idempotency"),
+        UniqueConstraint("tenant_id", "reverses_entry_id", name="uq_ledger_single_reversal"),
+        CheckConstraint(
+            "kind IN ('service_rendered', 'payment', 'refund', 'advance', 'advance_applied', 'adjustment')",
+            name="ck_ledger_kind"),
+        CheckConstraint("amount_minor <> 0", name="ck_ledger_nonzero"),
+        CheckConstraint(
+            "kind = 'adjustment' OR (reverses_entry_id IS NULL AND amount_minor > 0) "
+            "OR (reverses_entry_id IS NOT NULL AND amount_minor < 0)",
+            name="ck_ledger_sign"),
+        CheckConstraint(
+            "(reverses_entry_id IS NULL AND kind <> 'adjustment') OR length(btrim(coalesce(reason, ''))) > 0",
+            name="ck_ledger_reason_required"),
+        ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"], name="fk_ledger_branch_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "order_id"], ["orders.tenant_id", "orders.id"], name="fk_ledger_order_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "reverses_entry_id"], ["ledger_entries.tenant_id", "ledger_entries.id"], name="fk_ledger_reversal_same_tenant"),
+        Index("ix_ledger_tenant_branch_occurred", "tenant_id", "branch_id", "occurred_at"),
+    )

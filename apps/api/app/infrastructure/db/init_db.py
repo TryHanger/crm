@@ -40,6 +40,10 @@ TENANT_TABLES = [
     "public_management_tokens",
     "booking_themes",
     "booking_publications",
+    # finance (migration 003)
+    "orders",
+    "order_items",
+    "ledger_entries",
 ]
 
 def apply_rls_and_constraints():

@@ -394,9 +394,10 @@ class BookingEngine:
             res_sp = await db.execute(stmt_sp)
             staff_prof = res_sp.scalar_one()
 
-            # Iterate days from search_from to search_to
-            current_day = search_from.date()
-            end_day = search_to.date()
+            # Iterate LOCAL branch days: shifts are defined in local time (M05 UTC/IANA contract).
+            # UTC dates were used before, which skipped a late local shift in negative-offset zones.
+            current_day = search_from.astimezone(tz).date()
+            end_day = search_to.astimezone(tz).date()
 
             while current_day <= end_day:
                 weekday_iso = current_day.isoweekday()
@@ -428,9 +429,10 @@ class BookingEngine:
                         for b in breaks
                     ]
 
-                    # Fetch staff occupancies on this day across ANY branch
-                    day_start_utc = datetime.datetime.combine(current_day, datetime.time.min, tzinfo=datetime.timezone.utc)
-                    day_end_utc = datetime.datetime.combine(current_day, datetime.time.max, tzinfo=datetime.timezone.utc)
+                    # Fetch staff occupancies / time off overlapping THIS shift across ANY branch.
+                    # (A UTC calendar day missed bookings of shifts crossing UTC midnight.)
+                    day_start_utc = shift_start_dt
+                    day_end_utc = shift_end_dt
 
                     stmt_occ = select(StaffOccupancy).where(
                         StaffOccupancy.tenant_id == tenant_id,

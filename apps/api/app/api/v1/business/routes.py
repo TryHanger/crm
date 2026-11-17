@@ -179,7 +179,7 @@ async def create_branch(
         name=data["name"],
         city=data.get("city", "Астана"),
         address=data["address"],
-        timezone_iana=data.get("timezone_iana") or data.get("timezone") or "Asia/Almaty",
+        timezone_iana=ownership.require_timezone(data.get("timezone_iana") or data.get("timezone") or "Asia/Almaty"),
         phone=data.get("phone") or data.get("phone_number")
     )
     db.add(branch)
@@ -1927,9 +1927,9 @@ async def update_branch(
     if req.city is not None: branch.city = req.city
     if req.address is not None: branch.address = req.address
     if req.timezone_iana is not None:
-        branch.timezone_iana = req.timezone_iana
+        branch.timezone_iana = ownership.require_timezone(req.timezone_iana)
     elif getattr(req, "timezone", None) is not None:
-        branch.timezone_iana = req.timezone
+        branch.timezone_iana = ownership.require_timezone(req.timezone)
     if req.phone is not None:
         branch.phone = req.phone
     elif getattr(req, "phone_number", None) is not None:

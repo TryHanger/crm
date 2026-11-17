@@ -35,51 +35,39 @@ Quote фиксирует цены. При изменении цены между
 `booking_items.price_minor_snapshot`, `currency_snapshot`, `service_name_snapshot`, `duration_minutes_snapshot`
 и сумму `bookings.amount_minor_snapshot`.
 
-## 4. Модель заказа (M05: таблицы, M11: начисление)
+## 4. Модель заказа и журнал денег (реализовано в M05, ревизия `003_finance_ledger`)
 
 Заказ ≠ визит. Оказано ≠ оплачено. Модель не зависит от платёжного провайдера.
+Таблицы: `orders`, `order_items`, `ledger_entries`. Все под принудительным RLS, связи — составными FK своей компании.
+Запись идёт только через `apps/api/app/modules/finance/orders.py` и `ledger.py`.
 
-```
-orders
-  id, tenant_id, branch_id, customer_id
-  booking_id            UNIQUE NULL          -- не больше одного заказа на визит
-  currency              = валюта компании на момент создания
-  status                open | completed | cancelled
-  source                booking | walk_in | manual
-  created_at, created_by, completed_at
-  -- суммы не хранятся отдельно: считаются из позиций и движений (или кэш с проверкой в тестах)
+| Таблица | Суть | Ключевые ограничения в БД |
+|---|---|---|
+| `orders` | что продали: филиал, клиент, запись, валюта, статус `open/completed/cancelled`, источник `booking/walk_in/manual` | один заказ на запись `uq_order_per_booking`; `source=booking` требует `booking_id`; **DELETE запрещён** триггером |
+| `order_items` | неизменяемый снимок цены позиции | `total = unit_price × quantity − discount` (CHECK), скидка в пределах суммы, номер позиции уникален; **UPDATE/DELETE запрещены** |
+| `ledger_entries` | журнал движений денег: `service_rendered`, `payment`, `refund`, `advance`, `advance_applied`, `adjustment` | ключ идемпотентности уникален в компании; сумма ≠ 0, у обычной записи > 0, у сторно < 0; одно сторно на запись; у сторно и корректировки нужна причина; **UPDATE/DELETE запрещены** |
 
-order_items
-  id, tenant_id, order_id, sequence
-  kind                  service             -- позже: product, certificate, subscription
-  service_id, staff_id  (составные FK в своей компании)
-  name_snapshot, duration_minutes_snapshot
-  unit_price_minor      -- снимок цены на момент создания, не меняется
-  quantity              >= 1
-  discount_minor        0..unit_price*quantity
-  total_minor           = unit_price_minor * quantity - discount_minor  (CHECK)
-  price_source          base | staff_override | manual
-  quote_id              NULL
-  created_at
+Инварианты и где они проверяются (`apps/api/tests/test_ledger.py`):
+1. Позиция заказа неизменяема. Новая цена — новая позиция или запись `adjustment` с причиной.
+2. Заказ из записи создаётся из её снимка (`booking_items`), не из текущего прайса (M11).
+3. Один `idempotency_key` в компании — одна запись. Повтор с тем же содержимым возвращает исходную запись, с другим — `409 IDEMPOTENCY_KEY_REUSED`. 20 параллельных повторов дают одну строку: гарантию держит уникальный индекс (`INSERT … ON CONFLICT`), а не «прочитал — записал».
+4. `оказано = Σ service_rendered + Σ adjustment`, `получено = Σ payment − Σ refund`, `долг = оказано − получено − Σ advance_applied`. Сторно входят в суммы со знаком минус (`ledger.order_position`).
+5. Удалений нет: отмена — это сторно (`reverses_entry_id`). Сторно сторно запрещено (`CANNOT_REVERSE_REVERSAL`), повторное сторно — `ALREADY_REVERSED`.
+6. Валюта и филиал записи совпадают с заказом (`CURRENCY_MISMATCH`, `BRANCH_MISMATCH`).
 
-ledger_entries          (M05 каркас, M11–M13 наполнение; только INSERT)
-  id, tenant_id, branch_id, order_id NULL
-  kind                  service_rendered | payment | refund | advance | advance_applied | adjustment
-  amount_minor          знак по kind, валюта = валюта заказа
-  idempotency_key       UNIQUE (tenant_id, idempotency_key)
-  reverses_entry_id     NULL                -- сторно ссылается на исходную запись
-  reason, created_by, created_at
-```
+**Миграционная карта старых денег.** Записей о деньгах салона до M05 нет: отчёты считали «оплачено = 0», `PaymentRecord` — это оплата подписки платформы (компания → платформа). Её не переносим и не смешиваем с журналом салона. Записи (`bookings`) уже хранят снимок цены. Заказы для уже завершённых визитов создаст идемпотентная процедура M11 (ключ — `booking_id`).
 
-Инварианты (проверяются тестами M05 и M11):
-1. Позиция заказа неизменяема после создания. Новая цена — новая позиция или корректировка `adjustment` с автором и причиной.
-2. Заказ создаётся из снимка брони (`booking_items`), а не из текущего прайса.
-3. Повтор события (`VisitCompleted`, повтор запроса кассы) не удваивает запись: `idempotency_key`.
-4. `оказано = Σ service_rendered`, `получено = Σ payment − Σ refund`, `долг = оказано − получено − применённый аванс`.
-5. Удалений нет. Отмена — это сторно (`reverses_entry_id`).
-6. Валюта всех позиций и движений заказа совпадает с валютой заказа.
+## 5. Время: UTC в БД, IANA-пояс у филиала (M05)
 
-## 5. Открытые вопросы к PO
+- Время записи, занятости, блокировок и отпусков хранится в UTC (`timestamptz`).
+- Смена мастера — локальное время (`weekly_shifts.local_start/local_end`) + пояс филиала (`branches.timezone_iana`). Ночные смены (конец раньше начала) не принимаются.
+- День смены — **локальный** день филиала: поиск слотов перебирает локальные даты. Переход на летнее/зимнее время сдвигает UTC, локальные часы остаются прежними.
+- Занятость и отпуск при поиске слотов выбираются по окну смены, а не по UTC-суткам.
+- Неверный пояс филиала отклоняется (`422 TIMEZONE_INVALID`).
+- База поясов фиксирована пакетом `tzdata` в `requirements.txt`. Тест проверяет, что `Asia/Almaty` = UTC+5 (с 01.03.2024).
+- Запись сохраняет `timezone_snapshot` филиала на момент записи.
+
+## 6. Открытые вопросы к PO
 
 1. Разрешать ли цены с тиынами в интерфейсе CRM (сейчас только целые тенге)?
 2. Округление скидок: одна позиция — одно округление ROUND_HALF_UP. Подтвердить.
