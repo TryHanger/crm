@@ -28,6 +28,8 @@ SPAS = [
     ("platform-console", "@crm/platform-console", 3002),
 ]
 API_PORT = 8000
+# smoke-сценарии спринтов, по порядку
+SMOKES = ["smoke_two_tenants.py", "smoke_onboarding.py"]
 
 
 def build_env(db_port: int) -> dict:
@@ -125,11 +127,11 @@ def stop(procs) -> None:
 
 def main() -> int:
     for stream in (sys.stdout, sys.stderr):
-        stream.reconfigure(encoding="utf-8", errors="replace")
+        stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--db-port", type=int, default=int(os.environ.get("POSTGRES_PORT", "5433")))
     ap.add_argument("--no-docker", action="store_true", help="не запускать PostgreSQL через docker compose")
-    ap.add_argument("--smoke", action="store_true", help="после старта прогнать scripts/smoke_two_tenants.py")
+    ap.add_argument("--smoke", action="store_true", help="после старта прогнать все scripts/smoke_*.py")
     ap.add_argument("--exit", action="store_true", help="с --smoke: остановить стек после smoke")
     args = ap.parse_args()
 
@@ -169,7 +171,10 @@ def main() -> int:
   API docs             http://localhost:{API_PORT}/docs
 """)
         if args.smoke:
-            rc = subprocess.run([sys.executable, str(ROOT / "scripts" / "smoke_two_tenants.py")], cwd=ROOT).returncode
+            rc = 0
+            for smoke in SMOKES:
+                print(f"--- {smoke}")
+                rc |= subprocess.run([sys.executable, str(ROOT / "scripts" / smoke)], cwd=ROOT).returncode
             if args.exit:
                 return rc
         print("Ctrl+C для остановки")

@@ -46,7 +46,7 @@ async def test_public_booking_rejection_on_suspended_tenant():
         p_headers = {"Authorization": f"Bearer {login_p.json()['access_token']}"}
 
         # 2. Create a new test tenant
-        slug = f"susp_{uuid.uuid4().hex[:6]}"
+        slug = f"susp-{uuid.uuid4().hex[:6]}"
         create_resp = await client.post("/api/v1/platform/tenants", json={
             "slug": slug,
             "display_name": "Suspended Test Shop",
@@ -534,7 +534,7 @@ async def test_invite_cannot_hijack_existing_user_password():
         p_headers = {"Authorization": f"Bearer {login_p.json()['access_token']}"}
 
         # 2. Create tenant with an existing email (e.g. owner@moderncut.kz)
-        slug = f"hijack_{uuid.uuid4().hex[:6]}"
+        slug = f"hijack-{uuid.uuid4().hex[:6]}"
         create_resp = await client.post("/api/v1/platform/tenants", json={
             "slug": slug,
             "display_name": "Invite Hijack Test",

@@ -45,6 +45,9 @@ from apps.api.app.infrastructure.db.models import (
 )
 
 from apps.api.app.modules.notifications.email_service import EmailDeliveryService
+from apps.api.app.modules.onboarding import service as onboarding
+from sqlalchemy.exc import IntegrityError
+from pydantic import EmailStr
 
 from apps.api.app.infrastructure.security.rate_limiter import rate_limit
 
@@ -511,292 +514,63 @@ async def list_tenants(
 
 
 @router.post("/tenants", status_code=status.HTTP_201_CREATED)
-
 async def create_tenant(
-
     req: PlatformTenantCreateRequest,
-
     staff: AuthenticatedPlatformStaff = Depends(require_platform_roles(["platform_owner", "support"])),
-
     db: AsyncSession = Depends(get_db)
-
 ):
+    """Creates company, owner membership, owner invite and trial subscription in one transaction.
 
-    """Creates a new company workspace, default Start plan, and invites the owner."""
-
-    stmt_slug = select(Tenant).where(Tenant.slug == req.slug.lower().strip())
-
-    res_slug = await db.execute(stmt_slug)
-
-    if res_slug.scalar_one_or_none():
-
-        raise HTTPException(status_code=400, detail=f"Company slug '{req.slug}' is already registered")
-
-
-
-    tenant = Tenant(
-
-        slug=req.slug.lower().strip(),
-
-        display_name=req.display_name,
-
-        vertical=req.vertical,
-
-        lifecycle_status="active",
-
-        timezone_default="Asia/Almaty"
-
-    )
-
-    db.add(tenant)
-
-    await db.flush()
-
-
-
-    booking_suffix = settings.BOOKING_DOMAIN_SUFFIX if settings.BOOKING_DOMAIN_SUFFIX.startswith(".") else f".{settings.BOOKING_DOMAIN_SUFFIX}"
-
-    domain = TenantDomain(
-
-        tenant_id=tenant.id,
-
-        hostname_normalized=f"{tenant.slug}{booking_suffix}",
-
-        domain_type="system_subdomain",
-
-        verification_status="verified",
-
-        canonical=True,
-
-        verified_at=datetime.datetime.now(datetime.timezone.utc)
-
-    )
-
-    db.add(domain)
-
-    await db.execute(text(f"SELECT set_config('app.current_tenant', '{tenant.id}', true)"))
-
-    booking_policy = BookingPolicy(tenant_id=tenant.id, allow_online_booking=False)
-    db.add(booking_policy)
-    booking_theme = BookingTheme(tenant_id=tenant.id)
-    db.add(booking_theme)
-    booking_pub = BookingPublication(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        is_published=False,
-        published_at=None
-    )
-    db.add(booking_pub)
-
-
-
-    stmt_u = select(IdentityUser).where(IdentityUser.email_normalized == req.owner_email.lower().strip())
-
-    res_u = await db.execute(stmt_u)
-
-    owner_user = res_u.scalar_one_or_none()
-
-    if not owner_user:
-
-        owner_user = IdentityUser(
-
-            oidc_subject=f"oidc_{uuid.uuid4()}",
-
-            email_normalized=req.owner_email.lower().strip(),
-
-            display_name=req.owner_name,
-
-            password_hash=None
-
+    The invitation email is dispatched only after the transaction is committed.
+    """
+    try:
+        created = await onboarding.create_company(
+            db, slug=req.slug, display_name=req.display_name, vertical=req.vertical,
+            owner_email=req.owner_email, owner_name=req.owner_name, plan_code=req.plan_code,
         )
+        await record_audit_event(
+            db=db, actor_id=staff.user.id, actor_email=staff.user.email_normalized,
+            action="tenant.created", object_type="tenant", target_tenant_id=created.tenant.id,
+            object_id=str(created.tenant.id),
+            after={"slug": created.tenant.slug, "display_name": created.tenant.display_name,
+                   "owner_email": created.invite.email, "plan_version_id": str(created.subscription.plan_version_id)}
+        )
+        await db.commit()
+    except onboarding.OnboardingError as e:
+        await db.rollback()
+        raise HTTPException(status_code=e.http_status, detail=e.detail())
+    except IntegrityError:
+        # concurrent creation with the same slug: nothing from this request is kept
+        await db.rollback()
+        raise HTTPException(status_code=409, detail={"code": "SLUG_TAKEN", "message": f"Адрес «{req.slug.strip().lower()}» уже занят другой компанией"})
 
-        db.add(owner_user)
-
-        await db.flush()
-
-
-
-    membership = TenantMembership(
-
-        tenant_id=tenant.id,
-
-        user_id=owner_user.id,
-
-        role="owner",
-
-        status="invited"
-
+    tenant_id, slug, display_name = created.tenant.id, created.tenant.slug, created.tenant.display_name
+    invite_id, owner_email = created.invite.id, created.invite.email
+    invite_expires_at = created.invite.expires_at
+    url = onboarding.invite_url(created.raw_token)
+    delivery = await EmailDeliveryService.send_owner_invite(
+        to_email=owner_email, owner_name=req.owner_name, tenant_name=display_name, invite_url=url
     )
-
-    db.add(membership)
-
-    await db.flush()
-
-    tenant.owner_membership_id = membership.id
-
-
-
-    raw_invite_token = secrets.token_urlsafe(32)
-
-    tok_hash = hashlib.sha256(raw_invite_token.encode()).hexdigest()
-
-    invite = Invite(
-
-        tenant_id=tenant.id,
-
-        email=req.owner_email.lower().strip(),
-
-        invite_type="owner_invite",
-
-        role="owner",
-
-        token_hash=tok_hash,
-
-        expires_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48),
-
-        sent_at=datetime.datetime.now(datetime.timezone.utc)
-
-    )
-
-    db.add(invite)
-
-
-
-    stmt_p = select(PlanVersion).join(Plan, Plan.id == PlanVersion.plan_id).where(Plan.code == req.plan_code).order_by(PlanVersion.version.desc())
-
-    res_p = await db.execute(stmt_p)
-
-    pv = res_p.scalars().first()
-
-    if not pv:
-
-        res_any = await db.execute(select(PlanVersion).where(PlanVersion.is_active == True))
-
-        pv = res_any.scalars().first()
-
-
-
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-
-    sub = Subscription(
-
-        tenant_id=tenant.id,
-
-        plan_version_id=pv.id,
-
-        lifecycle_status="trial",
-
-        period_start=now_utc,
-
-        period_end=now_utc + datetime.timedelta(days=14),
-
-        trial_ends_at=now_utc + datetime.timedelta(days=14),
-
-        grace_ends_at=now_utc + datetime.timedelta(days=21),
-
-        renewal_mode="manual"
-
-    )
-
-    db.add(sub)
-
-
-
     await record_audit_event(
-
-        db=db,
-
-        actor_id=staff.user.id,
-
-        actor_email=staff.user.email_normalized,
-
-        action="tenant.created",
-
-        object_type="tenant",
-
-        target_tenant_id=tenant.id,
-
-        object_id=str(tenant.id),
-
-        after={"slug": tenant.slug, "display_name": tenant.display_name}
-
+        db=db, actor_id=staff.user.id, actor_email=staff.user.email_normalized,
+        action="tenant.invite_dispatched", object_type="invite", target_tenant_id=tenant_id,
+        object_id=str(invite_id),
+        after={"recipient": owner_email, "delivery_status": delivery["status"], "provider": delivery.get("provider", "manual")}
     )
-
-
-
-    invite_url = f"https://{settings.CRM_DOMAIN}/accept-invite?token={raw_invite_token}"
-
-    delivery_result = await EmailDeliveryService.send_owner_invite(
-
-        to_email=req.owner_email.lower().strip(),
-
-        owner_name=req.owner_name,
-
-        tenant_name=tenant.display_name,
-
-        invite_url=invite_url
-
-    )
-
-
-
-    await record_audit_event(
-
-        db=db,
-
-        actor_id=staff.user.id,
-
-        actor_email=staff.user.email_normalized,
-
-        action="tenant.invite_dispatched",
-
-        object_type="invite",
-
-        target_tenant_id=tenant.id,
-
-        object_id=str(invite.id),
-
-        after={
-
-            "recipient": req.owner_email.lower().strip(),
-
-            "delivery_status": delivery_result["status"],
-
-            "provider": delivery_result.get("provider", "manual")
-
-        }
-
-    )
-
-
-
     await db.commit()
 
-    is_test = settings.ENVIRONMENT in ["test", "development"]
-
-    manual_requested = getattr(req, "manual_dispatch", False)
-
+    manual_requested = bool(getattr(req, "manual_dispatch", False))
     return {
-
-        "tenant_id": str(tenant.id),
-
-        "slug": tenant.slug,
-
-        "display_name": tenant.display_name,
-
+        "tenant_id": str(tenant_id),
+        "slug": slug,
+        "display_name": display_name,
         "owner_status": "invited",
-
-        "delivery_status": delivery_result["status"],
-
-        "delivery_message": delivery_result["message"],
-
-        "invite_token": raw_invite_token if is_test else None,
-
-        "invite_url": invite_url if (is_test or delivery_result["status"] == "manual_channel_required" or manual_requested) else None
-
+        "invite_expires_at": invite_expires_at.isoformat(),
+        "delivery_status": delivery["status"],
+        "delivery_message": delivery["message"],
+        "invite_token": created.raw_token if onboarding.reveal_raw_token() else None,
+        "invite_url": url if onboarding.reveal_link_in_response(delivery["status"], manual_requested) else None
     }
-
-
 
 
 
@@ -985,42 +759,27 @@ async def get_tenant_users(
 
 
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-
+    # pending and expired (not yet accepted) invites: an expired one can be re-sent from the UI
     stmt_inv = select(Invite).where(
-
         Invite.tenant_id == tenant_id,
-
         Invite.consumed_at.is_(None),
-
-        Invite.expires_at > now_utc
-
     ).order_by(Invite.sent_at.desc())
-
     res_inv = await db.execute(stmt_inv)
-
     invites_data = []
-
+    seen_emails = set()
     for inv in res_inv.scalars().all():
-
+        if inv.email in seen_emails:  # older superseded links of the same address
+            continue
+        seen_emails.add(inv.email)
         invites_data.append({
-
             "id": str(inv.id),
-
             "email": inv.email,
-
             "role": inv.role,
-
             "invite_type": inv.invite_type,
-
-            "status": "pending",
-
+            "status": onboarding.invite_status(inv, now_utc),
             "sent_at": inv.sent_at.isoformat() if inv.sent_at else None,
-
             "expires_at": inv.expires_at.isoformat() if inv.expires_at else None
-
         })
-
-
 
     return {
 
@@ -1034,121 +793,54 @@ async def get_tenant_users(
 
 
 
+class ResendInviteRequest(BaseModel):
+    email: EmailStr
+
+
 @router.post("/tenants/{tenant_id}/resend-invite")
-
 async def resend_tenant_invite(
-
     tenant_id: uuid.UUID,
-
-    req: dict,
-
+    req: ResendInviteRequest,
     staff: AuthenticatedPlatformStaff = Depends(require_platform_roles(["platform_owner", "support"])),
-
     db: AsyncSession = Depends(get_db)
-
 ):
+    """Re-issues the link of an existing not-yet-accepted invite; the previous link stops working.
 
-    """Generates a refreshed invitation link for owner/staff without changing credentials."""
-
-    email = req.get("email")
-
-    if not email:
-
-        raise HTTPException(status_code=422, detail="Email is required")
-
-
-
-    email_clean = email.lower().strip()
-
-    raw_invite_token = secrets.token_urlsafe(32)
-
-    tok_hash = hashlib.sha256(raw_invite_token.encode()).hexdigest()
-
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-
-
-
-    # Check existing invite
-
-    stmt = select(Invite).where(Invite.tenant_id == tenant_id, Invite.email == email_clean)
-
-    res = await db.execute(stmt)
-
-    inv = res.scalars().first()
-
-    if inv:
-
-        inv.token_hash = tok_hash
-
-        inv.expires_at = now_utc + datetime.timedelta(hours=48)
-
-        inv.sent_at = now_utc
-
-    else:
-
-        inv = Invite(
-
-            tenant_id=tenant_id,
-
-            email=email_clean,
-
-            invite_type="owner_invite",
-
-            role="owner",
-
-            token_hash=tok_hash,
-
-            expires_at=now_utc + datetime.timedelta(hours=48),
-
-            sent_at=now_utc
-
+    Never creates a new invite and never grants a role to an address that was not invited.
+    """
+    try:
+        invite, raw_token = await onboarding.rotate_invite(db, tenant_id, req.email)
+        await record_audit_event(
+            db=db, actor_id=staff.user.id, actor_email=staff.user.email_normalized,
+            action="tenant.invite_resent", object_type="invite", target_tenant_id=tenant_id,
+            object_id=str(invite.id), after={"email": invite.email, "role": invite.role}
         )
+        await db.commit()
+    except onboarding.OnboardingError as e:
+        await db.rollback()
+        raise HTTPException(status_code=e.http_status, detail=e.detail())
 
-        db.add(inv)
-
-
-
-    await record_audit_event(
-
-        db=db,
-
-        actor_id=staff.user.id,
-
-        actor_email=staff.user.email_normalized,
-
-        action="tenant.invite_resent",
-
-        object_type="invite",
-
-        target_tenant_id=tenant_id,
-
-        object_id=str(inv.id),
-
-        after={"email": email_clean}
-
-    )
-
-
-
-    await db.commit()
-
-    invite_url = f"https://{settings.CRM_DOMAIN}/accept-invite?token={raw_invite_token}"
+    email, invite_type, expires_at = invite.email, invite.invite_type, invite.expires_at
+    url = onboarding.invite_url(raw_token)
+    if invite_type == "owner_invite":
+        tenant_name = (await db.execute(select(Tenant.display_name).where(Tenant.id == tenant_id))).scalar_one()
+        delivery = await EmailDeliveryService.send_owner_invite(
+            to_email=email, owner_name=email.split("@")[0], tenant_name=tenant_name, invite_url=url
+        )
+    else:
+        delivery = {"status": "manual_channel_required", "provider": "manual",
+                    "message": "Передайте ссылку сотруднику вручную"}
 
     return {
-
-        "status": "sent",
-
-        "email": email_clean,
-
-        "invite_token": raw_invite_token,
-
-        "invite_url": invite_url,
-
-        "message": f"Приглашение для {email_clean} успешно обновлено"
-
+        "status": delivery["status"],
+        "delivery_status": delivery["status"],
+        "email": email,
+        "expires_at": expires_at.isoformat(),
+        "invite_token": raw_token if onboarding.reveal_raw_token() else None,
+        "invite_url": url if onboarding.reveal_link_in_response(delivery["status"]) else None,
+        "message": (f"Новое приглашение отправлено на {email}" if delivery["status"] == "sent"
+                    else f"Ссылка для {email} обновлена, прежняя больше не действует")
     }
-
-
 
 
 

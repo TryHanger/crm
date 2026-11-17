@@ -68,7 +68,7 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
   const [wizPlan, setWizPlan] = useState('start');
   const [wizOwnerName, setWizOwnerName] = useState('');
   const [wizOwnerEmail, setWizOwnerEmail] = useState('');
-  const [wizResult, setWizResult] = useState<{ tenantId: string; inviteUrl: string } | null>(null);
+  const [wizResult, setWizResult] = useState<{ tenantId: string; inviteUrl: string | null; deliveryMessage: string; ownerEmail: string } | null>(null);
 
   // Override form
   const [overrideKey, setOverrideKey] = useState('max_branches');
@@ -244,7 +244,7 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
     if (!activeTenantId) return;
     try {
       const res = await api.resendInvite(activeTenantId, email, token);
-      showToast(`Ссылка-приглашение обновлена для ${email}`);
+      showToast(res.message || `Ссылка-приглашение обновлена для ${email}`);
       if (res.invite_url) {
         navigator.clipboard.writeText(res.invite_url);
         showToast('Ссылка скопирована в буфер обмена!');
@@ -278,7 +278,10 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
 
       setWizResult({
         tenantId: res.tenant_id,
-        inviteUrl: res.invite_url || `https://crm.example.kz/accept-invite?token=${res.invite_token}`,
+        // the link is returned only when it has to be passed manually; a delivered email keeps it private
+        inviteUrl: res.invite_url || null,
+        deliveryMessage: res.delivery_message || '',
+        ownerEmail: wizOwnerEmail.toLowerCase().trim(),
       });
       setWizardStep(4);
       await loadTenants();
@@ -810,7 +813,11 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
                         <td style={{ padding: '10px 12px', fontWeight: 600 }}>{inv.email}</td>
                         <td style={{ padding: '10px 12px' }}>{inv.role}</td>
                         <td style={{ padding: '10px 12px', color: '#64748B' }}>
-                          до {inv.expires_at ? new Date(inv.expires_at).toLocaleString('ru-RU') : '—'}
+                          {inv.status === 'expired' ? (
+                            <span data-testid={`invite-expired-${inv.email}`} style={{ color: '#B91C1C', fontWeight: 600 }}>Истекло — отправьте заново</span>
+                          ) : (
+                            <>до {inv.expires_at ? new Date(inv.expires_at).toLocaleString('ru-RU') : '—'}</>
+                          )}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                           <button
@@ -1930,6 +1937,7 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
                   </p>
                 </div>
 
+                {wizResult.inviteUrl ? (
                 <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '8px', border: '1px solid #E2E8F0', marginBottom: '20px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
                     Одноразовая ссылка-приглашение владельца:
@@ -1938,14 +1946,14 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
                     <input
                       type="text"
                       readOnly
-                      value={wizResult.inviteUrl}
+                      value={wizResult.inviteUrl || ''}
                       data-testid="wizard-invite-url-display"
                       style={{ flex: 1, padding: '8px 10px', fontSize: '12px', border: '1px solid #CBD5E1', borderRadius: '6px', background: '#FFFFFF' }}
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        navigator.clipboard.writeText(wizResult.inviteUrl);
+                        navigator.clipboard.writeText(wizResult.inviteUrl || '');
                         showToast('Ссылка скопирована!');
                       }}
                       data-testid="wizard-copy-invite-btn"
@@ -1955,7 +1963,12 @@ export const CompaniesModule: React.FC<CompaniesModuleProps> = ({
                     </button>
                   </div>
                 </div>
-
+                ) : (
+                  <div data-testid="wizard-invite-emailed" style={{ background: '#F0FDF4', padding: '16px', borderRadius: '8px', border: '1px solid #BBF7D0', marginBottom: '20px', fontSize: '13px', color: '#166534' }}>
+                    Приглашение отправлено на {wizResult.ownerEmail}. Ссылка одноразовая и действует 48 часов.
+                    {wizResult.deliveryMessage ? <div style={{ color: '#475569', marginTop: '6px' }}>{wizResult.deliveryMessage}</div> : null}
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
                   <button
                     type="button"

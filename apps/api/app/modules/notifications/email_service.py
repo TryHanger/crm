@@ -1,4 +1,5 @@
 import asyncio
+import html
 import smtplib
 import ssl
 from email.mime.multipart import MIMEMultipart
@@ -39,6 +40,9 @@ class EmailDeliveryService:
             }
 
         subject = f"Приглашение в систему управления {tenant_name}"
+        # names come from operator input: never inject them into HTML as markup
+        owner_name, tenant_name = html.escape(owner_name), html.escape(tenant_name)
+        invite_url = html.escape(invite_url, quote=True)
         html_content = f"""
         <html>
         <body style="font-family: sans-serif; color: #1E293B; line-height: 1.5;">

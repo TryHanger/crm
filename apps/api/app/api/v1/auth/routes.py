@@ -13,6 +13,7 @@ from apps.api.app.infrastructure.security.jwt import verify_password, get_passwo
 from apps.api.app.infrastructure.security.auth import get_current_user
 from apps.api.app.modules.schemas import LoginRequest, TokenResponse
 from apps.api.app.infrastructure.security.rate_limiter import rate_limit
+from apps.api.app.modules.onboarding import service as onboarding
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -105,21 +106,16 @@ async def accept_invite(
     _rl: None = Depends(rate_limit(max_requests=10, window_seconds=60, group="auth_accept_invite"))
 ):
     """Accepts an owner or staff invitation, sets user password, and activates membership."""
-    tok_hash = hashlib.sha256(req.token.strip().encode()).hexdigest()
     now_utc = datetime.datetime.now(datetime.timezone.utc)
 
-    stmt_inv = select(Invite).where(
-        Invite.token_hash == tok_hash,
-        Invite.consumed_at.is_(None)
-    )
-    res_inv = await db.execute(stmt_inv)
-    invite = res_inv.scalar_one_or_none()
-
-    if not invite or (invite.expires_at and invite.expires_at < now_utc):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Приглашение недействительно или срок его действия истек"
-        )
+    # Row lock until commit: a concurrent acceptance of the same link waits and then
+    # sees it consumed, so activation happens exactly once. Validation errors below
+    # leave the invite unconsumed and usable.
+    try:
+        invite = await onboarding.lock_invite_for_acceptance(db, req.token)
+    except onboarding.OnboardingError as e:
+        await db.rollback()
+        raise HTTPException(status_code=e.http_status, detail=e.message)
 
     # Find or update user
     stmt_u = select(IdentityUser).where(IdentityUser.email_normalized == invite.email.lower().strip())

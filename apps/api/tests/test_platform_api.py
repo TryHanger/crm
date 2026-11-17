@@ -51,9 +51,9 @@ async def test_platform_console_lifecycle_and_billing():
         # 3. Create New Tenant via Platform
         uniq_id = uuid.uuid4().hex[:6]
         new_tenant_req = {
-            "slug": f"royal_{uniq_id}",
+            "slug": f"royal-{uniq_id}",
             "display_name": "Royal Cut Barbershop",
-            "owner_email": f"royal_{uniq_id}@royalcut.kz",
+            "owner_email": f"royal-{uniq_id}@royalcut.kz",
             "owner_name": "Султан Владелец",
             "vertical": "barbershop",
             "plan_code": "start"
@@ -322,7 +322,7 @@ async def test_operator_activation_existing_crm_user_password_protection_fc_p0_0
         uniq = uuid.uuid4().hex[:6]
         owner_email = f"owner_iso_{uniq}@testtenant.kz"
         t_resp = await client.post("/api/v1/platform/tenants", json={
-            "slug": f"iso_{uniq}",
+            "slug": f"iso-{uniq}",
             "display_name": "Isolated Tenant",
             "owner_email": owner_email,
             "owner_name": "Изолированный Владелец",
