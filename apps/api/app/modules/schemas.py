@@ -97,12 +97,54 @@ class StaffPublicResponse(BaseModel):
     color: str
 
 class AvailabilitySearchRequest(BaseModel):
+    """M06 contract: the server decides availability and price; the UI only renders slots.
+
+    at_utc (optional): exact start chosen first (time-first step 2). The response then holds
+    quotes only for that start (exact_match=true) or nearby starts that fit (alternatives).
+    """
     branch_id: uuid.UUID
     service_ids: List[uuid.UUID]
     from_date: datetime.date
     to_date: datetime.date
     staff_id: Optional[uuid.UUID] = None
     staff_mode: str = Field(default="any")  # "specific" or "any"
+    at_utc: Optional[datetime.datetime] = None
+
+    @model_validator(mode="after")
+    def _contract(self):
+        if self.staff_mode not in ("any", "specific"):
+            raise ValueError("staff_mode must be 'any' or 'specific'")
+        if self.staff_mode == "specific" and self.staff_id is None:
+            raise ValueError("staff_mode 'specific' requires staff_id")
+        if len(set(self.service_ids)) != len(self.service_ids):
+            raise ValueError("service_ids must not repeat")
+        if self.to_date < self.from_date:
+            raise ValueError("to_date must not be before from_date")
+        if self.at_utc is not None and self.at_utc.utcoffset() is None:
+            raise ValueError("at_utc must include a timezone offset (UTC)")
+        return self
+
+
+class TimeFirstRequest(BaseModel):
+    branch_id: uuid.UUID
+    from_date: datetime.date
+    to_date: datetime.date
+
+    @model_validator(mode="after")
+    def _dates(self):
+        if self.to_date < self.from_date:
+            raise ValueError("to_date must not be before from_date")
+        return self
+
+
+class TimeFirstSlot(BaseModel):
+    starts_at_utc: str
+    available_staff_count: int
+
+
+class TimeFirstResponse(BaseModel):
+    slots: List[TimeFirstSlot]
+    total_count: int
 
 class SlotResponse(BaseModel):
     staff_id: str
@@ -119,6 +161,8 @@ class SlotResponse(BaseModel):
 class AvailabilitySearchResponse(BaseModel):
     slots: List[SlotResponse]
     total_count: int
+    exact_match: Optional[bool] = None       # only with at_utc
+    alternatives: List[str] = []             # starts (UTC ISO) that fit, when at_utc does not
 
 class CreatePublicBookingRequest(BaseModel):
     branch_id: uuid.UUID

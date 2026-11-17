@@ -19,6 +19,7 @@ from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineEr
 from apps.api.app.infrastructure.security.rate_limiter import rate_limit
 from apps.api.app.modules.finance import money
 from apps.api.app.modules.schemas import (
+    TimeFirstRequest, TimeFirstResponse,
     PublicSiteResponse, BranchResponse, ServiceItemResponse, StaffPublicResponse,
     AvailabilitySearchRequest, AvailabilitySearchResponse, CreatePublicBookingRequest,
     BookingCreatedResponse, PublicManageBookingResponse, RescheduleRequest, CancelRequest
@@ -257,18 +258,10 @@ async def search_availability(
             detail={"code": "EMPTY_SERVICES", "message": "At least one service must be selected to search availability"}
         )
 
-    stmt_b = select(Branch).where(Branch.id == req.branch_id, Branch.tenant_id == pub_ctx.tenant.id)
-    res_b = await db.execute(stmt_b)
-    branch = res_b.scalar_one_or_none()
-    try:
-        tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty") if branch else zoneinfo.ZoneInfo("Asia/Almaty")
-    except Exception:
-        tz = zoneinfo.ZoneInfo("Asia/Almaty")
-
-    from_local = datetime.datetime.combine(req.from_date, datetime.time.min, tzinfo=tz)
-    to_local = datetime.datetime.combine(req.to_date, datetime.time.max, tzinfo=tz)
-    from_utc = from_local.astimezone(datetime.timezone.utc)
-    to_utc = to_local.astimezone(datetime.timezone.utc)
+    tz = await _branch_tz(db, pub_ctx, req.branch_id)
+    from_utc, to_utc = _local_days_to_utc(req.from_date, req.to_date, tz)
+    if req.at_utc is not None:
+        return await _search_exact_start(db, pub_ctx, req, tz)
 
     try:
         data = await BookingEngine.search_availability(
@@ -283,6 +276,63 @@ async def search_availability(
             is_public=True
         )
         return data
+    except BookingEngineError as e:
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
+
+
+async def _branch_tz(db: AsyncSession, pub_ctx: ResolvedPublicTenant, branch_id: uuid.UUID) -> zoneinfo.ZoneInfo:
+    branch = (await db.execute(select(Branch).where(
+        Branch.id == branch_id, Branch.tenant_id == pub_ctx.tenant.id))).scalar_one_or_none()
+    if branch is None:
+        raise HTTPException(status_code=404, detail={"code": "BRANCH_NOT_FOUND", "message": "Филиал не найден"})
+    return zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty")
+
+
+def _local_days_to_utc(from_date: datetime.date, to_date: datetime.date, tz: zoneinfo.ZoneInfo):
+    from_local = datetime.datetime.combine(from_date, datetime.time.min, tzinfo=tz)
+    to_local = datetime.datetime.combine(to_date, datetime.time.max, tzinfo=tz)
+    return from_local.astimezone(datetime.timezone.utc), to_local.astimezone(datetime.timezone.utc)
+
+
+async def _search_exact_start(db: AsyncSession, pub_ctx: ResolvedPublicTenant, req: AvailabilitySearchRequest,
+                              tz: zoneinfo.ZoneInfo) -> dict:
+    """Time-first step 2: quotes for exactly req.at_utc, or the nearest starts of that local day that fit."""
+    at = req.at_utc.astimezone(datetime.timezone.utc)
+    day = at.astimezone(tz).date()
+    day_from, day_to = _local_days_to_utc(day, day, tz)
+    common = dict(db=db, tenant_id=pub_ctx.tenant.id, branch_id=req.branch_id, service_ids=req.service_ids,
+                  staff_id=req.staff_id, staff_mode=req.staff_mode, is_public=True)
+    try:
+        preview = await BookingEngine.search_availability(from_utc=day_from, to_utc=day_to, persist_quotes=False, **common)
+        fitting = [s for s in preview["slots"] if datetime.datetime.fromisoformat(s["starts_at_utc"]) == at]
+        if not fitting:
+            starts = sorted({s["starts_at_utc"] for s in preview["slots"]},
+                            key=lambda t: (abs((datetime.datetime.fromisoformat(t) - at).total_seconds()), t))
+            return {"slots": [], "total_count": 0, "exact_match": False, "alternatives": sorted(starts[:6])}
+        longest = max(s["duration_minutes"] for s in fitting)
+        quoted = await BookingEngine.search_availability(
+            from_utc=at, to_utc=at + datetime.timedelta(minutes=longest), persist_quotes=True, **common)
+    except BookingEngineError as e:
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
+    slots = [s for s in quoted["slots"] if datetime.datetime.fromisoformat(s["starts_at_utc"]) == at]
+    return {"slots": slots, "total_count": len(slots), "exact_match": bool(slots), "alternatives": []}
+
+
+@router.post("/availability/time-first", response_model=TimeFirstResponse)
+async def search_time_first(
+    req: TimeFirstRequest,
+    pub_ctx: ResolvedPublicTenant = Depends(resolve_public_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Time-first step 1: start times when at least one online master of the branch is free.
+
+    The client then picks services and confirms with /availability/search + at_utc (quotes),
+    and books with the quote. The UI does not substitute a service of its own.
+    """
+    tz = await _branch_tz(db, pub_ctx, req.branch_id)
+    from_utc, to_utc = _local_days_to_utc(req.from_date, req.to_date, tz)
+    try:
+        return await BookingEngine.time_first_preview(db, pub_ctx.tenant.id, req.branch_id, from_utc, to_utc)
     except BookingEngineError as e:
         raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
 

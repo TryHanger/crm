@@ -15,11 +15,34 @@ export interface AvailabilitySearchRequest {
   from_date: string;
   to_date: string;
   staff_id?: string | any;
-  staff_mode?: string;
+  staff_mode?: 'any' | 'specific' | string;
+  /** Time-first step 2: exact start chosen before services (ISO UTC). */
+  at_utc?: string;
 }
 
 export interface AvailabilitySearchResponse {
   slots: SlotResponse[];
+  total_count: number;
+  /** Only with at_utc: true if the chosen start fits the chosen services. */
+  exact_match?: boolean | null;
+  /** Only with at_utc and exact_match=false: nearby starts (ISO UTC) that fit. */
+  alternatives?: string[];
+}
+
+/** Time-first step 1 (M06): when at least one online master is free; no service needed. */
+export interface TimeFirstRequest {
+  branch_id: string;
+  from_date: string;
+  to_date: string;
+}
+
+export interface TimeFirstSlot {
+  starts_at_utc: string;
+  available_staff_count: number;
+}
+
+export interface TimeFirstResponse {
+  slots: TimeFirstSlot[];
   total_count: number;
 }
 

@@ -296,7 +296,8 @@ class BookingEngine:
         to_utc: datetime.datetime,
         staff_id: Optional[uuid.UUID] = None,
         staff_mode: str = "specific",  # specific or any
-        is_public: bool = True
+        is_public: bool = True,
+        persist_quotes: bool = True,
     ) -> Dict[str, Any]:
         """
         Determines available slots considering:
@@ -331,14 +332,15 @@ class BookingEngine:
         if search_from >= search_to:
             return {"slots": [], "total_count": 0}
 
-        try:
-            stmt_cleanup = delete(BookingQuote).where(
-                BookingQuote.tenant_id == tenant_id,
-                BookingQuote.expires_at < now_utc - datetime.timedelta(hours=1)
-            )
-            await db.execute(stmt_cleanup)
-        except Exception:
-            pass
+        if persist_quotes:  # preview writes nothing and commits nothing
+            try:
+                stmt_cleanup = delete(BookingQuote).where(
+                    BookingQuote.tenant_id == tenant_id,
+                    BookingQuote.expires_at < now_utc - datetime.timedelta(hours=1)
+                )
+                await db.execute(stmt_cleanup)
+            except Exception:
+                pass
 
         # 1. Candidate staff
         if staff_id:
@@ -388,6 +390,7 @@ class BookingEngine:
                 db, tenant_id, branch_id, c_staff_id, service_ids
             )
             svc_delta = datetime.timedelta(minutes=duration_mins)
+            slot_currency = items_snapshot[0]["currency"] if items_snapshot else "KZT"
 
             # Get staff profile for details
             stmt_sp = select(StaffProfile).where(StaffProfile.id == c_staff_id)
@@ -479,7 +482,21 @@ class BookingEngine:
                                 for t_start, t_end in time_off_intervals
                             )
 
-                            if not (has_break_conflict or has_occ_conflict or has_to_conflict):
+                            if not (has_break_conflict or has_occ_conflict or has_to_conflict) and not persist_quotes:
+                                # Preview (time-first): availability only, no quote rows
+                                slots.append({
+                                    "staff_id": str(c_staff_id),
+                                    "staff_name": staff_prof.display_name,
+                                    "staff_role": staff_prof.role_title,
+                                    "starts_at_utc": slot_start.isoformat(),
+                                    "ends_at_utc": slot_end.isoformat(),
+                                    "duration_minutes": duration_mins,
+                                    "price_minor": price_minor,
+                                    "currency": slot_currency,
+                                    "quote_id": None,
+                                    "quote_expires_at": None
+                                })
+                            elif not (has_break_conflict or has_occ_conflict or has_to_conflict):
                                 # Valid slot! Create and persist authoritative quote
                                 quote_id = uuid.uuid4()
                                 quote = BookingQuote(
@@ -504,7 +521,7 @@ class BookingEngine:
                                     "ends_at_utc": slot_end.isoformat(),
                                     "duration_minutes": duration_mins,
                                     "price_minor": price_minor,
-                                    "currency": "KZT",
+                                    "currency": slot_currency,
                                     "quote_id": str(quote_id),
                                     "quote_expires_at": quote.expires_at.isoformat()
                                 })
@@ -513,7 +530,8 @@ class BookingEngine:
 
                 current_day += datetime.timedelta(days=1)
 
-        await db.commit()
+        if persist_quotes:
+            await db.commit()
 
         # Ordering:
         # If staff_mode == 'any': 1) earliest start time, 2) lowest price, 3) stable staff UUID
@@ -526,6 +544,60 @@ class BookingEngine:
             "slots": slots,
             "total_count": len(slots)
         }
+
+    @classmethod
+    async def time_first_preview(
+        cls,
+        db: AsyncSession,
+        tenant_id: uuid.UUID,
+        branch_id: uuid.UUID,
+        from_utc: datetime.datetime,
+        to_utc: datetime.datetime,
+    ) -> Dict[str, Any]:
+        """Time-first step 1 (M06): start times at which at least one online master is free.
+
+        No service is chosen yet, so each master is checked with his shortest online service in
+        this branch: a time is shown only if that master can really start something then.
+        Uses the same search as service/master flows, without writing quotes. The exact fit of the
+        services chosen afterwards is confirmed by search_availability(at=...) and the booking itself.
+        """
+        policy = await cls.get_booking_policy(db, tenant_id, branch_id)
+        if not policy.allow_online_booking:
+            raise BookingEngineError("BOOKING_DISABLED", "Online booking is currently disabled for this location", 403)
+        staff_rows = (await db.execute(
+            select(StaffProfile.id)
+            .join(StaffBranch, and_(StaffBranch.staff_id == StaffProfile.id, StaffBranch.tenant_id == StaffProfile.tenant_id))
+            .where(StaffProfile.tenant_id == tenant_id, StaffBranch.branch_id == branch_id,
+                   StaffProfile.active == True, StaffProfile.online_bookable == True, StaffBranch.active == True)
+        )).scalars().all()
+
+        by_start: Dict[str, set] = {}
+        for staff_id in sorted(staff_rows, key=str):
+            offers = (await db.execute(
+                select(StaffServiceOffer, Service).join(Service, Service.id == StaffServiceOffer.service_id).where(
+                    StaffServiceOffer.tenant_id == tenant_id, StaffServiceOffer.staff_id == staff_id,
+                    StaffServiceOffer.branch_id == branch_id, StaffServiceOffer.active == True,
+                    StaffServiceOffer.online_visible == True, Service.active == True,
+                    Service.online_visible == True, Service.archived_at.is_(None))
+            )).all()
+            if not offers:
+                continue
+
+            def effective(pair):
+                off, svc = pair
+                dur = off.duration_override_minutes if off.duration_override_minutes is not None else svc.base_duration_minutes
+                price = off.price_override_minor if off.price_override_minor is not None else svc.base_price_minor
+                return (dur, price, str(svc.id))
+
+            shortest = min(offers, key=effective)[1]
+            res = await cls.search_availability(
+                db, tenant_id, branch_id, [shortest.id], from_utc, to_utc,
+                staff_id=staff_id, staff_mode="specific", is_public=True, persist_quotes=False)
+            for slot in res["slots"]:
+                by_start.setdefault(slot["starts_at_utc"], set()).add(slot["staff_id"])
+
+        slots = [{"starts_at_utc": t, "available_staff_count": len(ids)} for t, ids in sorted(by_start.items())]
+        return {"slots": slots, "total_count": len(slots)}
 
     @classmethod
     async def create_booking(

@@ -1,4 +1,6 @@
 import {
+  TimeFirstRequest,
+  TimeFirstResponse,
   PublicSiteResponse,
   BranchResponse,
   ServiceItemResponse,
@@ -150,6 +152,19 @@ export class PublicApiClient {
       body: JSON.stringify(payload),
     });
     return handleResponse<AvailabilitySearchResponse>(res);
+  }
+
+  /** Time-first step 1: free start times of the branch; then searchAvailability({ ..., at_utc }) for quotes. */
+  async searchTimeFirst(payload: TimeFirstRequest): Promise<TimeFirstResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/public/availability/time-first`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<TimeFirstResponse>(res);
   }
 
   async createBooking(
