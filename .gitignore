@@ -33,6 +33,7 @@ venv.bak/
 .env.*
 !.env.example
 !.env.staging.example
+!.env.production.example
 .env.local
 .env.*.local
 *.pem
@@ -81,3 +82,7 @@ dist/
 .vite/
 
 backups/*.sql
+
+# M16: offsite drill / restore working folders
+backups/drill_*/
+backups/restore_*/

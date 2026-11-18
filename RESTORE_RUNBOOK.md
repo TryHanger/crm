@@ -49,7 +49,7 @@ python scripts/backup_db.py --output-dir backups --database saas_crm_test --verb
    - Проверка ревизии Alembic (`alembic_version`).
    - Подсчёт восстановленных таблиц (минимум 47 прикладных таблиц).
    - Подсчёт арендаторов, планов подписок, сотрудников и филиалов.
-   - Аудит Row-Level Security: сканирование системного каталога `pg_class`, подтверждение флагов `rowsecurity=true` и `relforcerowsecurity=true` на **22 таблицах тенантов**.
+   - Аудит Row-Level Security: сканирование системного каталога `pg_class`, подтверждение флагов `rowsecurity=true` и `relforcerowsecurity=true` на **всех таблицах из `TENANT_TABLES`** (30 на M16; полный список с решениями по RLS проверяет `test_security_audit.py`).
    - Проверка ограничения исключения `staff_occupancy_no_overlap`.
    - **Аудит непривилегированного runtime-пользователя (`crm_app_user`)**: выполнение запроса к восстановленной БД от имени runtime-роли без контекста тенанта (возвращает 0 строк) и с контекстом тенанта (возвращает только строки соответствующего тенанта).
    - **Аудит межклиентской изоляции (Tenant A/B Cross-Isolation)**: невакуумная ID-level проверка: под контекстом Tenant A запрашиваются известные ID филиалов Tenant B (0 строк), под контекстом B запрашиваются ID филиалов Tenant A (0 строк), без контекста (0 строк), гарантируя математическую изоляцию RLS после восстановления.
@@ -76,7 +76,7 @@ python scripts/restore_db.py --manifest backups/backup_saas_crm_test_20261109_12
 | **RTO (Recovery Time Objective)** | $\le 15$ мин | **1.69 – 2.26 сек** (потоковый SQL restore) / **~30–60 сек** (полный цикл со стартом контейнеров и прогревом) | **ВЫПОЛНЕНО** | Измеренная скорость применения SQL-дампа ~450 КБ на PostgreSQL 17 составляет $< 2.5$ с. Дополнительное время требуется на запуск сервисов и проверку health probes. |
 | **RPO (Recovery Point Objective)** | $\le 1$ час | **1 час** (при часовом расписании cron) / **5 минут** (при WAL-архивации) | **PARTIAL** | Локальные снимки гарантируют RPO в 1 час. Для продакшн требуется включение WAL-g. |
 | **Offsite Backup Storage** | Внешнее S3 / GCS хранилище | Отсутствует внешнее хранилище | **BLOCKED** | До подключения внешнего S3/SFTP хранилища снимки хранятся на локальном томе хоста. Не имитировать готовность до предоставления бакета. |
-| **Верификация целостности** | 100% таблиц, данных и RLS | **47/47 таблиц**, **22/22 Forced RLS**, runtime role query PASS | **ВЫПОЛНЕНО** | Доказано автоматизированным тестом `test_disaster_recovery_negative_scenarios`. |
+| **Верификация целостности** | 100% таблиц, данных и RLS | **56 таблиц**, **30/30 Forced RLS**, runtime role query PASS | **ВЫПОЛНЕНО** | Тест `test_disaster_recovery_negative_scenarios`; M16: offsite-учения `offsite_backup.py --drill` (см. `docs/sprints/M16-D2.md`). |
 
 ---
 
@@ -90,3 +90,13 @@ python scripts/restore_db.py --manifest backups/backup_saas_crm_test_20261109_12
    - Проверить соответствие версий `pg_dump` и сервера PostgreSQL 17 (`pg_dump --version`).
    - Убедиться в целостности манифеста и контрольной суммы SHA-256.
    - Проверить права роли `crm_app_user` и доступность СУБД.
+
+## M16: offsite-копия и учения
+
+Бэкап уходит в S3-совместимое хранилище (`OFFSITE_S3_*`, подпись SigV4, `scripts/s3_client.py`); наружу передаются только шифртекст AES-256-GCM и манифесты.
+
+- `python scripts/offsite_backup.py` — бэкап, шифрование и загрузка (статус `UPLOADED` в `.offsite_manifest.json`).
+- `python scripts/offsite_backup.py --restore-latest --target-db saas_crm_restore_test` — скачать последнюю копию, сверить SHA-256 и восстановить с аудитом RLS.
+- `python scripts/offsite_backup.py --drill` — полные учения: бэкап → загрузка → удаление локальной копии → скачивание → восстановление → отчёт `offsite_drill_report.json`.
+
+Регламент для продакшена (расписание, хранение, полная авария хоста): `deploy/production/RUNBOOK.md` §5.

@@ -1,0 +1,170 @@
+# Production stack (M16). One host: PostgreSQL 17, migrations, API, outbox worker, static SPAs, nginx + Let's Encrypt.
+#   cp deploy/production/.env.production.example deploy/production/.env.production   # fill in, chmod 600
+#   docker compose -f deploy/production/docker-compose.production.yml --env-file deploy/production/.env.production up -d --build
+# Update procedure, backups, TLS and rollback: deploy/production/RUNBOOK.md
+name: saas_crm_prod
+
+x-app-env: &app-env
+  ENVIRONMENT: production
+  ENABLE_DEMO_SEED: "false"
+  DATABASE_URL: postgresql+asyncpg://${DB_USER:-crm_app_user}:${DB_PASSWORD:?set DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-saas_crm}
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: ${POSTGRES_DB:-saas_crm}
+  DB_USER: ${DB_USER:-crm_app_user}
+  DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY}
+  PLATFORM_IP_ALLOWLIST: ${PLATFORM_IP_ALLOWLIST:?set PLATFORM_IP_ALLOWLIST}
+  TRUSTED_PROXIES: proxy
+  PLATFORM_DOMAIN: console.${ROOT_DOMAIN:?set ROOT_DOMAIN}
+  PLATFORM_ROOT_DOMAIN: console.${ROOT_DOMAIN}
+  CRM_DOMAIN: app.${ROOT_DOMAIN}
+  API_DOMAIN: api.${ROOT_DOMAIN}
+  BOOKING_DOMAIN_SUFFIX: .${BOOKING_ROOT:?set BOOKING_ROOT}
+  CORS_ORIGINS: https://app.${ROOT_DOMAIN},https://console.${ROOT_DOMAIN}
+  STRICT_HOST_ROUTING: "true"
+  SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM}
+  EMAIL_NOTIFICATIONS_ENABLED: ${EMAIL_NOTIFICATIONS_ENABLED:-true}
+  PLATFORM_DAILY_EMAIL_LIMIT_MAX: ${PLATFORM_DAILY_EMAIL_LIMIT_MAX:-2000}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-saas_crm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # never published to the host network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-saas_crm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: { context: ../.., dockerfile: Dockerfile }
+    image: saas-crm-api:${RELEASE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *app-env
+      PROCESS_ROLE: migration
+      ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saas_crm}
+      ADMIN_DB_USER: ${POSTGRES_USER}
+      ADMIN_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      INITIAL_PLATFORM_OWNER_EMAIL: ${INITIAL_PLATFORM_OWNER_EMAIL:?set INITIAL_PLATFORM_OWNER_EMAIL}
+      INITIAL_PLATFORM_OWNER_PASSWORD: ${INITIAL_PLATFORM_OWNER_PASSWORD:?set INITIAL_PLATFORM_OWNER_PASSWORD}
+      INITIAL_PLATFORM_OWNER_NAME: ${INITIAL_PLATFORM_OWNER_NAME:-Platform Administrator}
+    command: ["sh", "-c", "alembic upgrade head && python -m apps.api.app.infrastructure.db.init_db"]
+
+  api:
+    image: saas-crm-api:${RELEASE_TAG:-latest}
+    restart: always
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+      PROCESS_ROLE: api
+    command: ["uvicorn", "apps.api.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${API_WORKERS:-2}",
+              "--proxy-headers", "--forwarded-allow-ips", "*"]
+    expose: ["8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  outbox-worker:
+    image: saas-crm-api:${RELEASE_TAG:-latest}
+    restart: always
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+      PROCESS_ROLE: worker
+    command: ["python", "scripts/outbox_worker.py", "--interval", "5"]
+
+  frontend:
+    build: { context: ../.., dockerfile: Dockerfile.frontend }
+    image: saas-crm-frontend:${RELEASE_TAG:-latest}
+    restart: always
+    volumes:
+      - frontend_booking:/var/www/booking-web
+      - frontend_crm:/var/www/business-crm
+      - frontend_platform:/var/www/platform-console
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /var/www/booking-web/index.html && test -s /var/www/business-crm/index.html && test -s /var/www/platform-console/index.html"]
+      interval: 5s
+      retries: 20
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: always
+    depends_on:
+      api: { condition: service_healthy }
+      frontend: { condition: service_healthy }
+    environment:
+      ROOT_DOMAIN: ${ROOT_DOMAIN}
+      BOOKING_ROOT: ${BOOKING_ROOT}
+      BOOKING_ROOT_REGEX: ${BOOKING_ROOT_REGEX:?set BOOKING_ROOT_REGEX, e.g. book\.example\.kz}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+      - frontend_booking:/var/www/booking-web:ro
+      - frontend_crm:/var/www/business-crm:ro
+      - frontend_platform:/var/www/platform-console:ro
+
+  certbot:
+    # renews HTTP-01 certificates twice a day; the wildcard (DNS-01) is renewed per RUNBOOK §TLS
+    image: certbot/certbot:v3.0.1
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: ["sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+
+  backup:
+    # on demand / from the host timer: docker compose ... --profile ops run --rm backup
+    profiles: ["ops"]
+    build: { context: ../.., dockerfile: deploy/production/Dockerfile.ops }
+    image: saas-crm-ops:${RELEASE_TAG:-latest}
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *app-env
+      PROCESS_ROLE: migration
+      DB_HOST: postgres
+      ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saas_crm}
+      ADMIN_DB_USER: ${POSTGRES_USER}
+      ADMIN_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:?set BACKUP_ENCRYPTION_KEY (64 hex)}
+      OFFSITE_S3_ENDPOINT: ${OFFSITE_S3_ENDPOINT:?set OFFSITE_S3_ENDPOINT}
+      OFFSITE_S3_BUCKET: ${OFFSITE_S3_BUCKET:?set OFFSITE_S3_BUCKET}
+      OFFSITE_S3_ACCESS_KEY: ${OFFSITE_S3_ACCESS_KEY:?set OFFSITE_S3_ACCESS_KEY}
+      OFFSITE_S3_SECRET_KEY: ${OFFSITE_S3_SECRET_KEY:?set OFFSITE_S3_SECRET_KEY}
+      OFFSITE_S3_REGION: ${OFFSITE_S3_REGION:-us-east-1}
+      OFFSITE_S3_PREFIX: ${OFFSITE_S3_PREFIX:-crm/}
+    volumes:
+      - backups:/app/backups
+    command: ["python", "scripts/offsite_backup.py", "--dir", "/app/backups"]
+
+volumes:
+  pgdata:
+  backups:
+  letsencrypt:
+  certbot_www:
+  frontend_booking:
+  frontend_crm:
+  frontend_platform:

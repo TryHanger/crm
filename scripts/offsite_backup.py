@@ -26,6 +26,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 from scripts.backup_db import create_backup
 from scripts.restore_db import restore_and_verify
+from scripts.s3_client import S3Client, S3Config, S3Error, _file_sha256
 
 
 def derive_or_get_encryption_key(key_hex: Optional[str] = None) -> Tuple[bytes, str]:
@@ -176,15 +177,16 @@ def create_encrypted_offsite_package(
     if os.path.exists(gz_path):
         os.remove(gz_path)
 
-    # Step 4: Honest Remote S3 Status (Strictly BLOCKED until real S3 bucket is provisioned)
-    s3_bucket = os.getenv("OFFSITE_S3_BUCKET")
+    # Step 4: Remote offsite status. M16: real upload when OFFSITE_S3_* is configured, otherwise BLOCKED.
+    s3_cfg = S3Config.from_env()
     remote_status = "BLOCKED"
     remote_detail = (
-        "Remote cloud object storage (S3) is NOT provisioned. Remote upload is strictly BLOCKED "
-        "pending IAM credentials, bucket policy, and provider selection by platform administrator."
+        "Remote S3-compatible storage is not configured (OFFSITE_S3_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY). "
+        "Only the local encrypted package exists."
     )
-    if s3_bucket:
-        remote_detail = f"S3 Bucket '{s3_bucket}' configured in env, but remote upload transport is pending cloud IAM verification."
+    if s3_cfg is not None:
+        remote_status = "PENDING_UPLOAD"
+        remote_detail = f"Uploading to {s3_cfg.endpoint} bucket '{s3_cfg.bucket}' prefix '{s3_cfg.prefix}'"
 
     total_duration = round(time.time() - t0, 3)
 
@@ -214,6 +216,19 @@ def create_encrypted_offsite_package(
     }
 
     offsite_manifest_path = f"{base_name}.offsite_manifest.json"
+    if s3_cfg is not None:
+        # only ciphertext and manifests leave the host; the key never does
+        client = S3Client(s3_cfg)
+        client.ensure_bucket()
+        remote_prefix = f"{s3_cfg.prefix}{base_manifest['database_name']}/{os.path.basename(base_name)}/"
+        uploaded = [client.put_file(remote_prefix + os.path.basename(enc_path), enc_path),
+                    client.put_file(remote_prefix + os.path.basename(manifest_base_path), manifest_base_path)]
+        offsite_manifest["remote_offsite_status"] = remote_status = "UPLOADED"
+        offsite_manifest["remote_offsite_detail"] = remote_detail = f"{s3_cfg.endpoint}/{s3_cfg.bucket}/{remote_prefix}"
+        offsite_manifest["remote_objects"] = uploaded
+        with open(offsite_manifest_path, "w", encoding="utf-8") as f:
+            json.dump(offsite_manifest, f, indent=2, ensure_ascii=False)
+        client.put_file(remote_prefix + os.path.basename(offsite_manifest_path), offsite_manifest_path)
     with open(offsite_manifest_path, "w", encoding="utf-8") as f:
         json.dump(offsite_manifest, f, indent=2, ensure_ascii=False)
 
@@ -319,6 +334,65 @@ def verify_offsite_restore(
     return dr_verification
 
 
+def fetch_latest_offsite(work_dir: str, database: Optional[str] = None) -> str:
+    """Downloads the newest offsite package (ciphertext + manifests) into an empty dir, verifies SHA-256."""
+    cfg = S3Config.from_env()
+    if cfg is None:
+        raise RuntimeError("OFFSITE_S3_* is not configured: nothing to restore from")
+    client = S3Client(cfg)
+    prefix = f"{cfg.prefix}{database or ''}"
+    keys = [o for o in client.list_keys(prefix) if o["key"].endswith(".offsite_manifest.json")]
+    if not keys:
+        raise RuntimeError(f"no offsite packages under {cfg.bucket}/{prefix}")
+    latest = sorted(keys, key=lambda o: o["key"])[-1]["key"]
+    folder = latest.rsplit("/", 1)[0] + "/"
+    os.makedirs(work_dir, exist_ok=True)
+    manifest_path = client.get_file(latest, os.path.join(work_dir, os.path.basename(latest)))
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    enc_path = client.get_file(folder + manifest["encrypted_file"], os.path.join(work_dir, manifest["encrypted_file"]))
+    base_manifest_name = manifest["encrypted_file"].replace(".sql.gz.enc", ".manifest.json")
+    client.get_file(folder + base_manifest_name, os.path.join(work_dir, base_manifest_name))
+    if _file_sha256(enc_path) != manifest["encrypted_sha256"]:
+        raise RuntimeError("downloaded archive does not match the offsite manifest (sha256): refusing to restore")
+    print(f"[+] Downloaded offsite package {folder} ({manifest['encrypted_size_bytes']} bytes), sha256 verified")
+    return enc_path
+
+
+def offsite_drill(database: Optional[str], target_db: str, key_hex: Optional[str], work_root: str = "backups") -> Dict[str, Any]:
+    """Full DR drill: backup -> encrypt -> upload -> wipe local copy -> download -> decrypt -> restore -> RLS audit."""
+    t0 = time.time()
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%SZ")
+    src_dir = os.path.join(work_root, f"drill_{stamp}_source")
+    enc_path, manifest = create_encrypted_offsite_package(target_dir=src_dir, database=database, key_hex=key_hex)
+    if manifest.get("remote_offsite_status") != "UPLOADED":
+        raise RuntimeError("offsite upload is not configured: the drill needs OFFSITE_S3_*")
+    t_backup = round(time.time() - t0, 3)
+    shutil.rmtree(src_dir)                          # the host "is lost": only the offsite copy remains
+    print(f"[+] Local copy removed: {src_dir}")
+    t1 = time.time()
+    restore_dir = os.path.join(work_root, f"drill_{stamp}_restore")
+    fetched = fetch_latest_offsite(restore_dir, manifest["database_name"])
+    t_download = round(time.time() - t1, 3)
+    result = verify_offsite_restore(fetched, target_test_db=target_db, key_hex=key_hex)
+    report = {
+        "status": "SUCCESS", "drill_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "source_database": manifest["database_name"], "target_database": target_db,
+        "remote": manifest.get("remote_offsite_detail"), "encrypted_sha256": manifest["encrypted_sha256"],
+        "backup_encrypt_upload_seconds": t_backup, "download_verify_seconds": t_download,
+        "restore_seconds": result["local_encrypted_archive_restore_duration_seconds"],
+        "total_seconds": round(time.time() - t0, 3),
+        "tenant_tables_rls_verified": result.get("tenant_tables_rls_verified"),
+        "tenant_isolation_ab_verified": result.get("tenant_isolation_ab_verified"),
+        "tables_count": result.get("tables_count"), "tenants_count": result.get("tenants_count"),
+    }
+    path = os.path.join(restore_dir, "offsite_drill_report.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    print(f"[+] OFFSITE DRILL PASSED in {report['total_seconds']}s, report: {path}")
+    return report
+
+
 def run_encryption_negative_tests():
     """Validates fail-closed behavior on missing keys, corrupt tags, and tampered ciphertext."""
     print("\n[*] Running Encryption Fail-Closed Negative Tests...")
@@ -391,6 +465,8 @@ if __name__ == "__main__":
     parser.add_argument("--target-db", default="saas_crm_offsite_restore_test", help="Target verification database")
     parser.add_argument("--keep-plaintext", action="store_true", help="Retain unencrypted .sql file after encryption")
     parser.add_argument("--test-negative", action="store_true", help="Run fail-closed negative tests for encryption")
+    parser.add_argument("--drill", action="store_true", help="M16: backup, upload offsite, wipe local copy, download and restore")
+    parser.add_argument("--restore-latest", action="store_true", help="M16: download the newest offsite package and restore it into --target-db")
     args = parser.parse_args()
 
     if args.generate_key:
@@ -399,6 +475,16 @@ if __name__ == "__main__":
 
     if args.test_negative:
         run_encryption_negative_tests()
+        sys.exit(0)
+
+    if args.drill:
+        offsite_drill(args.database, args.target_db, args.key, work_root=args.dir)
+        sys.exit(0)
+
+    if args.restore_latest:
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%SZ")
+        fetched = fetch_latest_offsite(os.path.join(args.dir, f"restore_{stamp}"), args.database)
+        verify_offsite_restore(encrypted_path=fetched, target_test_db=args.target_db, key_hex=args.key)
         sys.exit(0)
 
     enc_file, manifest = create_encrypted_offsite_package(
