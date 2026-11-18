@@ -311,8 +311,10 @@ class BookingBrandingUpdateRequest(BaseModel):
 
 class InviteCreateRequest(BaseModel):
     email: EmailStr
-    role: str = "admin"  # admin, master
+    role: str = "admin"  # admin, master (M15: anything else is rejected)
     branch_scope: Optional[str] = None
+    staff_id: Optional[uuid.UUID] = None          # M15: master invite is linked to this staff profile
+    branch_ids: Optional[List[uuid.UUID]] = None  # M15: admin limited to these branches (empty = all)
 
 # Platform Console Schemas
 class PlatformTenantCreateRequest(BaseModel):

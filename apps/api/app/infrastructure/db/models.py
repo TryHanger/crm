@@ -124,6 +124,8 @@ class Invite(Base):
     consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    staff_profile_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)  # M15: master invite
+    branch_ids: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)  # M15: admin limited to these branches
 
 
 class Plan(Base):
@@ -381,6 +383,17 @@ class OutboxEvent(Base):
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # M15: pending -> sent | skipped | failed; a worker leases a row with locked_until (SKIP LOCKED claim)
+    status: Mapped[str] = mapped_column(String(16), server_default=text("'pending'"), default="pending", nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    dedupe_key: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'sent', 'skipped', 'failed')", name="ck_outbox_status"),
+        UniqueConstraint("dedupe_key", name="uq_outbox_dedupe_key"),
+        Index("ix_outbox_due", "status", "next_attempt_at"),
+    )
 
 
 class IdempotencyRecord(Base):
@@ -437,6 +450,8 @@ class TenantSettings(Base):
     currency: Mapped[str] = mapped_column(String(3), default="KZT", nullable=False)
     phone: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    email_notifications_enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), default=True, nullable=False)  # M15
+    daily_email_limit: Mapped[int] = mapped_column(Integer, server_default=text("300"), default=300, nullable=False)  # M15
 
 
 class BookingPolicy(Base):
@@ -624,6 +639,7 @@ class Customer(Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes_private: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    notifications_opt_out_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # M15
     data_source: Mapped[str] = mapped_column(String(32), default="public_booking", nullable=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
@@ -1012,4 +1028,43 @@ class ExpenseCategory(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_expense_category_tenant_id"),
         UniqueConstraint("tenant_id", "name", name="uq_expense_category_name"),
+    )
+
+
+class NotificationTemplate(Base):
+    """Company override of a notification template (M15). No row = built-in default."""
+    __tablename__ = "notification_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    updated_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "code", name="uq_notification_template_code"),)
+
+
+class NotificationDelivery(Base):
+    """One delivery decision per outbox event and channel (M15): sent, skipped (why) or failed."""
+    __tablename__ = "notification_deliveries"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    outbox_event_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("outbox_events.id"), nullable=False)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    template_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    recipient_masked: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    message_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("outbox_event_id", "channel", name="uq_delivery_event_channel"),
+        CheckConstraint("status IN ('sent', 'skipped', 'failed')", name="ck_delivery_status"),
+        Index("ix_delivery_tenant_created", "tenant_id", "created_at"),
     )

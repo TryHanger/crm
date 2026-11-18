@@ -25,6 +25,12 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      # M15: SMTP sink for the notification smoke
+      mailpit:
+        image: axllent/mailpit:v1.21
+        ports:
+          - 1025:1025
+          - 8025:8025
 
     steps:
       - name: Checkout Code
@@ -176,10 +182,16 @@ jobs:
           ADMIN_DB_PASSWORD: postgrespassword
           ENABLE_DEMO_SEED: "true"
           JWT_SECRET_KEY: test-jwt-secret-key-32-chars-long-minimum-length!
+          SMTP_HOST: 127.0.0.1
+          SMTP_PORT: 1025
+          SMTP_SECURITY: none
+          SMTP_FROM: noreply@crm.localhost
+          PUBLIC_BOOKING_URL_TEMPLATE: http://{slug}.localhost:3000
         run: |
           sudo sed -i 's/127.0.0.1 localhost/127.0.0.1 localhost barberhouse.localhost moderncut.localhost/' /etc/hosts
           python -c "from apps.api.app.infrastructure.db.init_db import init_database, seed_database; init_database(); seed_database()"
           uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 &
+          python scripts/outbox_worker.py --interval 1 &
           npm run dev --workspace=@crm/booking-web -- --port 3000 --host 0.0.0.0 &
           npm run dev --workspace=@crm/business-crm -- --port 3001 --host 0.0.0.0 &
           npm run dev --workspace=@crm/platform-console -- --port 3002 --host 0.0.0.0 &
@@ -220,6 +232,8 @@ jobs:
           python scripts/smoke_shift.py
           # M14 smoke: finance report from the ledger, expense reconciled by the shift
           python scripts/smoke_reports.py
+          # M15 smoke: real SMTP delivery via Mailpit, manage link opens, master does not see the till
+          python scripts/smoke_notifications.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots

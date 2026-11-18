@@ -3,7 +3,8 @@ import hashlib
 import datetime
 import zoneinfo
 from typing import List, Optional, Tuple
-from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Header, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select, and_, text
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,7 @@ from apps.api.app.infrastructure.domain_resolution.resolver import resolve_publi
 from apps.api.app.infrastructure.db.models import (
     Tenant, Branch, Service, ServiceCategory, StaffProfile, StaffBranch,
     StaffServiceOffer, BookingTheme, BookingPolicy, Booking, BookingItem,
-    PublicManagementToken
+    PublicManagementToken, Customer
 )
 from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineError
 from apps.api.app.infrastructure.security.rate_limiter import rate_limit
@@ -518,3 +519,46 @@ async def public_reschedule_booking(
         }
     except BookingEngineError as e:
         raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
+
+
+# =========================================================================
+# EMAIL OPT-OUT (M15): GET shows a confirmation form (mail scanners prefetch links), POST opts out
+# =========================================================================
+
+def _unsubscribe_page(title: str, text_: str, token: Optional[str] = None) -> HTMLResponse:
+    import html as _html
+    form = ""
+    if token:
+        form = (f'<form method="post"><input type="hidden" name="token" value="{_html.escape(token, quote=True)}">'
+                f'<button type="submit" style="padding:10px 18px">Не присылать письма о записях</button></form>')
+    return HTMLResponse(f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+                        f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{_html.escape(title)}</title></head>'
+                        f'<body style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:0 16px">'
+                        f'<h1 style="font-size:20px">{_html.escape(title)}</h1><p>{_html.escape(text_)}</p>{form}</body></html>')
+
+
+@router.get("/notifications/unsubscribe", response_class=HTMLResponse, include_in_schema=False)
+async def unsubscribe_form(token: str = ""):
+    from apps.api.app.modules.notifications import worker as notification_worker
+    if notification_worker.parse_unsubscribe_token(token) is None:
+        return _unsubscribe_page("Ссылка недействительна", "Проверьте ссылку из письма.")
+    return _unsubscribe_page("Письма о записях", "Подтвердите, что больше не хотите получать письма о своих записях.", token)
+
+
+@router.post("/notifications/unsubscribe", response_class=HTMLResponse)
+async def unsubscribe(
+    token: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    _rl: None = Depends(rate_limit(max_requests=20, window_seconds=60, group="public_unsubscribe"))
+):
+    from apps.api.app.modules.notifications import worker as notification_worker
+    parsed = notification_worker.parse_unsubscribe_token(token)
+    if parsed is None:
+        return _unsubscribe_page("Ссылка недействительна", "Проверьте ссылку из письма.")
+    tenant_id, customer_id = parsed
+    await set_tenant_context(db, tenant_id)
+    c = (await db.execute(select(Customer).where(Customer.id == customer_id, Customer.tenant_id == tenant_id))).scalar_one_or_none()
+    if c is not None and c.notifications_opt_out_at is None:
+        c.notifications_opt_out_at = datetime.datetime.now(datetime.timezone.utc)
+        await db.commit()
+    return _unsubscribe_page("Готово", "Мы больше не будем присылать вам письма о записях.")

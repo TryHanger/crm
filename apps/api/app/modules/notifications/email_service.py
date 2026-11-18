@@ -139,7 +139,13 @@ class EmailDeliveryService:
         user = settings.SMTP_USER
         password = settings.SMTP_PASSWORD
 
-        if port == 465:
+        security = (settings.SMTP_SECURITY or ("ssl" if port == 465 else "starttls")).lower()
+        if security == "none":   # M15: local Mailpit only (refused in production by config validation)
+            with smtplib.SMTP(host, port, timeout=10) as server:
+                if user and password:
+                    server.login(user, password)
+                server.sendmail(settings.SMTP_FROM, [to_email], msg.as_string())
+        elif security == "ssl":
             context = ssl.create_default_context()
             with smtplib.SMTP_SSL(host, port, context=context, timeout=10) as server:
                 if user and password:

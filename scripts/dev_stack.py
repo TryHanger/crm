@@ -29,7 +29,7 @@ SPAS = [
 ]
 API_PORT = 8000
 # smoke-сценарии спринтов, по порядку
-SMOKES = ["smoke_two_tenants.py", "smoke_onboarding.py", "smoke_pricing.py", "smoke_schedules.py", "smoke_booking_flows.py", "smoke_slot_race.py", "smoke_calendar_block.py", "smoke_visit_lifecycle.py", "smoke_customers.py", "smoke_accrual.py", "smoke_cash.py", "smoke_shift.py", "smoke_reports.py"]
+SMOKES = ["smoke_two_tenants.py", "smoke_onboarding.py", "smoke_pricing.py", "smoke_schedules.py", "smoke_booking_flows.py", "smoke_slot_race.py", "smoke_calendar_block.py", "smoke_visit_lifecycle.py", "smoke_customers.py", "smoke_accrual.py", "smoke_cash.py", "smoke_shift.py", "smoke_reports.py", "smoke_notifications.py"]
 
 
 def build_env(db_port: int) -> dict:
@@ -47,6 +47,12 @@ def build_env(db_port: int) -> dict:
         "ADMIN_DB_USER": "postgres",
         "ADMIN_DB_PASSWORD": "postgrespassword",
         "JWT_SECRET_KEY": "dev-insecure-jwt-secret-key-change-in-production-1234567890",
+        # M15: client emails go to the local Mailpit (http://localhost:8025)
+        "SMTP_HOST": "127.0.0.1",
+        "SMTP_PORT": "1025",
+        "SMTP_SECURITY": "none",
+        "SMTP_FROM": "noreply@crm.localhost",
+        "PUBLIC_BOOKING_URL_TEMPLATE": "http://{slug}.localhost:3000",
     }
     for k, v in defaults.items():
         env.setdefault(k, v)
@@ -81,7 +87,7 @@ def start_postgres(env: dict) -> None:
     if not shutil.which("docker"):
         sys.exit("docker не найден: запустите Docker Desktop или используйте --no-docker")
     print(f"PostgreSQL 17 (docker compose, порт {env['DB_PORT']})")
-    subprocess.run(["docker", "compose", "up", "-d", "--wait", "postgres"], cwd=ROOT, env=env, check=True)
+    subprocess.run(["docker", "compose", "up", "-d", "--wait", "postgres", "mailpit"], cwd=ROOT, env=env, check=True)
 
 
 def wait_postgres(env: dict) -> None:
@@ -155,6 +161,8 @@ def main() -> int:
         print("Запуск API и фронтендов")
         procs.append(("api", spawn("api", [sys.executable, "-m", "uvicorn", "apps.api.app.main:app",
                                            "--host", "127.0.0.1", "--port", str(API_PORT)], env)))
+        procs.append(("outbox-worker", spawn("outbox-worker", [sys.executable, str(ROOT / "scripts" / "outbox_worker.py"),
+                                                               "--interval", "1"], env)))
         for name, ws, port in SPAS:
             procs.append((name, spawn(name, [npm, "run", "dev", f"--workspace={ws}", "--",
                                              "--port", str(port), "--strictPort"], env)))
@@ -169,6 +177,7 @@ def main() -> int:
   CRM                  http://localhost:3001   owner@barberhouse.kz / owner@moderncut.kz, Password123!
   Platform Console     http://localhost:3002
   API docs             http://localhost:{API_PORT}/docs
+  Письма клиентам      http://localhost:8025 (Mailpit, воркер outbox запущен)
 """)
         if args.smoke:
             rc = 0

@@ -10,8 +10,13 @@ from apps.api.app.infrastructure.security import branch_scope
 from apps.api.app.modules.bookings import lifecycle
 from apps.api.app.modules.finance import accrual, cash as finance_cash, ledger as finance_ledger, shifts as finance_shifts
 from apps.api.app.modules.finance import expenses as finance_expenses, reports as finance_reports
+from apps.api.app.modules.notifications import templates as notification_templates
+from apps.api.app.core.config import settings
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from apps.api.app.modules.finance.ledger import FinanceError
 from apps.api.app.infrastructure.db.models import CashAccount, CashShift, ExpenseCategory, LedgerEntry, Order
+from apps.api.app.infrastructure.db.models import (BranchRoleGrant, NotificationDelivery, NotificationTemplate,
+                                                   OutboxEvent, TenantSettings)
 from apps.api.app.infrastructure.db.session import set_tenant_context
 from apps.api.app.modules.customers import identity as customer_identity
 from sqlalchemy.exc import IntegrityError, DBAPIError
@@ -2330,6 +2335,11 @@ async def list_crm_users(
         IdentityUser, IdentityUser.id == TenantMembership.user_id
     ).where(TenantMembership.tenant_id == crm_user.tenant_id)
     rows = (await db.execute(stmt)).all()
+    grants = {}
+    if rows:
+        for mid, bid in (await db.execute(select(BranchRoleGrant.membership_id, BranchRoleGrant.branch_id).where(
+                BranchRoleGrant.membership_id.in_([m.id for m, _ in rows])))).all():
+            grants.setdefault(mid, []).append(str(bid))
 
     return [{
         "id": str(m.id),
@@ -2338,8 +2348,207 @@ async def list_crm_users(
         "display_name": u.display_name,
         "role": m.role,
         "status": m.status,
+        "branch_ids": grants.get(m.id, []),   # M15: admin branches; empty = all
         "created_at": m.joined_at.isoformat() if m.joined_at else None
     } for m, u in rows]
+
+
+# =========================================================================
+# NOTIFICATIONS (M15): settings, templates, limits, delivery log
+# =========================================================================
+
+class NotificationSettingsUpdate(BaseModel):
+    email_notifications_enabled: Optional[bool] = None
+    daily_email_limit: Optional[int] = Field(default=None, ge=1)
+
+
+class NotificationTemplateUpdate(BaseModel):
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=4000)
+    enabled: bool = True
+
+
+async def _tenant_settings(db: AsyncSession, tenant_id: uuid.UUID) -> TenantSettings:
+    ts = (await db.execute(select(TenantSettings).where(TenantSettings.tenant_id == tenant_id))).scalar_one_or_none()
+    if ts is None:   # companies created before settings existed: start from defaults
+        name = (await db.execute(select(Tenant.display_name).where(Tenant.id == tenant_id))).scalar_one()
+        await db.execute(pg_insert(TenantSettings).values(id=uuid.uuid4(), tenant_id=tenant_id, business_name=name,
+                                                          locale="ru", currency="KZT").on_conflict_do_nothing())
+        ts = (await db.execute(select(TenantSettings).where(TenantSettings.tenant_id == tenant_id))).scalar_one()
+    return ts
+
+
+async def _notification_settings_out(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    ts = await _tenant_settings(db, tenant_id)
+    overrides = {t.code: t for t in (await db.execute(select(NotificationTemplate).where(
+        NotificationTemplate.tenant_id == tenant_id))).scalars().all()}
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
+    sent = (await db.execute(select(func.count()).select_from(NotificationDelivery).where(
+        NotificationDelivery.tenant_id == tenant_id, NotificationDelivery.status == "sent",
+        NotificationDelivery.created_at >= since))).scalar_one()
+    items = []
+    for code, (subject, body) in notification_templates.DEFAULTS.items():
+        o = overrides.get(code)
+        items.append({"code": code, "label": notification_templates.LABELS[code],
+                      "subject": o.subject if o else subject, "body": o.body if o else body,
+                      "enabled": o.enabled if o else True, "customized": o is not None})
+    return {"email_notifications_enabled": ts.email_notifications_enabled, "daily_email_limit": ts.daily_email_limit,
+            "daily_email_limit_max": settings.PLATFORM_DAILY_EMAIL_LIMIT_MAX, "sent_last_24h": sent,
+            "platform_email_enabled": settings.EMAIL_NOTIFICATIONS_ENABLED,
+            "placeholders": notification_templates.PLACEHOLDERS, "templates": items}
+
+
+@router.get("/notification-settings")
+async def get_notification_settings(
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    out = await _notification_settings_out(db, crm_user.tenant_id)
+    await db.commit()
+    return out
+
+
+@router.put("/notification-settings")
+async def update_notification_settings(
+    req: NotificationSettingsUpdate,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    ts = await _tenant_settings(db, crm_user.tenant_id)
+    if req.daily_email_limit is not None:
+        if req.daily_email_limit > settings.PLATFORM_DAILY_EMAIL_LIMIT_MAX:
+            raise HTTPException(status_code=422, detail={"code": "EMAIL_LIMIT_TOO_HIGH",
+                                                         "message": f"Не больше {settings.PLATFORM_DAILY_EMAIL_LIMIT_MAX} писем в сутки"})
+        ts.daily_email_limit = req.daily_email_limit
+    if req.email_notifications_enabled is not None:
+        ts.email_notifications_enabled = req.email_notifications_enabled
+    await db.commit()
+    await set_tenant_context(db, crm_user.tenant_id)
+    return await _notification_settings_out(db, crm_user.tenant_id)
+
+
+@router.put("/notification-templates/{code}")
+async def update_notification_template(
+    code: str, req: NotificationTemplateUpdate,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    try:
+        notification_templates.validate(code, req.subject, req.body)
+    except notification_templates.TemplateError as e:
+        raise HTTPException(status_code=404 if e.code == "TEMPLATE_NOT_FOUND" else 422,
+                            detail={"code": e.code, "message": e.message})
+    await db.execute(pg_insert(NotificationTemplate).values(
+        id=uuid.uuid4(), tenant_id=crm_user.tenant_id, code=code, subject=req.subject.strip(), body=req.body.strip(),
+        enabled=req.enabled, updated_by_user_id=crm_user.user.id).on_conflict_do_update(
+        constraint="uq_notification_template_code",
+        set_={"subject": req.subject.strip(), "body": req.body.strip(), "enabled": req.enabled,
+              "updated_by_user_id": crm_user.user.id, "updated_at": func.now()}))
+    await db.commit()
+    await set_tenant_context(db, crm_user.tenant_id)
+    return await _notification_settings_out(db, crm_user.tenant_id)
+
+
+@router.delete("/notification-templates/{code}")
+async def reset_notification_template(
+    code: str,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    if code not in notification_templates.DEFAULTS:
+        raise HTTPException(status_code=404, detail={"code": "TEMPLATE_NOT_FOUND", "message": "Нет такого шаблона"})
+    await db.execute(NotificationTemplate.__table__.delete().where(
+        NotificationTemplate.tenant_id == crm_user.tenant_id, NotificationTemplate.code == code))
+    await db.commit()
+    await set_tenant_context(db, crm_user.tenant_id)
+    return await _notification_settings_out(db, crm_user.tenant_id)
+
+
+@router.get("/notification-deliveries")
+async def list_notification_deliveries(
+    limit: int = Query(50, ge=1, le=200),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    rows = (await db.execute(select(NotificationDelivery, OutboxEvent.aggregate_id)
+                             .join(OutboxEvent, OutboxEvent.id == NotificationDelivery.outbox_event_id)
+                             .where(NotificationDelivery.tenant_id == crm_user.tenant_id)
+                             .order_by(NotificationDelivery.created_at.desc()).limit(limit))).all()
+    return [{"id": str(d.id), "template": d.template_code, "status": d.status, "reason": d.reason,
+             "recipient": d.recipient_masked, "booking_id": agg.split(":")[0], "attempts": d.attempts,
+             "created_at": d.created_at} for d, agg in rows]
+
+
+class MemberBranchesRequest(BaseModel):
+    branch_ids: List[uuid.UUID]
+
+
+@router.put("/users/{membership_id}/branches")
+async def set_member_branches(
+    membership_id: uuid.UUID, req: MemberBranchesRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Which branches an admin works in (M15). Empty list = all branches of the company."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    m = (await db.execute(select(TenantMembership).where(
+        TenantMembership.id == membership_id, TenantMembership.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if m is None:
+        raise HTTPException(status_code=404, detail={"code": "MEMBER_NOT_FOUND", "message": "Сотрудник не найден"})
+    if m.role != "admin":
+        raise HTTPException(status_code=422, detail={"code": "BRANCHES_FOR_ADMIN_ONLY",
+                                                     "message": "Филиалы назначаются администратору: владелец видит все, мастер — свои по профилю"})
+    ids = await _tenant_branch_ids(db, crm_user.tenant_id, req.branch_ids)
+    await db.execute(BranchRoleGrant.__table__.delete().where(BranchRoleGrant.membership_id == m.id))
+    for b in ids:
+        db.add(BranchRoleGrant(membership_id=m.id, branch_id=b))
+    await db.commit()
+    return {"membership_id": str(m.id), "branch_ids": [str(b) for b in ids]}
+
+
+class MemberStaffProfileRequest(BaseModel):
+    staff_id: uuid.UUID
+
+
+@router.put("/users/{membership_id}/staff-profile")
+async def link_member_staff_profile(
+    membership_id: uuid.UUID, req: MemberStaffProfileRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Link a master account to its staff profile (M15): the master then sees only own calendar."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    m = (await db.execute(select(TenantMembership).where(
+        TenantMembership.id == membership_id, TenantMembership.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if m is None:
+        raise HTTPException(status_code=404, detail={"code": "MEMBER_NOT_FOUND", "message": "Сотрудник не найден"})
+    if m.role != "master":
+        raise HTTPException(status_code=422, detail={"code": "PROFILE_FOR_MASTER_ONLY", "message": "Профиль привязывается только к мастеру"})
+    sp = (await db.execute(select(StaffProfile).where(
+        StaffProfile.id == req.staff_id, StaffProfile.tenant_id == crm_user.tenant_id).with_for_update())).scalar_one_or_none()
+    if sp is None:
+        raise HTTPException(status_code=422, detail={"code": "STAFF_PROFILE_NOT_FOUND", "message": "Профиль мастера не найден"})
+    if sp.user_id is not None and sp.user_id != m.user_id:
+        raise HTTPException(status_code=409, detail={"code": "STAFF_PROFILE_LINKED", "message": "У этого мастера уже есть учётная запись"})
+    other = (await db.execute(select(StaffProfile).where(
+        StaffProfile.tenant_id == crm_user.tenant_id, StaffProfile.user_id == m.user_id, StaffProfile.id != sp.id))).scalars().first()
+    if other is not None:
+        raise HTTPException(status_code=409, detail={"code": "ACCOUNT_ALREADY_LINKED", "message": "Учётная запись уже привязана к другому профилю"})
+    sp.user_id = m.user_id
+    await db.commit()
+    return {"membership_id": str(m.id), "staff_id": str(sp.id)}
+
+
+async def _tenant_branch_ids(db: AsyncSession, tenant_id: uuid.UUID, branch_ids) -> list:
+    ids = list(dict.fromkeys(branch_ids or []))
+    if ids:
+        found = set((await db.execute(select(Branch.id).where(Branch.tenant_id == tenant_id, Branch.id.in_(ids)))).scalars().all())
+        if found != set(ids):
+            raise HTTPException(status_code=422, detail={"code": "BRANCH_NOT_FOUND", "message": "Филиал не найден в этой компании"})
+    return ids
 
 
 @router.post("/invites", status_code=status.HTTP_201_CREATED)
@@ -2351,6 +2560,21 @@ async def create_crm_invite(
     await check_crm_write_permitted(crm_user.tenant_id, db)
     import secrets
     import hashlib
+    # M15: the owner invites only admins and masters; a master is tied to an unlinked staff profile
+    if req.role not in ("admin", "master"):
+        raise HTTPException(status_code=422, detail={"code": "INVITE_ROLE_INVALID",
+                                                     "message": "Пригласить можно администратора или мастера"})
+    staff_id = None
+    if req.role == "master" and req.staff_id is not None:
+        sp = (await db.execute(select(StaffProfile).where(
+            StaffProfile.id == req.staff_id, StaffProfile.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+        if sp is None:
+            raise HTTPException(status_code=422, detail={"code": "STAFF_PROFILE_NOT_FOUND", "message": "Профиль мастера не найден"})
+        if sp.user_id is not None:
+            raise HTTPException(status_code=409, detail={"code": "STAFF_PROFILE_LINKED",
+                                                         "message": "У этого мастера уже есть учётная запись"})
+        staff_id = sp.id
+    branch_ids = await _tenant_branch_ids(db, crm_user.tenant_id, req.branch_ids) if req.role == "admin" else []
     raw_token = secrets.token_urlsafe(32)
     tok_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -2359,13 +2583,21 @@ async def create_crm_invite(
         email=req.email.lower().strip(),
         role=req.role,
         invite_type="staff",
-        branch_scope="all",
+        branch_scope="selected" if branch_ids else "all",
+        staff_profile_id=staff_id,
+        branch_ids=[str(b) for b in branch_ids] or None,
         token_hash=tok_hash,
         expires_at=now_utc + datetime.timedelta(days=7),
     )
     db.add(inv)
     await db.commit()
+    out_warning = None
+    if req.role == "master" and staff_id is None:
+        # legacy CRM form: the account works only after the owner links it to a staff profile
+        out_warning = {"code": "STAFF_PROFILE_NOT_LINKED",
+                       "message": "Мастер увидит календарь после привязки к профилю: PUT /business/users/{id}/staff-profile"}
     return {
+        "warning": out_warning,
         "invite_id": str(inv.id),
         "email": inv.email,
         "role": inv.role,

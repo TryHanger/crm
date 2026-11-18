@@ -175,6 +175,25 @@ async def accept_invite(
         db.add(membership)
     else:
         membership.status = "active"
+    await db.flush()
+
+    # M15: a master invite links the staff profile; an admin invite carries the allowed branches
+    if invite.staff_profile_id is not None or invite.branch_ids:
+        from apps.api.app.infrastructure.db.models import BranchRoleGrant, StaffProfile
+        from apps.api.app.infrastructure.db.session import set_tenant_context
+        await set_tenant_context(db, invite.tenant_id)
+        if invite.staff_profile_id is not None:
+            sp = (await db.execute(select(StaffProfile).where(
+                StaffProfile.id == invite.staff_profile_id, StaffProfile.tenant_id == invite.tenant_id))).scalar_one_or_none()
+            if sp is None or (sp.user_id is not None and sp.user_id != user.id):
+                await db.rollback()
+                raise HTTPException(status_code=409, detail="STAFF_PROFILE_LINKED: профиль мастера уже привязан к другой учётной записи")
+            sp.user_id = user.id
+        for b in invite.branch_ids or []:
+            exists = (await db.execute(select(BranchRoleGrant.id).where(
+                BranchRoleGrant.membership_id == membership.id, BranchRoleGrant.branch_id == uuid.UUID(b)))).first()
+            if exists is None:
+                db.add(BranchRoleGrant(membership_id=membership.id, branch_id=uuid.UUID(b)))
 
     invite.consumed_at = now_utc
     await db.commit()

@@ -225,6 +225,16 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = Field(default=os.getenv("SMTP_PASSWORD", None))
 
     SMTP_FROM: str = Field(default=os.getenv("SMTP_FROM", "noreply@crm.internal"))
+    # M15: starttls (587) | ssl (465) | none (local Mailpit only; refused in production)
+    SMTP_SECURITY: str = Field(default=os.getenv("SMTP_SECURITY", "").strip().lower())
+    # M15 feature flag: the outbox worker sends client emails only when this is on
+    EMAIL_NOTIFICATIONS_ENABLED: bool = Field(default=os.getenv("EMAIL_NOTIFICATIONS_ENABLED", "true").lower() in ("true", "1", "yes"))
+    # smtp | memory (tests) | disabled; empty = smtp when SMTP_HOST is set, otherwise disabled
+    EMAIL_TRANSPORT: str = Field(default=os.getenv("EMAIL_TRANSPORT", "").strip().lower())
+    OUTBOX_MAX_ATTEMPTS: int = Field(default=int(os.getenv("OUTBOX_MAX_ATTEMPTS", "6")))
+    # client links in emails; {slug} and {host} are substituted. Empty = https://<canonical domain>
+    PUBLIC_BOOKING_URL_TEMPLATE: str = Field(default=os.getenv("PUBLIC_BOOKING_URL_TEMPLATE", ""))
+    PLATFORM_DAILY_EMAIL_LIMIT_MAX: int = Field(default=int(os.getenv("PLATFORM_DAILY_EMAIL_LIMIT_MAX", "2000")))
 
 
 
@@ -323,6 +333,9 @@ class Settings(BaseSettings):
                     or len(self.ADMIN_DB_PASSWORD) < 16
                 ):
                     raise RuntimeError(f"FATAL: Default or weak admin database password configured in {self.ENVIRONMENT} environment!")
+
+            if self.ENVIRONMENT == "production" and self.SMTP_HOST and self.SMTP_SECURITY == "none":
+                raise RuntimeError("FATAL: SMTP_SECURITY=none (plain SMTP) is forbidden in production: use starttls or ssl")
 
             if not self.PLATFORM_IP_ALLOWLIST and not self.ALLOW_EMPTY_PLATFORM_IP_ALLOWLIST:
                 raise RuntimeError(f"FATAL: PLATFORM_IP_ALLOWLIST must not be empty in {self.ENVIRONMENT} environment! Platform Console endpoints must be restricted.")

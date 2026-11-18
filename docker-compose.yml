@@ -17,6 +17,15 @@ services:
       timeout: 5s
       retries: 5
 
+  # M15: local SMTP sink for the stand and smoke tests; UI http://localhost:8025. Never used in production.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: saas_crm_mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
   api:
     build:
       context: .

@@ -47,6 +47,8 @@ TENANT_TABLES = [
     "cash_accounts",
     "cash_shifts",
     "expense_categories",
+    "notification_templates",
+    "notification_deliveries",
 ]
 
 def apply_rls_and_constraints():
