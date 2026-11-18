@@ -398,7 +398,9 @@ class IdempotencyRecord(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("scope", "idempotency_key", name="uq_scope_idempotency_key"),
+        # M07: a key is unique within a company (was global: same key in two companies -> false 409 / 500)
+        UniqueConstraint("tenant_id", "scope", "idempotency_key", name="uq_idem_tenant_scope_key",
+                         postgresql_nulls_not_distinct=True),
     )
 
 

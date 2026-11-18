@@ -4,7 +4,8 @@ import secrets
 import datetime
 import zoneinfo
 from typing import List, Optional, Tuple, Dict, Any
-from sqlalchemy import select, and_, or_, func, text, delete
+from sqlalchemy import select, and_, or_, func, text, delete, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from fastapi import HTTPException, status
@@ -600,6 +601,70 @@ class BookingEngine:
         return {"slots": slots, "total_count": len(slots)}
 
     @classmethod
+    async def _claim_idempotency_key(
+        cls, db: AsyncSession, tenant_id: uuid.UUID, scope: str, key: str, payload_hash: str, actor: str,
+    ):
+        """Returns (replay_result, None) for a repeated request, or (None, claimed_record_id)."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        new_id = (await db.execute(
+            pg_insert(IdempotencyRecord).values(
+                id=uuid.uuid4(), scope=scope, tenant_id=tenant_id, actor_or_context_hash=actor,
+                idempotency_key=key, request_hash=payload_hash, response_body_redacted="pending",
+                response_code=0, created_at=now, expires_at=now + datetime.timedelta(hours=24),
+            ).on_conflict_do_nothing().returning(IdempotencyRecord.id)
+        )).scalar_one_or_none()
+        if new_id is not None:
+            return None, new_id
+
+        rec = (await db.execute(select(IdempotencyRecord).where(
+            IdempotencyRecord.tenant_id == tenant_id, IdempotencyRecord.scope == scope,
+            IdempotencyRecord.idempotency_key == key))).scalar_one()
+        if rec.request_hash != payload_hash:
+            raise BookingEngineError(
+                "IDEMPOTENCY_KEY_REUSED",
+                "Idempotency key has already been used with different booking parameters",
+                status_code=409
+            )
+        b = (await db.execute(select(Booking).where(
+            Booking.idempotency_key == key, Booking.tenant_id == tenant_id))).scalar_one_or_none()
+        if b is None:
+            raise BookingEngineError("IDEMPOTENCY_IN_PROGRESS", "The same booking request is still being processed", 409)
+        # same request again: the same booking, with a fresh management link (raw tokens are never stored)
+        raw_token = secrets.token_urlsafe(32)
+        tok = PublicManagementToken(
+            tenant_id=tenant_id, booking_id=b.id, token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+            scope="manage_booking", expires_at=b.busy_ends_at_utc + datetime.timedelta(days=7))
+        db.add(tok)
+        await db.commit()
+        return (b, tok, raw_token), None
+
+    @classmethod
+    async def _alternatives_near(
+        cls, db: AsyncSession, tenant_id: uuid.UUID, branch_id: uuid.UUID, service_ids: List[uuid.UUID],
+        around_utc: datetime.datetime, is_public: bool = True, limit: int = 6,
+    ) -> List[Dict[str, Any]]:
+        """Nearest free starts (any master) on the same local day, for a 409 response. Never raises."""
+        try:
+            await set_tenant_context(db, tenant_id)
+            branch = (await db.execute(select(Branch).where(Branch.id == branch_id))).scalar_one()
+            tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty")
+            day = around_utc.astimezone(tz).date()
+            day_from = datetime.datetime.combine(day, datetime.time.min, tzinfo=tz).astimezone(datetime.timezone.utc)
+            day_to = datetime.datetime.combine(day, datetime.time.max, tzinfo=tz).astimezone(datetime.timezone.utc)
+            res = await cls.search_availability(db, tenant_id, branch_id, service_ids, day_from, day_to,
+                                                staff_mode="any", is_public=is_public, persist_quotes=False)
+            best: Dict[str, Dict[str, Any]] = {}
+            for slot in res["slots"]:  # already ordered: time, then price
+                best.setdefault(slot["starts_at_utc"], slot)
+            nearest = sorted(best.values(), key=lambda x: (
+                abs((datetime.datetime.fromisoformat(x["starts_at_utc"]) - around_utc).total_seconds()), x["starts_at_utc"]))
+            picked = sorted(nearest[:limit], key=lambda x: x["starts_at_utc"])
+            return [{"starts_at_utc": x["starts_at_utc"], "staff_id": x["staff_id"], "staff_name": x["staff_name"],
+                     "price_minor": x["price_minor"], "duration_minutes": x["duration_minutes"]} for x in picked]
+        except Exception:
+            return []
+
+    @classmethod
     async def create_booking(
         cls,
         db: AsyncSession,
@@ -633,37 +698,15 @@ class BookingEngine:
             f"{tenant_id}:{branch_id}:{staff_id}:{sorted(str(s) for s in service_ids)}:{starts_at_utc.isoformat()}:{customer_phone_e164}".encode()
         ).hexdigest()
 
-        # 1. Idempotency Check with Request Hash Verification
+        # 1. Idempotency: claim the key in THIS transaction before doing anything else.
+        #    A concurrent request with the same key blocks on the unique index until we commit
+        #    (then it replays our booking) or roll back (then it books itself). No check-then-insert race.
+        claimed_idem_id = None
         if idempotency_key:
-            stmt_idem = select(IdempotencyRecord).where(
-                IdempotencyRecord.scope == f"{source}_booking",
-                IdempotencyRecord.idempotency_key == idempotency_key
-            )
-            res_idem = await db.execute(stmt_idem)
-            rec = res_idem.scalar_one_or_none()
-            if rec:
-                if rec.request_hash != payload_hash:
-                    raise BookingEngineError(
-                        "IDEMPOTENCY_KEY_REUSED",
-                        "Idempotency key has already been used with different booking parameters",
-                        status_code=409
-                    )
-                # Return existing booking with fresh management token
-                stmt_b = select(Booking).where(Booking.idempotency_key == idempotency_key, Booking.tenant_id == tenant_id)
-                res_b = await db.execute(stmt_b)
-                b = res_b.scalar_one_or_none()
-                if b:
-                    raw_token = secrets.token_urlsafe(32)
-                    th = hashlib.sha256(raw_token.encode()).hexdigest()
-                    tok = PublicManagementToken(
-                        tenant_id=tenant_id,
-                        booking_id=b.id,
-                        token_hash=th,
-                        scope="manage_booking"
-                    )
-                    db.add(tok)
-                    await db.commit()
-                    return b, tok, raw_token
+            replay, claimed_idem_id = await cls._claim_idempotency_key(
+                db, tenant_id, f"{source}_booking", idempotency_key, payload_hash, customer_phone_e164)
+            if replay is not None:
+                return replay
 
         # 2. Re-calculate actual duration and price from DB
         duration_mins, actual_price_minor, items_data = await cls.calculate_quote_for_staff(
@@ -671,16 +714,22 @@ class BookingEngine:
         )
 
         # 3. Comprehensive Authoritative Validation (past slot, min advance, shifts, breaks)
-        branch, staff, policy = await cls.validate_slot_and_policies(
-            db=db,
-            tenant_id=tenant_id,
-            branch_id=branch_id,
-            staff_id=staff_id,
-            service_ids=service_ids,
-            starts_at_utc=starts_at_utc,
-            duration_minutes=duration_mins,
-            is_client=(source == "public")
-        )
+        try:
+            branch, staff, policy = await cls.validate_slot_and_policies(
+                db=db,
+                tenant_id=tenant_id,
+                branch_id=branch_id,
+                staff_id=staff_id,
+                service_ids=service_ids,
+                starts_at_utc=starts_at_utc,
+                duration_minutes=duration_mins,
+                is_client=(source == "public")
+            )
+        except BookingEngineError as e:
+            if e.code == "SLOT_CONFLICT":  # taken before we got here: same answer as a lost race
+                e.details = {**(e.details or {}), "alternatives": await cls._alternatives_near(
+                    db, tenant_id, branch_id, service_ids, starts_at_utc, is_public=(source == "public"))}
+            raise
 
         ends_at_utc = starts_at_utc + datetime.timedelta(minutes=duration_mins)
 
@@ -704,7 +753,9 @@ class BookingEngine:
                 raise BookingEngineError(
                     "QUOTE_EXPIRED",
                     "Selected booking quote has expired or was already used. Please select slot again.",
-                    status_code=409
+                    status_code=409,
+                    details={"alternatives": await cls._alternatives_near(
+                        db, tenant_id, branch_id, service_ids, starts_at_utc, is_public=(source == "public"))}
                 )
 
             # Strict Quote Binding: verify branch, staff, slot start time, and services
@@ -840,10 +891,14 @@ class BookingEngine:
             await db.flush()
         except (IntegrityError, DBAPIError) as exc:
             await db.rollback()
+            if "staff_occupancy_no_overlap" not in str(exc):
+                raise  # a different DB error must not be reported as "slot taken"
             raise BookingEngineError(
                 "SLOT_CONFLICT",
                 "The selected time slot was just booked by another customer. Please select another time.",
-                status_code=409
+                status_code=409,
+                details={"alternatives": await cls._alternatives_near(
+                    db, tenant_id, branch_id, service_ids, starts_at_utc, is_public=(source == "public"))}
             )
 
         # 8. Insert Booking Event
@@ -888,19 +943,12 @@ class BookingEngine:
         )
         db.add(outbox)
 
-        # 11. Idempotency Record
-        if idempotency_key:
-            idem_rec = IdempotencyRecord(
-                scope=f"{source}_booking",
-                tenant_id=tenant_id,
-                actor_or_context_hash=customer_phone_e164,
-                idempotency_key=idempotency_key,
-                request_hash=payload_hash,
-                response_body_redacted=f"booking_ref:{ref_code}",
-                response_code=201,
-                expires_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
+        # 11. Idempotency Record: the key claimed in step 1 now points at the created booking
+        if claimed_idem_id is not None:
+            await db.execute(
+                update(IdempotencyRecord).where(IdempotencyRecord.id == claimed_idem_id)
+                .values(response_body_redacted=f"booking_ref:{ref_code}", response_code=201)
             )
-            db.add(idem_rec)
 
         await db.commit()
         return booking, mgmt_token, raw_token

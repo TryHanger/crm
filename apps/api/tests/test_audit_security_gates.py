@@ -184,7 +184,10 @@ async def test_master_role_scoping_and_object_permissions():
 
         # Create booking for Erzhan at 11:00 Almaty (06:00 UTC)
         today = datetime.datetime.now(datetime.timezone.utc).date()
-        target_slot = datetime.datetime.combine(today + datetime.timedelta(days=25), datetime.time(6, 0), tzinfo=datetime.timezone.utc)
+        target_day = today + datetime.timedelta(days=25)
+        while target_day.isoweekday() == 7:  # Erzhan works Mon-Sat: the test failed one day a week
+            target_day += datetime.timedelta(days=1)
+        target_slot = datetime.datetime.combine(target_day, datetime.time(6, 0), tzinfo=datetime.timezone.utc)
         resp_b = await client.post("/api/v1/business/bookings", json={
             "branch_id": b_id,
             "staff_id": erzhan["id"],
