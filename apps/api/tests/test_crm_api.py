@@ -132,13 +132,24 @@ async def test_crm_calendar_and_master_role_isolation():
         assert cust1.status_code == 201
         assert cust1.json()["duplicate_detected"] is False
 
-        # Attempting to add with SAME phone returns duplicate_detected = True
+        # Same person (same name, phone written as 8 ...) -> duplicate_detected = True (M10)
+        cust_same = await client.post("/api/v1/business/customers", json={
+            "full_name": "  уникальный   клиент ",
+            "phone_e164": "8" + uniq_phone[2:]
+        }, headers=owner_headers)
+        assert cust_same.status_code in (200, 201)
+        assert cust_same.json()["duplicate_detected"] is True
+        assert cust_same.json()["id"] == cust1.json()["id"]
+
+        # Another person with the SAME phone is NOT merged: new client + hint (M10)
         cust2 = await client.post("/api/v1/business/customers", json={
             "full_name": "Тот же номер",
             "phone_e164": uniq_phone
         }, headers=owner_headers)
         assert cust2.status_code in (200, 201)
-        assert cust2.json()["duplicate_detected"] is True
+        assert cust2.json()["duplicate_detected"] is False
+        assert cust2.json()["id"] != cust1.json()["id"]
+        assert [c["id"] for c in cust2.json()["same_phone_customers"]] == [cust1.json()["id"]]
 
 
 @pytest.mark.asyncio

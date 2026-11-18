@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 
 from apps.api.app.modules.finance import money
 from apps.api.app.modules.bookings import lifecycle
+from apps.api.app.modules.customers import identity as customer_identity
 from apps.api.app.infrastructure.db.session import set_tenant_context
 from apps.api.app.infrastructure.db.models import (
     Tenant, Subscription, Booking, BookingItem, StaffOccupancy, CalendarBlock, BookingEvent,
@@ -773,6 +774,12 @@ class BookingEngine:
         """
         await set_tenant_context(db, tenant_id)
 
+        # M10: one phone, one spelling — before the idempotency fingerprint and any lookup
+        try:
+            customer_phone_e164 = customer_identity.normalize_phone(customer_phone_e164)
+        except customer_identity.PhoneError as e:
+            raise BookingEngineError("PHONE_INVALID", str(e), 422)
+
         payload_hash = hashlib.sha256(
             f"{tenant_id}:{branch_id}:{staff_id}:{sorted(str(s) for s in service_ids)}:{starts_at_utc.isoformat()}:{customer_phone_e164}".encode()
         ).hexdigest()
@@ -881,28 +888,15 @@ class BookingEngine:
                 details={"new_price_minor": actual_price_minor, "duration_minutes": duration_mins}
             )
 
-        # 4. Customer resolution or creation (tenant scoped)
-        phone_digits = "".join(filter(str.isdigit, customer_phone_e164))
-        stmt_cust = select(Customer).where(
-            Customer.tenant_id == tenant_id,
-            Customer.phone_e164 == customer_phone_e164
-        )
-        res_cust = await db.execute(stmt_cust)
-        customer = res_cust.scalar_one_or_none()
-
-        if not customer:
-            customer = Customer(
-                tenant_id=tenant_id,
-                full_name=customer_name,
-                phone_e164=customer_phone_e164,
-                phone_digits_index=phone_digits,
-                email=customer_email,
-                notes_private=notes if source == "crm_manual" else None,
-                data_source=source,
-                marketing_consent=False
-            )
-            db.add(customer)
-            await db.flush()
+        # 4. Customer: confirmed identity rules (same normalized phone AND same name), never merges
+        #    two different people who share a phone (M10). Serialized per (company, phone).
+        try:
+            resolved = await customer_identity.resolve_customer(
+                db, tenant_id=tenant_id, full_name=customer_name, phone=customer_phone_e164,
+                email=customer_email, source=source, notes_private=notes if source == "crm_manual" else None)
+        except customer_identity.PhoneError as e:
+            raise BookingEngineError("PHONE_INVALID", str(e), 422)
+        customer = resolved.customer
 
         # 5. Generate public reference
         # 5. Generate public reference with tenant-specific prefix

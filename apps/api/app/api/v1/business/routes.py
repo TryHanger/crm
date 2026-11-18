@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from apps.api.app.modules.catalog import ownership
 from apps.api.app.infrastructure.security import branch_scope
 from apps.api.app.modules.bookings import lifecycle
+from apps.api.app.modules.customers import identity as customer_identity
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -615,9 +616,14 @@ async def list_customers(
             return []
         stmt = stmt.join(Booking, Booking.customer_id == Customer.id).where(Booking.staff_id == master_staff.id).distinct()
 
-    if search:
-        s_term = f"%{search.strip()}%"
-        stmt = stmt.where(or_(Customer.full_name.ilike(s_term), Customer.phone_e164.like(s_term)))
+    if search and search.strip():
+        # M10: phone in any format (+7 / 8 / spaces) matches; LIKE wildcards in the input are literal
+        name_term = f"%{customer_identity.like_escape(search.strip())}%"
+        conds = [Customer.full_name.ilike(name_term, escape="\\")]
+        digits = customer_identity.search_digits(search)
+        if digits:
+            conds.append(Customer.phone_digits_index.like(f"%{digits}%"))
+        stmt = stmt.where(or_(*conds))
     stmt = stmt.order_by(Customer.created_at.desc())
     res = await db.execute(stmt)
     customers = res.scalars().all()
@@ -651,29 +657,21 @@ async def create_customer(
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
+    """Same normalized phone AND same name -> the existing client is returned (duplicate_detected).
+    Same phone, another name -> a new client; the others with this phone are listed so the
+    administrator can decide. Two people are never merged automatically (M10)."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    phone_digits = "".join(filter(str.isdigit, req.phone_e164))
-
-    # Duplicate check within tenant
-    stmt_dup = select(Customer).where(Customer.tenant_id == crm_user.tenant_id, Customer.phone_e164 == req.phone_e164)
-    res_dup = await db.execute(stmt_dup)
-    existing = res_dup.scalar_one_or_none()
-    if existing:
-        return {"id": str(existing.id), "full_name": existing.full_name, "duplicate_detected": True}
-
-    cust = Customer(
-        tenant_id=crm_user.tenant_id,
-        full_name=req.full_name,
-        phone_e164=req.phone_e164,
-        phone_digits_index=phone_digits,
-        email=req.email,
-        notes_private=req.notes_private,
-        data_source="crm_manual"
-    )
-    db.add(cust)
-    await db.flush()
+    try:
+        resolved = await customer_identity.resolve_customer(
+            db, tenant_id=crm_user.tenant_id, full_name=req.full_name, phone=req.phone_e164,
+            email=req.email, source="crm_manual", notes_private=req.notes_private)
+    except customer_identity.PhoneError as e:
+        raise HTTPException(status_code=422, detail={"code": "PHONE_INVALID", "message": str(e)})
     await db.commit()
-    return {"id": str(cust.id), "full_name": cust.full_name, "duplicate_detected": False}
+    c = resolved.customer
+    return {"id": str(c.id), "full_name": c.full_name, "phone_e164": c.phone_e164,
+            "duplicate_detected": not resolved.created,
+            "same_phone_customers": [{"id": str(o.id), "full_name": o.full_name} for o in resolved.same_phone_others]}
 
 
 @router.post("/customers/{customer_id}/notes")
@@ -1512,7 +1510,12 @@ async def get_customer_card(
         "total_bookings": len(bookings),
         "created_at": c.created_at.isoformat(),
         "history": visits,
-        "notes": notes
+        "notes": notes,
+        # M10: other clients of this company with the same phone (family, colleagues) — never merged automatically
+        "same_phone_customers": [] if is_m else [
+            {"id": str(o.id), "full_name": o.full_name}
+            for o in await customer_identity.same_phone_customers(db, crm_user.tenant_id, c.phone_e164, exclude_id=c.id)
+        ]
     }
 
 
@@ -1537,8 +1540,13 @@ async def update_customer(
     if req.notes_private is not None:
         c.notes_private = req.notes_private
     if req.phone_e164 is not None:
-        c.phone_e164 = req.phone_e164
-        c.phone_digits_index = "".join(filter(str.isdigit, req.phone_e164))
+        try:
+            c.phone_e164 = customer_identity.normalize_phone(req.phone_e164)
+        except customer_identity.PhoneError as e:
+            raise HTTPException(status_code=422, detail={"code": "PHONE_INVALID", "message": str(e)})
+        c.phone_digits_index = customer_identity.phone_digits(c.phone_e164)
+    if req.full_name is not None and not req.full_name.strip():
+        raise HTTPException(status_code=422, detail={"code": "NAME_REQUIRED", "message": "Имя клиента не может быть пустым"})
 
     await db.commit()
     return {"message": "Данные клиента обновлены", "id": str(c.id), "full_name": c.full_name}
