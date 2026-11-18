@@ -211,6 +211,9 @@ export const ServicesStep: React.FC<ServicesStepProps> = ({
             <button
               key={s.id}
               type="button"
+              data-testid="service-item"
+              data-service-name={s.name}
+              data-service-price={s.base_price_minor}
               onClick={() => onToggleService(s)}
               aria-pressed={isSelected}
               style={{

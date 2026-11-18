@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BusinessCrmApiClient } from '@crm/api-client';
-import { CrmMembership, CalendarStaff, CalendarBooking, CrmNavigationSection } from './types';
+import { CrmMembership, CalendarStaff, CalendarBooking, CalendarBlockItem, CrmNavigationSection } from './types';
 import { LoginPage } from './modules/auth/LoginPage';
 import { AcceptInvitePage } from './modules/auth/AcceptInvitePage';
 import { CrmLayout } from './layouts/CrmLayout';
@@ -11,35 +11,56 @@ import { ServicesModule } from './modules/services/ServicesModule';
 import { OnlineBookingModule } from './modules/online-booking/OnlineBookingModule';
 import { ReportsModule } from './modules/reports/ReportsModule';
 import { SettingsModule } from './modules/settings/SettingsModule';
+import { OnboardingModule } from './modules/onboarding/OnboardingModule';
 
 export const App: React.FC = () => {
   const [api] = useState(() => new BusinessCrmApiClient());
+
+  // Feature flag: Onboarding checklist (M02 requirement)
+  const [featureOnboardingEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('feature_flag_onboarding') === 'true';
+  });
+
+  // Standalone Preview Mode ("Экран готовится отдельно")
+  const [isPreviewMode, setIsPreviewMode] = useState<boolean>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+    return params.get('preview') === 'onboarding' || hash === '#preview-onboarding' || params.get('mode') === 'preview';
+  });
+
+  // Invite Token Detection from URL (Query, Hash or Path)
+  const [inviteToken, setInviteToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+    let tok = params.get('token') || params.get('invite_token');
+    if (!tok && hash.includes('token=')) {
+      const match = hash.match(/token=([^&]+)/);
+      if (match) tok = match[1];
+    }
+    return tok || null;
+  });
 
   // Authentication State
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('crm_token') || null);
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [memberships, setMemberships] = useState<CrmMembership[]>([]);
   const [activeMembership, setActiveMembership] = useState<CrmMembership | null>(null);
-  const [inviteToken, setInviteToken] = useState<string | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('token') || params.get('invite_token') || null;
-  });
 
-  // Active Navigation
+  // Active Navigation Section
   const [currentSection, setCurrentSection] = useState<CrmNavigationSection>(() => {
     const hash = window.location.hash.replace('#', '') as CrmNavigationSection;
-    if (['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings'].includes(hash)) {
+    if (['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings', 'onboarding'].includes(hash)) {
       return hash;
     }
     const params = new URLSearchParams(window.location.search);
     const sec = params.get('section') as CrmNavigationSection;
-    if (['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings'].includes(sec)) {
+    if (['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings', 'onboarding'].includes(sec)) {
       return sec;
     }
     return 'calendar';
   });
 
-  // Calendar State
+  // Business State
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState<string>(() => {
@@ -53,8 +74,16 @@ export const App: React.FC = () => {
 
   const [staffList, setStaffList] = useState<CalendarStaff[]>([]);
   const [bookings, setBookings] = useState<CalendarBooking[]>([]);
+  const [blocks, setBlocks] = useState<CalendarBlockItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [targetCustomerId, setTargetCustomerId] = useState<string | null>(null);
+
+  const handleOpenCustomer = (customerId: string) => {
+    setTargetCustomerId(customerId);
+    setCurrentSection('customers');
+    window.location.hash = 'customers';
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -79,9 +108,12 @@ export const App: React.FC = () => {
   // Listen to hash change for browser back/forward navigation
   useEffect(() => {
     const onHashChange = () => {
-      const hash = window.location.hash.replace('#', '') as CrmNavigationSection;
-      if (['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings'].includes(hash)) {
-        setCurrentSection(hash);
+      const rawHash = window.location.hash.replace('#', '');
+      const validSections: string[] = ['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings', 'onboarding'];
+      if (rawHash === 'preview-onboarding') {
+        setIsPreviewMode(true);
+      } else if (validSections.includes(rawHash)) {
+        setCurrentSection(rawHash as CrmNavigationSection);
       }
     };
     window.addEventListener('hashchange', onHashChange);
@@ -138,6 +170,11 @@ export const App: React.FC = () => {
             if (prev && data.some((b) => b.id === prev)) return prev;
             return data[0].id;
           });
+        } else {
+          // If company has NO branches yet and user is owner/admin -> auto-direct to Onboarding!
+          if (featureOnboardingEnabled && (activeMembership.role === 'owner' || activeMembership.role === 'admin')) {
+            setCurrentSection('onboarding');
+          }
         }
       })
       .catch((err) => {
@@ -147,7 +184,7 @@ export const App: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [token, activeMembership, api]);
+  }, [token, activeMembership, api, featureOnboardingEnabled]);
 
   // Load Calendar data (staff + bookings)
   const loadCalendarData = useCallback(async () => {
@@ -176,28 +213,44 @@ export const App: React.FC = () => {
         id: b.id,
         public_ref: b.public_ref,
         staff_id: b.staff_id,
+        customer_id: b.customer_id,
         customer_name: b.customer_name,
         customer_phone: b.customer_phone,
         status: b.status,
         starts_at_utc: b.starts_at_utc,
         service_ends_at_utc: b.service_ends_at_utc,
         amount_minor: b.amount_minor,
+        cost_minor: b.cost_minor ?? b.amount_minor,
+        rendered_minor: b.rendered_minor ?? (b.status === 'completed' ? b.amount_minor : 0),
+        paid_minor: b.paid_minor ?? 0,
+        debt_minor: b.debt_minor ?? (b.status === 'completed' ? b.amount_minor : 0),
+        payment_status: b.payment_status ?? 'unpaid',
+        finance: b.finance,
         services: b.services || [],
       }));
       setBookings(mappedBookings);
+
+      const mappedBlocks: CalendarBlockItem[] = (calData.blocks || []).map((bl: any) => ({
+        id: bl.id,
+        staff_id: bl.staff_id,
+        starts_at_utc: bl.starts_at_utc,
+        ends_at_utc: bl.ends_at_utc,
+        block_reason: bl.reason || bl.block_reason || 'Блокировка времени',
+      }));
+      setBlocks(mappedBlocks);
     } catch (err: any) {
       console.error('Failed to load calendar data', err);
       showToast('Ошибка загрузки записей календаря');
     } finally {
       setIsLoading(false);
     }
-  }, [api, token, activeMembership, currentDate, selectedBranchId]);
+  }, [api, token, activeMembership, currentDate, selectedBranchId, branches]);
 
   useEffect(() => {
-    if (token && activeMembership && currentSection === 'calendar') {
+    if (token && activeMembership && currentSection === 'calendar' && branches.length > 0) {
       loadCalendarData();
     }
-  }, [token, activeMembership, currentSection, loadCalendarData]);
+  }, [token, activeMembership, currentSection, loadCalendarData, branches.length]);
 
   // Auth Handlers
   const handleLoginSuccess = (authToken: string, mems: CrmMembership[], user: any) => {
@@ -218,7 +271,68 @@ export const App: React.FC = () => {
     setActiveMembership(null);
   };
 
-  // If not authenticated, render Login Page
+  const handleBranchCreatedFromOnboarding = (newBranch: any) => {
+    setBranches((prev) => {
+      const exists = prev.some((b) => b.id === newBranch.id);
+      if (exists) return prev;
+      return [...prev, newBranch];
+    });
+    setSelectedBranchId(newBranch.id);
+    showToast(`Филиал "${newBranch.name}" успешно создан!`);
+  };
+
+  // Standalone Preview Mode ("Экран готовится отдельно")
+  if (isPreviewMode) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+        <header
+          style={{
+            height: '60px',
+            background: '#FFFFFF',
+            borderBottom: '1px solid #E2E8F0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 24px',
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: '16px', color: '#0F172A' }}>
+            CRM · Предпросмотр Онбординга (Спринт M02)
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsPreviewMode(false)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '8px',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            ✕ Выйти из предпросмотра
+          </button>
+        </header>
+        <OnboardingModule
+          api={api}
+          branches={branches}
+          onBranchCreated={handleBranchCreatedFromOnboarding}
+          onNavigate={(sec) => {
+            if (sec === 'calendar') {
+              showToast('Переход в календарь записей (в боевом режиме)');
+            } else {
+              showToast(`Переход в раздел ${sec}`);
+            }
+          }}
+          onShowToast={showToast}
+          isStandalonePreview={true}
+        />
+      </div>
+    );
+  }
+
+  // If not authenticated, render AcceptInvitePage or LoginPage
   if (!token || !currentUser || !activeMembership) {
     if (inviteToken) {
       return (
@@ -227,7 +341,15 @@ export const App: React.FC = () => {
           token={inviteToken}
           onSuccess={(authToken, mems, user) => {
             setInviteToken(null);
+            // Clear token from URL query params
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, '', cleanUrl);
             handleLoginSuccess(authToken, mems, user);
+          }}
+          onGoToLogin={() => {
+            setInviteToken(null);
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, '', cleanUrl);
           }}
         />
       );
@@ -249,6 +371,7 @@ export const App: React.FC = () => {
     'online-booking': { title: 'Настройки онлайн-записи', subtitle: 'Правила бронирования, дизайн виджета и публикация' },
     reports: { title: 'Отчёты и аналитика', subtitle: 'Операционная выручка, занятость мастеров и статистика' },
     settings: { title: 'Настройки бизнеса', subtitle: 'Филиалы, доступ пользователей и тарифная подписка' },
+    onboarding: { title: 'Онбординг-чеклист', subtitle: 'Пошаговая подготовка компании к приёму клиентов' },
   };
 
   const activeTitle = sectionTitles[currentSection] || sectionTitles.calendar;
@@ -269,7 +392,69 @@ export const App: React.FC = () => {
         title={activeTitle.title}
         subtitle={activeTitle.subtitle}
       >
+        {currentSection === 'onboarding' && (
+          <OnboardingModule
+            api={api}
+            token={token}
+            tenantId={activeMembership.tenant_id}
+            tenantSlug={activeMembership.tenant_slug}
+            tenantName={activeMembership.tenant_name}
+            membership={activeMembership}
+            branches={branches}
+            onBranchCreated={handleBranchCreatedFromOnboarding}
+            onNavigate={handleNavigate}
+            onShowToast={showToast}
+            isStandalonePreview={false}
+          />
+        )}
+
         {currentSection === 'calendar' && (() => {
+          if (branches.length === 0) {
+            return (
+              <div
+                data-testid="no-branches-empty-state"
+                style={{
+                  padding: '48px 24px',
+                  textAlign: 'center',
+                  background: '#FFFFFF',
+                  borderRadius: '16px',
+                  border: '1px solid #E2E8F0',
+                  margin: '24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ fontSize: '36px' }}>📍</div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#0F172A' }}>
+                  У вас пока не создано ни одного филиала
+                </h3>
+                <p style={{ margin: 0, color: '#64748B', fontSize: '14px', maxWidth: '400px' }}>
+                  Для отображения календаря и записи клиентов создайте ваш первый рабочий филиал в онбординге.
+                </p>
+                <button
+                  type="button"
+                  data-testid="empty-calendar-goto-onboarding-btn"
+                  onClick={() => handleNavigate('onboarding')}
+                  style={{
+                    marginTop: '8px',
+                    padding: '10px 20px',
+                    borderRadius: '10px',
+                    background: '#2563EB',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🚀 Открыть онбординг-чеклист
+                </button>
+              </div>
+            );
+          }
+
           const activeBranch = branches.find(b => b.id === (selectedBranchId || branches[0]?.id)) || branches[0];
           const activeTimezone = activeBranch?.timezone_iana || activeBranch?.timezone || 'Asia/Almaty';
           return (
@@ -277,16 +462,18 @@ export const App: React.FC = () => {
               api={api}
               token={token}
               tenantId={activeMembership.tenant_id}
-              branchId={selectedBranchId || ''}
+              branchId={selectedBranchId || branches[0]?.id || ''}
               currentDate={currentDate}
               onDateChange={handleDateChange}
               staffList={staffList}
               bookings={bookings}
+              blocks={blocks}
               isLoading={isLoading}
               onRefresh={loadCalendarData}
               onShowToast={showToast}
               userRole={activeMembership.role}
               timezoneIana={activeTimezone}
+              onOpenCustomer={handleOpenCustomer}
             />
           );
         })()}
@@ -298,6 +485,8 @@ export const App: React.FC = () => {
             tenantId={activeMembership.tenant_id}
             onShowToast={showToast}
             userRole={activeMembership.role}
+            initialCustomerId={targetCustomerId}
+            onClearTargetCustomer={() => setTargetCustomerId(null)}
           />
         )}
 
@@ -319,6 +508,8 @@ export const App: React.FC = () => {
             tenantId={activeMembership.tenant_id}
             onShowToast={showToast}
             userRole={activeMembership.role}
+            branches={branches}
+            selectedBranchId={selectedBranchId}
           />
         )}
 
@@ -358,6 +549,7 @@ export const App: React.FC = () => {
       {/* Global Toast Notification */}
       {toastMessage && (
         <div
+          data-testid="crm-toast"
           style={{
             position: 'fixed',
             bottom: '24px',

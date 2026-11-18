@@ -89,6 +89,8 @@ class StaffPublicResponse(BaseModel):
     display_name: str
     role_title: str
     color: str
+    price_minor: Optional[int] = None
+    duration_minutes: Optional[int] = None
 
 class AvailabilitySearchRequest(BaseModel):
     branch_id: uuid.UUID
@@ -156,8 +158,19 @@ class PublicManageBookingResponse(BaseModel):
     items: List[Dict[str, Any]]
 
 class RescheduleRequest(BaseModel):
-    new_starts_at_utc: datetime.datetime
+    new_starts_at_utc: Optional[datetime.datetime] = None
+    starts_at_utc: Optional[datetime.datetime] = None
     new_staff_id: Optional[uuid.UUID] = None
+    staff_id: Optional[uuid.UUID] = None
+
+    @model_validator(mode="after")
+    def validate_reschedule(self):
+        target_starts = self.new_starts_at_utc or self.starts_at_utc
+        if not target_starts:
+            raise ValueError("Either new_starts_at_utc or starts_at_utc must be provided")
+        self.new_starts_at_utc = target_starts
+        self.new_staff_id = self.new_staff_id or self.staff_id
+        return self
 
 class CancelRequest(BaseModel):
     reason: Optional[str] = "Клиент отменил запись"
@@ -172,6 +185,7 @@ class CRMCreateBookingRequest(BaseModel):
     customer_phone: str
     customer_email: Optional[str] = None
     notes: Optional[str] = None
+    customer_id: Optional[uuid.UUID] = None
 
 class StatusUpdateRequest(BaseModel):
     status: str  # confirmed, arrived, in_progress, completed, no_show, cancelled
@@ -189,6 +203,7 @@ class CustomerCreateRequest(BaseModel):
     phone_e164: str
     email: Optional[str] = None
     notes_private: Optional[str] = None
+    confirm_shared_phone: Optional[bool] = False
 
 class CustomerNoteCreateRequest(BaseModel):
     note: Optional[str] = None
@@ -373,6 +388,18 @@ class WeeklyShiftDto(BaseModel):
 class StaffScheduleUpdateRequest(BaseModel):
     shifts: List[WeeklyShiftDto]
 
+class StaffTimeOffCreateRequest(BaseModel):
+    from_at_utc: datetime.datetime
+    to_at_utc: datetime.datetime
+    reason: Optional[str] = "Отпуск"
+
+class StaffTimeOffResponse(BaseModel):
+    id: uuid.UUID
+    staff_id: uuid.UUID
+    from_at_utc: datetime.datetime
+    to_at_utc: datetime.datetime
+    reason: Optional[str] = None
+
 class ServiceUpdateRequest(BaseModel):
     category_id: Optional[uuid.UUID] = None
     name: Optional[str] = None
@@ -394,3 +421,14 @@ class BranchUpdateRequest(BaseModel):
     timezone: Optional[str] = None
     phone: Optional[str] = None
     phone_number: Optional[str] = None
+    weekly_hours: Optional[Any] = None
+
+
+class VisitFinancialSummary(BaseModel):
+    currency: str = "KZT"
+    cost_minor: int
+    rendered_minor: int
+    paid_minor: int
+    debt_minor: int
+    payment_status: str  # unpaid, partially_paid, paid
+    order_id: Optional[str] = None

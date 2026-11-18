@@ -128,9 +128,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const [showBranchModal, setShowBranchModal] = useState<boolean>(false);
   const [editingBranch, setEditingBranch] = useState<BranchResponse | null>(null);
   const [branchName, setBranchName] = useState<string>('');
+  const [branchCity, setBranchCity] = useState<string>('Астана');
   const [branchAddress, setBranchAddress] = useState<string>('');
   const [branchPhone, setBranchPhone] = useState<string>('');
   const [branchTimezone, setBranchTimezone] = useState<string>('Asia/Almaty');
+  const [branchOpeningHours, setBranchOpeningHours] = useState<string>('10:00 - 20:00');
   const [branchSaving, setBranchSaving] = useState<boolean>(false);
 
   const handleTabSwitch = (tab: 'branches' | 'users' | 'company' | 'security') => {
@@ -188,17 +190,32 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
   const handleSaveBranch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!branchName) return;
+    if (!branchName.trim()) return;
     setBranchSaving(true);
     setError(null);
     try {
+      const times = branchOpeningHours.split('-').map(s => s.trim());
+      const openTime = times[0] || '10:00';
+      const closeTime = times[1] || '20:00';
+      const weeklyHoursObj = {
+        mon: { open: openTime, close: closeTime, active: true },
+        tue: { open: openTime, close: closeTime, active: true },
+        wed: { open: openTime, close: closeTime, active: true },
+        thu: { open: openTime, close: closeTime, active: true },
+        fri: { open: openTime, close: closeTime, active: true },
+        sat: { open: openTime, close: closeTime, active: true },
+        sun: { open: openTime, close: closeTime, active: true },
+      };
+
       const branchPayload: any = {
-        name: branchName,
-        address: branchAddress,
-        phone: branchPhone,
-        phone_number: branchPhone,
+        name: branchName.trim(),
+        city: branchCity.trim() || 'Астана',
+        address: branchAddress.trim(),
+        phone: branchPhone.trim(),
+        phone_number: branchPhone.trim(),
         timezone: branchTimezone,
         timezone_iana: branchTimezone,
+        weekly_hours: weeklyHoursObj,
       };
       if (editingBranch) {
         await api.updateBranch(
@@ -207,14 +224,14 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           token,
           tenantId
         );
-        if (onShowToast) onShowToast('Филиал обновлен');
+        if (onShowToast) onShowToast(`Филиал «${branchName.trim()}» обновлен`);
       } else {
         await api.createBranch(
           branchPayload,
           token,
           tenantId
         );
-        if (onShowToast) onShowToast('Филиал создан');
+        if (onShowToast) onShowToast(`Филиал «${branchName.trim()}» успешно создан`);
       }
       setShowBranchModal(false);
       setEditingBranch(null);
@@ -230,18 +247,27 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const openBranchCreate = () => {
     setEditingBranch(null);
     setBranchName('');
+    setBranchCity('Астана');
     setBranchAddress('');
     setBranchPhone('+7 (701) ');
     setBranchTimezone('Asia/Almaty');
+    setBranchOpeningHours('10:00 - 20:00');
     setShowBranchModal(true);
   };
 
   const openBranchEdit = (b: BranchResponse) => {
     setEditingBranch(b);
     setBranchName(b.name || '');
+    setBranchCity(b.city || 'Астана');
     setBranchAddress(b.address || '');
     setBranchPhone(b.phone || (b as any).phone_number || '');
     setBranchTimezone(b.timezone_iana || (b as any).timezone || 'Asia/Almaty');
+    const wh = b.weekly_hours as any;
+    if (wh && wh.mon && wh.mon.open && wh.mon.close) {
+      setBranchOpeningHours(`${wh.mon.open} - ${wh.mon.close}`);
+    } else {
+      setBranchOpeningHours('10:00 - 20:00');
+    }
     setShowBranchModal(true);
   };
 
@@ -376,6 +402,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             {userRole === 'owner' && (
               <button
                 type="button"
+                data-testid="add-branch-btn"
                 onClick={openBranchCreate}
                 style={{
                   display: 'flex',
@@ -402,6 +429,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             {branches.map((b) => (
               <div
                 key={b.id}
+                data-testid={`branch-card-${b.id}`}
                 style={{
                   background: '#FFFFFF',
                   border: '1px solid #E2E8F0',
@@ -420,14 +448,22 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     </div>
                     <div>
                       <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>{b.name}</h3>
-                      <span style={{ display: 'inline-block', marginTop: '2px', padding: '2px 8px', borderRadius: '4px', background: '#ECFDF5', color: '#059669', fontSize: '11px', fontWeight: 600 }}>
-                        Активен
-                      </span>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', background: '#ECFDF5', color: '#059669', fontSize: '11px', fontWeight: 600 }}>
+                          Активен
+                        </span>
+                        {b.city && (
+                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', background: '#F1F5F9', color: '#475569', fontSize: '11px', fontWeight: 600 }}>
+                            г. {b.city}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   {userRole === 'owner' && (
                     <button
                       type="button"
+                      data-testid={`edit-branch-btn-${b.id}`}
                       onClick={() => openBranchEdit(b)}
                       style={{
                         padding: '6px 12px',
@@ -460,7 +496,14 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Clock style={{ width: '15px', height: '15px', color: '#94A3B8', flexShrink: 0 }} />
-                    <span>{b.timezone_iana || (b as any).timezone || 'Asia/Almaty'}</span>
+                    <span>
+                      {b.timezone_iana || (b as any).timezone || 'Asia/Almaty'}
+                      {b.weekly_hours && typeof b.weekly_hours === 'object' && (b.weekly_hours as any).mon?.open ? (
+                        <> · {(b.weekly_hours as any).mon.open} - {(b.weekly_hours as any).mon.close}</>
+                      ) : (
+                        <> · 10:00 - 20:00</>
+                      )}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1101,13 +1144,14 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveBranch} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handleSaveBranch} data-testid="branch-form" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                  Название филиала
+                  Название филиала <span style={{ color: '#EF4444' }}>*</span>
                 </label>
                 <input
                   type="text"
+                  data-testid="branch-name-input"
                   required
                   value={branchName}
                   onChange={(e) => setBranchName(e.target.value)}
@@ -1123,12 +1167,69 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 />
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                    Город <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    data-testid="branch-city-input"
+                    required
+                    list="kz-cities-list"
+                    value={branchCity}
+                    onChange={(e) => setBranchCity(e.target.value)}
+                    placeholder="Астана"
+                    style={{
+                      height: '42px',
+                      padding: '0 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '14px',
+                      outline: 'none',
+                    }}
+                  />
+                  <datalist id="kz-cities-list">
+                    <option value="Астана" />
+                    <option value="Алматы" />
+                    <option value="Шымкент" />
+                    <option value="Караганда" />
+                    <option value="Актобе" />
+                    <option value="Атырау" />
+                    <option value="Павлодар" />
+                  </datalist>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                    Режим работы
+                  </label>
+                  <input
+                    type="text"
+                    data-testid="branch-hours-input"
+                    value={branchOpeningHours}
+                    onChange={(e) => setBranchOpeningHours(e.target.value)}
+                    placeholder="10:00 - 20:00"
+                    style={{
+                      height: '42px',
+                      padding: '0 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '14px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                  Фактический адрес
+                  Фактический адрес <span style={{ color: '#EF4444' }}>*</span>
                 </label>
                 <input
                   type="text"
+                  data-testid="branch-address-input"
+                  required
                   value={branchAddress}
                   onChange={(e) => setBranchAddress(e.target.value)}
                   placeholder="ул. Достык, 12, 1 этаж"
@@ -1149,6 +1250,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 </label>
                 <input
                   type="text"
+                  data-testid="branch-phone-input"
                   value={branchPhone}
                   onChange={(e) => setBranchPhone(e.target.value)}
                   placeholder="+7 (701) 000-00-00"
@@ -1168,6 +1270,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   Часовой пояс филиала (IANA)
                 </label>
                 <select
+                  data-testid="branch-timezone-select"
                   value={branchTimezone}
                   onChange={(e) => setBranchTimezone(e.target.value)}
                   style={{
@@ -1206,6 +1309,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 </button>
                 <button
                   type="submit"
+                  data-testid="save-branch-submit-btn"
                   disabled={branchSaving}
                   style={{
                     padding: '10px 20px',

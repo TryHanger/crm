@@ -17,14 +17,17 @@ from apps.api.app.infrastructure.db.models import (
     TenantEntitlementOverride
 )
 from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineError
+from apps.api.app.modules.finance.service import FinanceCoreService
 from apps.api.app.modules.schemas import (
     BranchResponse, CRMCreateBookingRequest, StatusUpdateRequest,
     CalendarBlockCreateRequest, CustomerCreateRequest, CustomerNoteCreateRequest,
     CustomerUpdateRequest, StaffCreateRequest, StaffUpdateRequest,
-    StaffServiceOfferUpdateRequest, StaffScheduleUpdateRequest, ServiceCreateRequest,
+    StaffServiceOfferUpdateRequest, StaffScheduleUpdateRequest, WeeklyShiftDto, ServiceCreateRequest,
+    StaffTimeOffCreateRequest, StaffTimeOffResponse,
     ServiceUpdateRequest, ServiceCategoryCreateRequest, ServiceCategoryUpdateRequest,
     BranchUpdateRequest, BookingPolicyUpdateRequest, BookingBrandingUpdateRequest,
-    InviteCreateRequest, RescheduleRequest, CancelRequest, BookingPublicationUpdateRequest
+    InviteCreateRequest, RescheduleRequest, CancelRequest, BookingPublicationUpdateRequest,
+    VisitFinancialSummary
 )
 
 router = APIRouter(prefix="/business", tags=["Business CRM"])
@@ -265,6 +268,8 @@ async def get_calendar(
         res_it = await db.execute(stmt_it)
         items = res_it.scalars().all()
 
+        fin = await FinanceCoreService.get_visit_financial_summary(b, db)
+
         booking_list.append({
             "id": str(b.id),
             "public_ref": b.public_ref,
@@ -276,6 +281,12 @@ async def get_calendar(
             "starts_at_utc": b.starts_at_utc.isoformat(),
             "service_ends_at_utc": b.service_ends_at_utc.isoformat(),
             "amount_minor": b.amount_minor_snapshot,
+            "cost_minor": fin["cost_minor"],
+            "rendered_minor": fin["rendered_minor"],
+            "paid_minor": fin["paid_minor"],
+            "debt_minor": fin["debt_minor"],
+            "payment_status": fin["payment_status"],
+            "finance": fin,
             "services": [it.service_name_snapshot for it in items]
         })
 
@@ -347,14 +358,16 @@ async def crm_create_booking(
             notes=req.notes,
             source="crm_manual",
             idempotency_key=idempotency_key,
-            created_by_user_id=crm_user.user.id
+            created_by_user_id=crm_user.user.id,
+            customer_id=req.customer_id
         )
         return {
             "booking_id": str(booking.id),
             "public_ref": booking.public_ref,
             "status": booking.status,
             "starts_at_utc": booking.starts_at_utc,
-            "total_amount_minor": booking.amount_minor_snapshot
+            "total_amount_minor": booking.amount_minor_snapshot,
+            "customer_id": str(booking.customer_id) if booking.customer_id else None
         }
     except BookingEngineError as e:
         raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
@@ -404,6 +417,8 @@ async def get_crm_booking_card(
     res_ev = await db.execute(stmt_ev)
     events = res_ev.scalars().all()
 
+    fin = await FinanceCoreService.get_visit_financial_summary(b, db)
+
     return {
         "id": str(b.id),
         "public_ref": b.public_ref,
@@ -419,6 +434,12 @@ async def get_crm_booking_card(
             "notes": c.notes_private
         },
         "amount_minor": b.amount_minor_snapshot,
+        "cost_minor": fin["cost_minor"],
+        "rendered_minor": fin["rendered_minor"],
+        "paid_minor": fin["paid_minor"],
+        "debt_minor": fin["debt_minor"],
+        "payment_status": fin["payment_status"],
+        "finance": fin,
         "items": [
             {
                 "service_name": it.service_name_snapshot,
@@ -504,12 +525,29 @@ async def update_booking_status(
         new_json_sanitized={"status": target_status, "reason": req.reason}
     )
     db.add(event)
+
+    # If completed, notify financial core to record fact of service delivery without fake payment
+    if target_status == "completed":
+        fin = await FinanceCoreService.on_visit_completed(booking, db, actor_id=crm_user.user.id)
+    else:
+        fin = await FinanceCoreService.get_visit_financial_summary(booking, db)
+
     await db.commit()
 
-    return {"status": booking.status, "message": f"Статус обновлен на '{booking.status}'"}
+    return {
+        "status": booking.status,
+        "message": f"Статус обновлен на '{booking.status}'",
+        "finance": fin,
+        "cost_minor": fin["cost_minor"],
+        "rendered_minor": fin["rendered_minor"],
+        "paid_minor": fin["paid_minor"],
+        "debt_minor": fin["debt_minor"],
+        "payment_status": fin["payment_status"]
+    }
 
 
 @router.post("/bookings/{booking_id}/reschedule")
+@router.patch("/bookings/{booking_id}/reschedule", include_in_schema=False)
 async def crm_reschedule_booking(
     booking_id: uuid.UUID,
     req: RescheduleRequest,
@@ -685,10 +723,16 @@ async def delete_calendar_block(
 @router.get("/customers")
 async def list_customers(
     search: Optional[str] = None,
+    min_visits: Optional[int] = None,
+    visits_filter: Optional[str] = None,
+    sort_by: Optional[str] = "created_at",
+    order: Optional[str] = "desc",
+    limit: int = 50,
+    offset: int = 0,
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Returns company clients with visit stats. Strict tenant isolation!"""
+    """Returns company clients with visit stats, server filters and search. Strict tenant isolation!"""
     stmt = select(Customer).where(Customer.tenant_id == crm_user.tenant_id)
     if crm_user.role == "master":
         stmt_sp = select(StaffProfile).where(
@@ -702,18 +746,43 @@ async def list_customers(
         stmt = stmt.join(Booking, Booking.customer_id == Customer.id).where(Booking.staff_id == master_staff.id).distinct()
 
     if search:
-        s_term = f"%{search.strip()}%"
-        stmt = stmt.where(or_(Customer.full_name.ilike(s_term), Customer.phone_e164.like(s_term)))
-    stmt = stmt.order_by(Customer.created_at.desc())
+        s_clean = search.strip()
+        s_term = f"%{s_clean}%"
+        s_digits = "".join(filter(str.isdigit, s_clean))
+        search_conds = [Customer.full_name.ilike(s_term), Customer.phone_e164.like(s_term)]
+        if s_digits:
+            search_conds.append(Customer.phone_digits_index.like(f"%{s_digits}%"))
+        if "@" in s_clean:
+            search_conds.append(Customer.email.ilike(s_term))
+        stmt = stmt.where(or_(*search_conds))
+
+    # Apply sorting
+    if sort_by == "full_name":
+        stmt = stmt.order_by(Customer.full_name.asc() if order == "asc" else Customer.full_name.desc())
+    else:
+        stmt = stmt.order_by(Customer.created_at.asc() if order == "asc" else Customer.created_at.desc())
+
     res = await db.execute(stmt)
     customers = res.scalars().all()
 
     results = []
     for c in customers:
-        # Total visits count
+        # Total & completed visits count
         stmt_cnt = select(func.count(Booking.id)).where(Booking.customer_id == c.id, Booking.status == "completed")
-        res_cnt = await db.execute(stmt_cnt)
-        visit_cnt = res_cnt.scalar() or 0
+        visit_cnt = (await db.execute(stmt_cnt)).scalar() or 0
+
+        stmt_total = select(func.count(Booking.id)).where(Booking.customer_id == c.id)
+        total_cnt = (await db.execute(stmt_total)).scalar() or 0
+
+        # Filter by visits if requested
+        if min_visits is not None and visit_cnt < min_visits:
+            continue
+        if visits_filter == "with_visits" and visit_cnt == 0:
+            continue
+        if visits_filter == "no_visits" and visit_cnt > 0:
+            continue
+        if visits_filter == "regular" and visit_cnt < 3:
+            continue
 
         # Mask phone for master role
         phone_display = (c.phone_e164[:5] + "***" + c.phone_e164[-4:]) if (crm_user.role == "master" and len(c.phone_e164) >= 9) else c.phone_e164
@@ -723,11 +792,24 @@ async def list_customers(
             "id": str(c.id),
             "full_name": c.full_name,
             "phone": phone_display,
+            "phone_e164": phone_display,
             "email": email_display,
             "notes": c.notes_private if crm_user.role != "master" else None,
+            "notes_private": c.notes_private if crm_user.role != "master" else None,
             "completed_visits": visit_cnt,
-            "created_at": c.created_at
+            "total_bookings": total_cnt,
+            "created_at": c.created_at.isoformat() if hasattr(c.created_at, "isoformat") else str(c.created_at)
         })
+
+    if sort_by == "completed_visits":
+        results.sort(key=lambda x: x["completed_visits"], reverse=(order != "asc"))
+
+    # Apply pagination slice
+    if offset:
+        results = results[offset:]
+    if limit:
+        results = results[:limit]
+
     return results
 
 
@@ -738,28 +820,72 @@ async def create_customer(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    phone_digits = "".join(filter(str.isdigit, req.phone_e164))
+    from apps.api.app.modules.customers.service import normalize_kz_phone
+    try:
+        norm_phone, phone_digits = normalize_kz_phone(req.phone_e164)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_PHONE", "message": str(e)}
+        )
+
+    clean_name = " ".join(req.full_name.strip().split())
 
     # Duplicate check within tenant
-    stmt_dup = select(Customer).where(Customer.tenant_id == crm_user.tenant_id, Customer.phone_e164 == req.phone_e164)
+    stmt_dup = select(Customer).where(
+        Customer.tenant_id == crm_user.tenant_id,
+        or_(
+            Customer.phone_e164 == norm_phone,
+            Customer.phone_digits_index == phone_digits
+        )
+    )
     res_dup = await db.execute(stmt_dup)
-    existing = res_dup.scalar_one_or_none()
-    if existing:
-        return {"id": str(existing.id), "full_name": existing.full_name, "duplicate_detected": True}
+    existing_list = res_dup.scalars().all()
 
+    if existing_list:
+        # Check if any existing customer has the exact same name
+        same_name_cust = next((c for c in existing_list if c.full_name.strip().lower() == clean_name.lower()), None)
+        if same_name_cust:
+            return {
+                "id": str(same_name_cust.id),
+                "full_name": same_name_cust.full_name,
+                "duplicate_detected": True,
+                "message": "Клиент с таким именем и телефоном уже существует"
+            }
+
+        # Shared phone with a DIFFERENT human!
+        if not req.confirm_shared_phone:
+            return {
+                "id": str(existing_list[0].id),
+                "full_name": existing_list[0].full_name,
+                "existing_name": existing_list[0].full_name,
+                "existing_customer_id": str(existing_list[0].id),
+                "phone": norm_phone,
+                "duplicate_detected": True,
+                "shared_phone_warning": True,
+                "existing_clients": [{"id": str(c.id), "full_name": c.full_name} for c in existing_list],
+                "message": f"Номер уже привязан к клиенту {existing_list[0].full_name}. Создать отдельного клиента с общим номером?"
+            }
+
+    # Create new customer record
     cust = Customer(
         tenant_id=crm_user.tenant_id,
-        full_name=req.full_name,
-        phone_e164=req.phone_e164,
+        full_name=clean_name,
+        phone_e164=norm_phone,
         phone_digits_index=phone_digits,
-        email=req.email,
-        notes_private=req.notes_private,
+        email=req.email.strip() if req.email else None,
+        notes_private=req.notes_private.strip() if req.notes_private else None,
         data_source="crm_manual"
     )
     db.add(cust)
     await db.flush()
     await db.commit()
-    return {"id": str(cust.id), "full_name": cust.full_name, "duplicate_detected": False}
+    return {
+        "id": str(cust.id),
+        "full_name": cust.full_name,
+        "duplicate_detected": False,
+        "shared_phone": len(existing_list) > 0
+    }
 
 
 @router.post("/customers/{customer_id}/notes")
@@ -797,7 +923,7 @@ async def add_customer_note(
     )
     db.add(note)
     await db.commit()
-    return {"message": "Заметка добавлена"}
+    return {"id": str(note.id), "note": note.note, "message": "Заметка добавлена"}
 
 
 # =========================================================================
@@ -1547,12 +1673,27 @@ async def get_customer_card(
     for b in bookings:
         stmt_it = select(BookingItem).where(BookingItem.booking_id == b.id).order_by(BookingItem.sequence)
         items = (await db.execute(stmt_it)).scalars().all()
+        fin = await FinanceCoreService.get_visit_financial_summary(b, db)
+        stmt_st = select(StaffProfile.display_name).where(StaffProfile.id == b.staff_id)
+        st_name = (await db.execute(stmt_st)).scalar() or "Специалист"
+        stmt_br = select(Branch.name).where(Branch.id == b.branch_id)
+        br_name = (await db.execute(stmt_br)).scalar() or "Филиал"
         visits.append({
             "id": str(b.id),
             "public_ref": b.public_ref,
             "starts_at_utc": b.starts_at_utc.isoformat(),
             "status": b.status,
+            "staff_id": str(b.staff_id),
+            "staff_name": st_name,
+            "branch_id": str(b.branch_id),
+            "branch_name": br_name,
             "amount_minor": b.amount_minor_snapshot,
+            "cost_minor": fin["cost_minor"],
+            "rendered_minor": fin["rendered_minor"],
+            "paid_minor": fin["paid_minor"],
+            "debt_minor": fin["debt_minor"],
+            "payment_status": fin["payment_status"],
+            "finance": fin,
             "services": [it.service_name_snapshot for it in items]
         })
 
@@ -1566,6 +1707,10 @@ async def get_customer_card(
     is_m = (crm_user.role == "master")
     masked_phone = (f"{c.phone_e164[:7]}***{c.phone_e164[-2:]}" if len(c.phone_e164) >= 9 else "***") if is_m else c.phone_e164
 
+    completed_cnt = sum(1 for b in bookings if b.status == "completed")
+    cancelled_cnt = sum(1 for b in bookings if b.status == "cancelled")
+    no_show_cnt = sum(1 for b in bookings if b.status == "no_show")
+
     return {
         "id": str(c.id),
         "full_name": c.full_name,
@@ -1573,8 +1718,14 @@ async def get_customer_card(
         "phone_e164": masked_phone,
         "email": None if is_m else c.email,
         "notes_private": None if is_m else c.notes_private,
-        "completed_visits": sum(1 for b in bookings if b.status == "completed"),
+        "completed_visits": completed_cnt,
         "total_bookings": len(bookings),
+        "stats": {
+            "total_bookings": len(bookings),
+            "completed_visits": completed_cnt,
+            "cancelled_visits": cancelled_cnt,
+            "no_show_visits": no_show_cnt,
+        },
         "created_at": c.created_at.isoformat(),
         "history": visits,
         "notes": notes
@@ -1602,8 +1753,16 @@ async def update_customer(
     if req.notes_private is not None:
         c.notes_private = req.notes_private
     if req.phone_e164 is not None:
-        c.phone_e164 = req.phone_e164
-        c.phone_digits_index = "".join(filter(str.isdigit, req.phone_e164))
+        from apps.api.app.modules.customers.service import normalize_kz_phone
+        try:
+            norm_phone, norm_digits = normalize_kz_phone(req.phone_e164)
+            c.phone_e164 = norm_phone
+            c.phone_digits_index = norm_digits
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "INVALID_PHONE", "message": str(e)}
+            )
 
     await db.commit()
     return {"message": "Данные клиента обновлены", "id": str(c.id), "full_name": c.full_name}
@@ -1679,6 +1838,46 @@ async def update_staff_profile(
         for b_id in req.branch_ids:
             new_sb = StaffBranch(tenant_id=crm_user.tenant_id, staff_id=staff.id, branch_id=b_id)
             db.add(new_sb)
+            # Ensure weekly shifts exist for this branch if not present
+            stmt_shifts = select(WeeklyShift.id).where(
+                WeeklyShift.staff_id == staff.id,
+                WeeklyShift.branch_id == b_id
+            )
+            has_shifts = (await db.execute(stmt_shifts)).first()
+            if not has_shifts:
+                for weekday in range(1, 8):
+                    shift = WeeklyShift(
+                        tenant_id=crm_user.tenant_id,
+                        staff_id=staff.id,
+                        branch_id=b_id,
+                        weekday_iso=weekday,
+                        local_start=datetime.time(10, 0),
+                        local_end=datetime.time(20, 0),
+                    )
+                    db.add(shift)
+            # Ensure staff service offers exist for this branch if not present
+            stmt_offers = select(StaffServiceOffer.id).where(
+                StaffServiceOffer.staff_id == staff.id,
+                StaffServiceOffer.branch_id == b_id
+            )
+            has_offers = (await db.execute(stmt_offers)).first()
+            if not has_offers:
+                stmt_existing_svcs = select(Service).where(
+                    Service.tenant_id == crm_user.tenant_id,
+                    Service.active == True,
+                    Service.archived_at.is_(None)
+                )
+                existing_svcs = (await db.execute(stmt_existing_svcs)).scalars().all()
+                for svc_item in existing_svcs:
+                    sso = StaffServiceOffer(
+                        tenant_id=crm_user.tenant_id,
+                        staff_id=staff.id,
+                        branch_id=b_id,
+                        service_id=svc_item.id,
+                        active=True,
+                        online_visible=True
+                    )
+                    db.add(sso)
 
     await db.commit()
     return {"message": "Профиль сотрудника обновлен", "id": str(staff.id)}
@@ -1718,7 +1917,7 @@ async def get_staff_schedule(
 @router.put("/staff/{staff_id}/schedule")
 async def update_staff_schedule(
     staff_id: uuid.UUID,
-    req: StaffScheduleUpdateRequest,
+    req: Union[StaffScheduleUpdateRequest, List[WeeklyShiftDto], Dict[str, Any]],
     branch_id: Optional[uuid.UUID] = None,
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
@@ -1753,13 +1952,21 @@ async def update_staff_schedule(
             await db.delete(ob)
         await db.delete(os)
 
-    for item in req.shifts:
-        if not (1 <= item.weekday_iso <= 7):
+    shifts_list = req.shifts if isinstance(req, StaffScheduleUpdateRequest) else (req.get("shifts", []) if isinstance(req, dict) else req)
+
+    for item in shifts_list:
+        w_iso = item.weekday_iso if hasattr(item, "weekday_iso") else item.get("weekday_iso")
+        is_wk = item.is_working if hasattr(item, "is_working") else item.get("is_working", True)
+        l_start = item.local_start if hasattr(item, "local_start") else item.get("local_start", "10:00")
+        l_end = item.local_end if hasattr(item, "local_end") else item.get("local_end", "20:00")
+        raw_breaks = item.breaks if hasattr(item, "breaks") else item.get("breaks", [])
+
+        if not (1 <= w_iso <= 7):
             raise HTTPException(status_code=422, detail="weekday_iso must be between 1 and 7")
-        if not item.is_working:
+        if not is_wk:
             continue
-        st_parts = [int(p) for p in item.local_start.split(":")]
-        end_parts = [int(p) for p in item.local_end.split(":")]
+        st_parts = [int(p) for p in l_start.split(":")]
+        end_parts = [int(p) for p in l_end.split(":")]
         start_time = datetime.time(st_parts[0], st_parts[1])
         end_time = datetime.time(end_parts[0], end_parts[1])
         if start_time >= end_time:
@@ -1769,7 +1976,7 @@ async def update_staff_schedule(
             tenant_id=crm_user.tenant_id,
             staff_id=staff_id,
             branch_id=branch_id,
-            weekday_iso=item.weekday_iso,
+            weekday_iso=w_iso,
             local_start=start_time,
             local_end=end_time,
             effective_from=datetime.datetime.now(datetime.timezone.utc)
@@ -1777,9 +1984,11 @@ async def update_staff_schedule(
         db.add(shift)
         await db.flush()
 
-        for b_item in (item.breaks or []):
-            b_st = [int(p) for p in b_item.local_start.split(":")]
-            b_end = [int(p) for p in b_item.local_end.split(":")]
+        for b_item in (raw_breaks or []):
+            b_l_start = b_item.local_start if hasattr(b_item, "local_start") else b_item.get("local_start", "14:00")
+            b_l_end = b_item.local_end if hasattr(b_item, "local_end") else b_item.get("local_end", "15:00")
+            b_st = [int(p) for p in b_l_start.split(":")]
+            b_end = [int(p) for p in b_l_end.split(":")]
             brk_start = datetime.time(b_st[0], b_st[1])
             brk_end = datetime.time(b_end[0], b_end[1])
             if brk_start >= brk_end or brk_start < start_time or brk_end > end_time:
@@ -1794,6 +2003,94 @@ async def update_staff_schedule(
 
     await db.commit()
     return {"message": "График работы успешно обновлен"}
+
+
+@router.get("/staff/{staff_id}/time-off", response_model=List[StaffTimeOffResponse])
+async def list_staff_time_off(
+    staff_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lists scheduled time-off / vacations for a master."""
+    stmt_s = select(StaffProfile.id).where(StaffProfile.id == staff_id, StaffProfile.tenant_id == crm_user.tenant_id)
+    if not (await db.execute(stmt_s)).scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Staff not found")
+
+    stmt = select(StaffTimeOff).where(
+        StaffTimeOff.tenant_id == crm_user.tenant_id,
+        StaffTimeOff.staff_id == staff_id
+    ).order_by(StaffTimeOff.from_at_utc.asc())
+    time_offs = (await db.execute(stmt)).scalars().all()
+    return [
+        StaffTimeOffResponse(
+            id=t.id,
+            staff_id=t.staff_id,
+            from_at_utc=t.from_at_utc,
+            to_at_utc=t.to_at_utc,
+            reason=t.reason
+        )
+        for t in time_offs
+    ]
+
+
+@router.post("/staff/{staff_id}/time-off", response_model=StaffTimeOffResponse, status_code=status.HTTP_201_CREATED)
+async def create_staff_time_off(
+    staff_id: uuid.UUID,
+    req: StaffTimeOffCreateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Schedules a vacation or leave period for a master."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt_s = select(StaffProfile.id).where(StaffProfile.id == staff_id, StaffProfile.tenant_id == crm_user.tenant_id)
+    if not (await db.execute(stmt_s)).scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Staff not found")
+
+    if req.from_at_utc >= req.to_at_utc:
+        raise HTTPException(status_code=422, detail="Time-off start must be before end time")
+
+    new_id = uuid.uuid4()
+    time_off = StaffTimeOff(
+        id=new_id,
+        tenant_id=crm_user.tenant_id,
+        staff_id=staff_id,
+        from_at_utc=req.from_at_utc,
+        to_at_utc=req.to_at_utc,
+        reason=req.reason
+    )
+    db.add(time_off)
+    await db.commit()
+    return StaffTimeOffResponse(
+        id=new_id,
+        staff_id=staff_id,
+        from_at_utc=req.from_at_utc,
+        to_at_utc=req.to_at_utc,
+        reason=req.reason
+    )
+
+
+@router.delete("/staff/{staff_id}/time-off/{time_off_id}")
+async def delete_staff_time_off(
+    staff_id: uuid.UUID,
+    time_off_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Deletes or cancels a master's scheduled vacation/time-off."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    stmt = select(StaffTimeOff).where(
+        StaffTimeOff.id == time_off_id,
+        StaffTimeOff.staff_id == staff_id,
+        StaffTimeOff.tenant_id == crm_user.tenant_id
+    )
+    res = await db.execute(stmt)
+    time_off = res.scalar_one_or_none()
+    if not time_off:
+        raise HTTPException(status_code=404, detail="Time-off record not found")
+
+    await db.delete(time_off)
+    await db.commit()
+    return {"message": "Отпуск / отгул успешно удален"}
 
 
 @router.patch("/services/{service_id}")
@@ -1904,6 +2201,8 @@ async def update_branch(
         branch.phone = req.phone
     elif getattr(req, "phone_number", None) is not None:
         branch.phone = req.phone_number
+    if req.weekly_hours is not None:
+        branch.weekly_hours = req.weekly_hours
 
     await db.commit()
     return branch
