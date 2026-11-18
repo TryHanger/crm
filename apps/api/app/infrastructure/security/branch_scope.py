@@ -72,3 +72,13 @@ async def require_staff_in_branch(db: AsyncSession, crm_user: AuthenticatedTenan
     if not found:
         raise HTTPException(status_code=422, detail={"code": "STAFF_NOT_IN_BRANCH",
                                                      "message": "Сотрудник не работает в этом филиале"})
+
+
+async def require_booking_access(db: AsyncSession, crm_user: AuthenticatedTenantUser,
+                                 branch_id: uuid.UUID, staff_id: uuid.UUID) -> None:
+    """M09: card, status, reschedule, cancel — the booking's branch is in scope; a master acts only on his own visits."""
+    await require_branch(db, crm_user, branch_id)
+    own = await master_profile_id(db, crm_user)
+    if own is not None and staff_id != own:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN",
+                                                     "message": "Мастер работает только со своими записями"})

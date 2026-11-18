@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
 from apps.api.app.core.config import settings
-from apps.api.tests.company_factory import client, new_company
+from apps.api.tests.company_factory import client, invite_admin, new_company
 
 DAY = dt.date.today() + dt.timedelta(days=8)
 UTC = dt.timezone.utc
@@ -60,17 +60,6 @@ async def public_slots(co, svc, master):
 def windows(cal, staff_id, kind):
     st = next(s for s in cal["staff"] if s["id"] == staff_id)
     return [(dt.datetime.fromisoformat(w["starts_at_utc"]), dt.datetime.fromisoformat(w["ends_at_utc"])) for w in st[kind]]
-
-
-async def invite_admin(co):
-    email = f"admin-{uuid.uuid4().hex[:6]}@example.kz"
-    r = await co.c.post("/api/v1/business/invites", headers=co.h, json={"email": email, "role": "admin"})
-    assert r.status_code == 201, r.text
-    r = await co.c.post("/api/v1/auth/accept-invite", json={"token": r.json()["invite_token"], "password": "Admin-Pass-1"})
-    assert r.status_code == 200, r.text
-    membership = admin_sql("SELECT m.id FROM tenant_memberships m JOIN identity_users u ON u.id = m.user_id "
-                           "WHERE u.email_normalized = :e", e=email)[0][0]
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}, membership
 
 
 # ---------------------------------------------------------------- acceptance: block 13–14

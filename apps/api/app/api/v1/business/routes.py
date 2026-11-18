@@ -7,6 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from apps.api.app.modules.catalog import ownership
 from apps.api.app.infrastructure.security import branch_scope
+from apps.api.app.modules.bookings import lifecycle
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +22,7 @@ from apps.api.app.infrastructure.db.models import (
     TenantMembership, Invite, Subscription, PlanVersion, PlanEntitlement,
     TenantEntitlementOverride
 )
-from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineError
+from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineError, is_slot_conflict
 from apps.api.app.modules.schemas import (
     BranchResponse, CRMCreateBookingRequest, StatusUpdateRequest,
     CalendarBlockCreateRequest, CustomerCreateRequest, CustomerNoteCreateRequest,
@@ -372,18 +373,7 @@ async def get_crm_booking_card(
 
     b, c, staff = row
 
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == crm_user.tenant_id,
-            StaffProfile.user_id == crm_user.user.id
-        )
-        res_sp = await db.execute(stmt_sp)
-        sp = res_sp.scalar_one_or_none()
-        if not sp or b.staff_id != sp.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: master cannot view appointments assigned to other staff"
-            )
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
 
     # Items
     stmt_it = select(BookingItem).where(BookingItem.booking_id == b.id).order_by(BookingItem.sequence)
@@ -418,8 +408,13 @@ async def get_crm_booking_card(
             }
             for it in items
         ],
+        "version": b.version,
+        "cancellation_reason": b.cancellation_reason,
+        "allowed_transitions": list(lifecycle.TRANSITIONS.get(b.status, ())),
+        # full history: what changed, from what to what, by whom (M09)
         "events": [
-            {"event_type": ev.event_type, "actor_type": ev.actor_type, "created_at": ev.created_at}
+            {"event_type": ev.event_type, "actor_type": ev.actor_type, "actor_id": str(ev.actor_id) if ev.actor_id else None,
+             "created_at": ev.created_at, "old": ev.old_json_sanitized, "new": ev.new_json_sanitized}
             for ev in events
         ]
     }
@@ -432,72 +427,23 @@ async def update_booking_status(
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Validates state machine transitions:
-    confirmed -> arrived -> in_progress -> completed, no_show, cancelled
+    """Status change through the single lifecycle state machine (modules/bookings/lifecycle.py).
+
+    The row is locked for the transition; illegal transitions -> 409 INVALID_TRANSITION with the
+    allowed targets; cancelling releases the occupancy; every change appends an event.
     """
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    stmt = select(Booking).where(Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id)
-    res = await db.execute(stmt)
-    booking = res.scalar_one_or_none()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
-    old_status = booking.status
-    target_status = req.status.lower()
-
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == crm_user.tenant_id,
-            StaffProfile.user_id == crm_user.user.id
-        )
-        res_sp = await db.execute(stmt_sp)
-        sp = res_sp.scalar_one_or_none()
-        if not sp or booking.staff_id != sp.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: master cannot change status of appointments assigned to other staff"
-            )
-
-    VALID_TRANSITIONS = {
-        "confirmed": ["arrived", "in_progress", "completed", "no_show", "cancelled"],
-        "arrived": ["in_progress", "completed", "cancelled"],
-        "in_progress": ["completed", "cancelled"],
-        "completed": [],
-        "no_show": [],
-        "cancelled": []
-    }
-
-    if target_status not in VALID_TRANSITIONS.get(old_status, []):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid transition from '{old_status}' to '{target_status}'"
-        )
-
-    booking.status = target_status
-    if target_status == "cancelled":
-        booking.cancelled_at = datetime.datetime.now(datetime.timezone.utc)
-        booking.cancellation_reason = req.reason or "Отменено сотрудником в CRM"
-        # Release occupancy
-        stmt_occ = select(StaffOccupancy).where(StaffOccupancy.booking_id == booking.id, StaffOccupancy.released_at.is_(None))
-        res_occ = await db.execute(stmt_occ)
-        for o in res_occ.scalars().all():
-            o.released_at = datetime.datetime.now(datetime.timezone.utc)
-
-    # Event
-    event = BookingEvent(
-        tenant_id=crm_user.tenant_id,
-        booking_id=booking.id,
-        event_type="status_changed",
-        actor_type="staff",
-        actor_id=crm_user.user.id,
-        old_json_sanitized={"status": old_status},
-        new_json_sanitized={"status": target_status, "reason": req.reason}
-    )
-    db.add(event)
+    try:
+        booking = await lifecycle.lock_booking(db, crm_user.tenant_id, booking_id)
+        await branch_scope.require_booking_access(db, crm_user, booking.branch_id, booking.staff_id)
+        old_status = booking.status
+        await lifecycle.change_status(db, booking, req.status, actor_type="staff", actor_id=crm_user.user.id,
+                                      reason=req.reason or ("Отменено сотрудником в CRM" if req.status == "cancelled" else None))
+    except lifecycle.LifecycleError as e:
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
     await db.commit()
-
-    return {"status": booking.status, "message": f"Статус обновлен на '{booking.status}'"}
+    return {"status": booking.status, "previous_status": old_status, "version": booking.version,
+            "message": f"Статус обновлен на '{booking.status}'"}
 
 
 @router.post("/bookings/{booking_id}/reschedule")
@@ -508,22 +454,13 @@ async def crm_reschedule_booking(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    if crm_user.role == "master":
-        stmt_b = select(Booking).where(Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id)
-        res_b = await db.execute(stmt_b)
-        b = res_b.scalar_one_or_none()
-        if b:
-            stmt_sp = select(StaffProfile).where(
-                StaffProfile.tenant_id == crm_user.tenant_id,
-                StaffProfile.user_id == crm_user.user.id
-            )
-            res_sp = await db.execute(stmt_sp)
-            sp = res_sp.scalar_one_or_none()
-            if not sp or b.staff_id != sp.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: master cannot reschedule appointments assigned to other staff"
-                )
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
+    if req.new_staff_id is not None:
+        await branch_scope.require_staff_in_branch(db, crm_user, req.new_staff_id, b.branch_id)
     try:
         updated = await BookingEngine.reschedule_booking(
             db=db,
@@ -531,11 +468,13 @@ async def crm_reschedule_booking(
             booking_id=booking_id,
             new_starts_at_utc=req.new_starts_at_utc,
             new_staff_id=req.new_staff_id,
-            is_client=False
+            is_client=False,
+            actor_id=crm_user.user.id
         )
-        return {"status": updated.status, "starts_at_utc": updated.starts_at_utc, "version": updated.version}
+        return {"status": updated.status, "starts_at_utc": updated.starts_at_utc, "version": updated.version,
+                "staff_id": str(updated.staff_id), "amount_minor": updated.amount_minor_snapshot}
     except BookingEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
 
 
 @router.post("/bookings/{booking_id}/cancel")
@@ -546,33 +485,23 @@ async def crm_cancel_booking(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    if crm_user.role == "master":
-        stmt_b = select(Booking).where(Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id)
-        res_b = await db.execute(stmt_b)
-        b = res_b.scalar_one_or_none()
-        if b:
-            stmt_sp = select(StaffProfile).where(
-                StaffProfile.tenant_id == crm_user.tenant_id,
-                StaffProfile.user_id == crm_user.user.id
-            )
-            res_sp = await db.execute(stmt_sp)
-            sp = res_sp.scalar_one_or_none()
-            if not sp or b.staff_id != sp.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: master cannot cancel appointments assigned to other staff"
-                )
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
     try:
         cancelled = await BookingEngine.cancel_booking(
             db=db,
             tenant_id=crm_user.tenant_id,
             booking_id=booking_id,
             reason=req.reason or "Отменено сотрудником в CRM",
-            is_client=False
+            is_client=False,
+            actor_id=crm_user.user.id
         )
-        return {"status": cancelled.status, "message": "Запись успешно отменена"}
+        return {"status": cancelled.status, "version": cancelled.version, "message": "Запись успешно отменена"}
     except BookingEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
 
 
 # =========================================================================
@@ -617,7 +546,7 @@ async def create_calendar_block(
         await db.commit()
     except (IntegrityError, DBAPIError) as exc:
         await db.rollback()
-        if "staff_occupancy_no_overlap" not in str(exc):
+        if not is_slot_conflict(exc):
             raise  # not an overlap: do not report a different DB error as "time taken"
         raise HTTPException(status_code=409, detail={"code": "SLOT_CONFLICT",
                                                      "message": "Время уже занято другой записью или блокировкой"})

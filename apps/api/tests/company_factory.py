@@ -74,3 +74,27 @@ async def new_company(c, tz) -> Company:
     r = await c.patch("/api/v1/business/booking-publication", headers=h, json={"is_published": True})
     assert r.status_code == 200, r.text
     return Company(c, slug, token, tenant_id, branch_id, tz)
+
+
+async def invite_admin(co):
+    email = f"admin-{uuid.uuid4().hex[:6]}@example.kz"
+    r = await co.c.post("/api/v1/business/invites", headers=co.h, json={"email": email, "role": "admin"})
+    assert r.status_code == 201, r.text
+    r = await co.c.post("/api/v1/auth/accept-invite", json={"token": r.json()["invite_token"], "password": "Admin-Pass-1"})
+    assert r.status_code == 200, r.text
+    membership = _admin_sql("SELECT m.id FROM tenant_memberships m JOIN identity_users u ON u.id = m.user_id "
+                           "WHERE u.email_normalized = :e", e=email)[0][0]
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}, membership
+
+
+def _admin_sql(sql, **params):
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.pool import NullPool
+    from apps.api.app.core.config import settings
+    engine = create_engine(settings.ADMIN_SYNC_DATABASE_URL, poolclass=NullPool)
+    try:
+        with engine.begin() as conn:
+            res = conn.execute(text(sql), params)
+            return res.fetchall() if res.returns_rows else None
+    finally:
+        engine.dispose()
