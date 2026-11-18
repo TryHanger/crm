@@ -29,6 +29,10 @@ def admin(sql, **params):
         engine.dispose()
 
 
+def sql_rows(sql, **params):
+    return admin(sql, **params)
+
+
 def tenant(slug):
     row = admin("SELECT t.id, b.id FROM tenants t JOIN branches b ON b.tenant_id = t.id WHERE t.slug = :s "
                 "ORDER BY b.created_at LIMIT 1", s=slug)[0]
@@ -87,6 +91,11 @@ def key():
 
 async def post(tenant_id, branch_id, **kw):
     async with app_session(tenant_id) as s:
+        if kw.get("kind") in ("payment", "refund") and "cash_account_id" not in kw:
+            from apps.api.app.modules.finance import cash   # money always goes through a branch account (M12)
+            own = sql_rows("SELECT 1 FROM branches WHERE id = :b AND tenant_id = :t", b=branch_id, t=tenant_id)
+            kw["cash_account_id"] = ((await cash.ensure_default_accounts(s, tenant_id, branch_id))[0].id
+                                     if own else uuid.uuid4())   # foreign branch: validation must fail first
         res = await ledger.post_entry(s, tenant_id=tenant_id, branch_id=branch_id, **kw)
         await s.commit()
         return res

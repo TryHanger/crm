@@ -44,6 +44,7 @@ TENANT_TABLES = [
     "orders",
     "order_items",
     "ledger_entries",
+    "cash_accounts",
 ]
 
 def apply_rls_and_constraints():

@@ -40,7 +40,8 @@ class Posted:
 
 
 def _fingerprint(e) -> tuple:
-    return (e.kind, int(e.amount_minor), e.currency, e.order_id, e.branch_id, e.reverses_entry_id)
+    return (e.kind, int(e.amount_minor), e.currency, e.order_id, e.branch_id, e.reverses_entry_id,
+            e.cash_account_id, e.customer_id)
 
 
 async def _insert_once(db: AsyncSession, values: dict) -> Posted:
@@ -60,7 +61,8 @@ async def _insert_once(db: AsyncSession, values: dict) -> Posted:
         raise FinanceError("ALREADY_REVERSED", "Эта операция уже сторнирована", 409)
 
     incoming = (values["kind"], int(values["amount_minor"]), values["currency"], values.get("order_id"),
-                values["branch_id"], values.get("reverses_entry_id"))
+                values["branch_id"], values.get("reverses_entry_id"), values.get("cash_account_id"),
+                values.get("customer_id"))
     if _fingerprint(existing) != incoming:
         raise FinanceError("IDEMPOTENCY_KEY_REUSED",
                            "Ключ операции уже использован для другой операции", 409)
@@ -85,8 +87,11 @@ async def post_entry(
     db: AsyncSession, *, tenant_id: uuid.UUID, branch_id: uuid.UUID, kind: str, amount_minor: int,
     currency: str, idempotency_key: str, order_id: Optional[uuid.UUID] = None, reason: Optional[str] = None,
     created_by_user_id: Optional[uuid.UUID] = None, occurred_at: Optional[dt.datetime] = None,
+    cash_account_id: Optional[uuid.UUID] = None, customer_id: Optional[uuid.UUID] = None,
 ) -> Posted:
     """Проводит операцию один раз. Не коммитит."""
+    if kind in ("payment", "refund") and cash_account_id is None:
+        raise FinanceError("CASH_ACCOUNT_REQUIRED", "Укажите кассу, через которую прошли деньги")
     if kind not in KINDS:
         raise FinanceError("LEDGER_KIND_INVALID", f"Неизвестный тип операции: {kind}")
     if isinstance(amount_minor, bool) or not isinstance(amount_minor, int) or amount_minor == 0:
@@ -113,6 +118,7 @@ async def post_entry(
         id=uuid.uuid4(), tenant_id=tenant_id, branch_id=branch_id, order_id=order_id, kind=kind,
         amount_minor=amount_minor, currency=currency, idempotency_key=_check_key(idempotency_key),
         reverses_entry_id=None, reason=(reason or None), created_by_user_id=created_by_user_id,
+        cash_account_id=cash_account_id, customer_id=customer_id,
     )
     if occurred_at is not None:
         values["occurred_at"] = occurred_at
@@ -137,6 +143,7 @@ async def reverse_entry(
         kind=original.kind, amount_minor=-original.amount_minor, currency=original.currency,
         idempotency_key=_check_key(idempotency_key), reverses_entry_id=original.id,
         reason=reason.strip(), created_by_user_id=created_by_user_id,
+        cash_account_id=original.cash_account_id, customer_id=original.customer_id,
     ))
 
 

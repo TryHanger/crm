@@ -214,6 +214,8 @@ jobs:
           python scripts/smoke_customers.py
           # M11 smoke: completing an 8000 KZT visit -> rendered 8000, paid 0, debt 8000
           python scripts/smoke_accrual.py
+          # M12 smoke: 3000 of 8000 paid -> debt 5000, cash account reconciles, replay does not double
+          python scripts/smoke_cash.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots

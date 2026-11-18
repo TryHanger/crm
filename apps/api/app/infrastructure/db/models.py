@@ -899,6 +899,8 @@ class LedgerEntry(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     branch_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     order_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    cash_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)  # M12
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)  # M13 advances
     kind: Mapped[str] = mapped_column(String(24), nullable=False)
     amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
@@ -927,5 +929,28 @@ class LedgerEntry(Base):
         ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"], name="fk_ledger_branch_same_tenant"),
         ForeignKeyConstraint(["tenant_id", "order_id"], ["orders.tenant_id", "orders.id"], name="fk_ledger_order_same_tenant"),
         ForeignKeyConstraint(["tenant_id", "reverses_entry_id"], ["ledger_entries.tenant_id", "ledger_entries.id"], name="fk_ledger_reversal_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "cash_account_id"], ["cash_accounts.tenant_id", "cash_accounts.id"], name="fk_ledger_cash_account_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "customer_id"], ["customers.tenant_id", "customers.id"], name="fk_ledger_customer_same_tenant"),
+        CheckConstraint("kind NOT IN ('payment', 'refund') OR cash_account_id IS NOT NULL", name="ck_ledger_money_has_account"),
         Index("ix_ledger_tenant_branch_occurred", "tenant_id", "branch_id", "occurred_at"),
+    )
+
+
+class CashAccount(Base):
+    """Where money physically goes (M12): branch cash drawer, card terminal, bank transfer, Kaspi."""
+    __tablename__ = "cash_accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    branch_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # cash, card, bank_transfer, kaspi
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_cash_account_tenant_id"),
+        UniqueConstraint("tenant_id", "branch_id", "name", name="uq_cash_account_name"),
+        CheckConstraint("kind IN ('cash', 'card', 'bank_transfer', 'kaspi')", name="ck_cash_account_kind"),
+        ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"], name="fk_cash_account_branch_same_tenant"),
     )

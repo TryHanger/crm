@@ -4,11 +4,13 @@ import zoneinfo
 from typing import List, Optional, Any, Union, Dict
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from fastapi.encoders import jsonable_encoder
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from apps.api.app.modules.catalog import ownership
 from apps.api.app.infrastructure.security import branch_scope
 from apps.api.app.modules.bookings import lifecycle
-from apps.api.app.modules.finance import accrual, ledger as finance_ledger
+from apps.api.app.modules.finance import accrual, cash as finance_cash, ledger as finance_ledger
+from apps.api.app.modules.finance.ledger import FinanceError
+from apps.api.app.infrastructure.db.models import CashAccount, LedgerEntry
 from apps.api.app.modules.customers import identity as customer_identity
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy import select, and_, or_, func, text
@@ -365,6 +367,92 @@ async def _visit_finance(db: AsyncSession, crm_user: AuthenticatedTenantUser, bo
     return {"order_id": str(order.id), "order_status": order.status, "currency": p.currency, "sold_minor": p.sold_minor,
             "rendered_minor": p.rendered_minor, "received_minor": p.received_minor,
             "advance_applied_minor": p.advance_applied_minor, "debt_minor": p.debt_minor}
+
+
+class PaymentCreateRequest(BaseModel):
+    amount_minor: int = Field(gt=0)
+    cash_account_id: uuid.UUID
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+def _finance_error(e: FinanceError) -> HTTPException:
+    return HTTPException(status_code=e.http_status, detail={"code": e.code, "message": e.message})
+
+
+@router.get("/cash-accounts")
+async def list_cash_accounts(
+    branch_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Branch cash accounts with the balance the ledger expects in each (M12). Masters: 403."""
+    await branch_scope.require_branch(db, crm_user, branch_id)
+    accounts = await finance_cash.ensure_default_accounts(db, crm_user.tenant_id, branch_id)
+    out = [{"id": str(a.id), "name": a.name, "kind": a.kind, "active": a.active,
+            "balance_minor": await finance_cash.account_balance(db, crm_user.tenant_id, a.id)} for a in accounts]
+    await db.commit()
+    return out
+
+
+@router.post("/bookings/{booking_id}/payments", status_code=status.HTTP_201_CREATED)
+async def create_visit_payment(
+    booking_id: uuid.UUID,
+    req: PaymentCreateRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Cash or external transfer registered manually by the cashier (owner/admin) (M12).
+
+    Partial payments are allowed; paying more than the debt is not; the same Idempotency-Key
+    never takes the money twice."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
+    order = await accrual.booking_order(db, b)
+    if order is None:
+        raise HTTPException(status_code=409, detail={"code": "NOTHING_TO_PAY",
+                                                     "message": "Визит ещё не завершён: оплату принимаем после оказания услуги"})
+    try:
+        res = await finance_cash.record_payment(
+            db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
+            cash_account_id=req.cash_account_id, idempotency_key=idempotency_key or "",
+            actor_id=crm_user.user.id, note=req.note)
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    p = res.position
+    return {"payment_id": str(res.entry.id), "replayed": not res.created, "amount_minor": res.entry.amount_minor,
+            "cash_account_id": str(res.entry.cash_account_id),
+            "finance": {"rendered_minor": p.rendered_minor, "received_minor": p.received_minor, "debt_minor": p.debt_minor}}
+
+
+@router.get("/bookings/{booking_id}/payments")
+async def list_visit_payments(
+    booking_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
+    order = await accrual.booking_order(db, b)
+    if order is None:
+        return []
+    rows = (await db.execute(select(LedgerEntry, CashAccount.name).outerjoin(
+        CashAccount, CashAccount.id == LedgerEntry.cash_account_id).where(
+        LedgerEntry.tenant_id == crm_user.tenant_id, LedgerEntry.order_id == order.id,
+        LedgerEntry.kind.in_(("payment", "refund", "advance_applied"))).order_by(LedgerEntry.created_at))).all()
+    return [{"id": str(e.id), "kind": e.kind, "amount_minor": e.amount_minor, "cash_account": name,
+             "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None, "reason": e.reason,
+             "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None,
+             "created_at": e.created_at} for e, name in rows]
 
 
 @router.get("/bookings/{booking_id}")
