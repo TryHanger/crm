@@ -1,11 +1,14 @@
 import uuid
 import datetime
+from pathlib import Path
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import text
 import apps.api.app.infrastructure.db.session as db_session
 from apps.api.app.core.config import settings
 from apps.api.app.infrastructure.security.jwt import get_password_hash
 from apps.api.app.infrastructure.db.models import (
-    Base, Tenant, TenantDomain, IdentityUser, TenantMembership, PlatformStaff,
+    Tenant, TenantDomain, IdentityUser, TenantMembership, PlatformStaff,
     Invite, Plan, PlanVersion, PlanEntitlement, FeatureCatalog, Subscription,
     PlatformSetting, PlatformAlert, PlatformSupportTicket, SupportMessage,
     SupportAccessRequest, SupportAccessSession, SubscriptionCharge, PaymentRecord,
@@ -37,6 +40,15 @@ TENANT_TABLES = [
     "public_management_tokens",
     "booking_themes",
     "booking_publications",
+    # finance (migration 003)
+    "orders",
+    "order_items",
+    "ledger_entries",
+    "cash_accounts",
+    "cash_shifts",
+    "expense_categories",
+    "notification_templates",
+    "notification_deliveries",
 ]
 
 def apply_rls_and_constraints():
@@ -117,15 +129,27 @@ def apply_rls_and_constraints():
     print("PostgreSQL RLS and Exclusion Constraints applied successfully!")
 
 
-def init_database():
-    """Creates all database tables, extensions, constraints, and RLS policies."""
-    with db_session.admin_sync_engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist;"))
-        conn.commit()
+REPO_ROOT = Path(__file__).resolve().parents[5]
 
-    Base.metadata.create_all(bind=db_session.admin_sync_engine)
+
+def alembic_config(database_url: str | None = None) -> Config:
+    """Alembic config that works from any cwd (tests, scripts, containers)."""
+    cfg = Config(str(REPO_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(REPO_ROOT / "alembic"))
+    if database_url:
+        cfg.attributes["database_url"] = database_url
+    return cfg
+
+
+def init_database():
+    """Builds the schema only through Alembic migrations, then syncs runtime role grants.
+
+    Base.metadata.create_all is not used: the schema used by tests, E2E and containers
+    must be exactly the one produced by the migration chain.
+    """
+    command.upgrade(alembic_config(), "head")
     apply_rls_and_constraints()
-    print("Database tables initialized successfully!")
+    print("Database schema migrated to head successfully!")
 
 
 def seed_system_baseline(session):

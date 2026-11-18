@@ -7,6 +7,8 @@ sqlalchemy==2.0.38
 asyncpg==0.30.0
 psycopg2-binary==2.9.10
 alembic==1.14.0
+# IANA time zones for zoneinfo on hosts without system tzdata (Windows, slim images)
+tzdata==2026.6
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.2.1

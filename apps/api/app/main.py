@@ -30,6 +30,7 @@ from apps.api.app.api.v1.business.routes import router as business_router
 
 from apps.api.app.api.v1.platform.routes import router as platform_router
 from apps.api.app.infrastructure.security.ip_filter import enforce_platform_ip_allowlist
+from apps.api.app.infrastructure.domain_resolution import host_policy
 from fastapi import Depends
 
 docs_url = "/docs" if settings.ENVIRONMENT in ("development", "test") or getattr(settings, "ENABLE_API_DOCS", False) else None
@@ -65,6 +66,22 @@ app.add_middleware(
     allow_headers=["*"],
 
 )
+
+
+
+# Host routing: each domain serves only its API group, unknown Host -> 404 (M03)
+
+@app.middleware("http")
+
+async def host_routing_middleware(request: Request, call_next):
+
+    err = host_policy.check(host_policy.request_hostname(request), request.url.path)
+
+    if err:
+
+        return JSONResponse(status_code=404, content={"code": err["code"], "message": err["message"], "detail": err})
+
+    return await call_next(request)
 
 
 

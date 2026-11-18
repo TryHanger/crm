@@ -46,7 +46,7 @@ async def test_public_booking_rejection_on_suspended_tenant():
         p_headers = {"Authorization": f"Bearer {login_p.json()['access_token']}"}
 
         # 2. Create a new test tenant
-        slug = f"susp_{uuid.uuid4().hex[:6]}"
+        slug = f"susp-{uuid.uuid4().hex[:6]}"
         create_resp = await client.post("/api/v1/platform/tenants", json={
             "slug": slug,
             "display_name": "Suspended Test Shop",
@@ -184,8 +184,8 @@ async def test_master_role_scoping_and_object_permissions():
 
         # Create booking for Erzhan at 11:00 Almaty (06:00 UTC) on a working day
         today = datetime.datetime.now(datetime.timezone.utc).date()
-        target_day = today + datetime.timedelta(days=1)
-        while target_day.isoweekday() > 5:
+        target_day = today + datetime.timedelta(days=25)
+        while target_day.isoweekday() == 7:  # Erzhan works Mon-Sat: the test failed one day a week
             target_day += datetime.timedelta(days=1)
         target_slot = datetime.datetime.combine(target_day, datetime.time(6, 0), tzinfo=datetime.timezone.utc)
         resp_b = await client.post("/api/v1/business/bookings", json={
@@ -537,7 +537,7 @@ async def test_invite_cannot_hijack_existing_user_password():
         p_headers = {"Authorization": f"Bearer {login_p.json()['access_token']}"}
 
         # 2. Create tenant with an existing email (e.g. owner@moderncut.kz)
-        slug = f"hijack_{uuid.uuid4().hex[:6]}"
+        slug = f"hijack-{uuid.uuid4().hex[:6]}"
         create_resp = await client.post("/api/v1/platform/tenants", json={
             "slug": slug,
             "display_name": "Invite Hijack Test",

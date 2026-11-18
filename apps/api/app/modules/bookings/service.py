@@ -4,11 +4,15 @@ import secrets
 import datetime
 import zoneinfo
 from typing import List, Optional, Tuple, Dict, Any
-from sqlalchemy import select, and_, or_, func, text, delete
+from sqlalchemy import select, and_, or_, func, text, delete, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from fastapi import HTTPException, status
 
+from apps.api.app.modules.finance import money
+from apps.api.app.modules.bookings import lifecycle
+from apps.api.app.modules.customers import identity as customer_identity
 from apps.api.app.infrastructure.db.session import set_tenant_context
 from apps.api.app.infrastructure.db.models import (
     Tenant, Subscription, Booking, BookingItem, StaffOccupancy, CalendarBlock, BookingEvent,
@@ -16,6 +20,17 @@ from apps.api.app.infrastructure.db.models import (
     StaffProfile, StaffBranch, StaffServiceOffer, Service, Branch,
     BookingPolicy, WeeklyShift, ShiftBreak, StaffTimeOff, IdempotencyRecord
 )
+
+def is_slot_conflict(exc: Exception) -> bool:
+    """The occupancy insert lost a race for the master's time.
+
+    Either the overlap constraint fired, or PostgreSQL broke a deadlock between two concurrent
+    inserts checking the same exclusion constraint (40P01): the aborted one is the loser of the
+    same race. Anything else is a real error and must not be reported as "slot taken".
+    """
+    text_ = str(exc)
+    return "staff_occupancy_no_overlap" in text_ or "deadlock detected" in text_.lower() or "40P01" in text_
+
 
 class BookingEngineError(Exception):
     def __init__(self, code: str, message: str, status_code: int = 400, details: Any = None):
@@ -108,6 +123,12 @@ class BookingEngine:
                 "price_minor": price,
                 "currency": service.currency
             })
+
+        # M04 money contract: one currency per booking/order, never a silent mixed sum
+        try:
+            money.sum_same_currency([(it["price_minor"], it["currency"]) for it in items])
+        except money.MoneyError as e:
+            raise BookingEngineError(e.code, e.message, 422)
 
         return total_duration, total_price, items
 
@@ -260,7 +281,8 @@ class BookingEngine:
         )
         res_cb = await db.execute(stmt_cb)
         if res_cb.scalars().first():
-            raise BookingEngineError("CALENDAR_BLOCKED", "Master schedule is blocked at this time", 400)
+            # M08: a blocked time is "taken" for the client exactly like a booked one: 409 + alternatives
+            raise BookingEngineError("CALENDAR_BLOCKED", "Master schedule is blocked at this time", 409)
 
         # 11. Occupancies Validation
         stmt_occ = select(StaffOccupancy).where(
@@ -289,7 +311,8 @@ class BookingEngine:
         to_utc: datetime.datetime,
         staff_id: Optional[uuid.UUID] = None,
         staff_mode: str = "specific",  # specific or any
-        is_public: bool = True
+        is_public: bool = True,
+        persist_quotes: bool = True,
     ) -> Dict[str, Any]:
         """
         Determines available slots considering:
@@ -324,14 +347,15 @@ class BookingEngine:
         if search_from >= search_to:
             return {"slots": [], "total_count": 0}
 
-        try:
-            stmt_cleanup = delete(BookingQuote).where(
-                BookingQuote.tenant_id == tenant_id,
-                BookingQuote.expires_at < now_utc - datetime.timedelta(hours=1)
-            )
-            await db.execute(stmt_cleanup)
-        except Exception:
-            pass
+        if persist_quotes:  # preview writes nothing and commits nothing
+            try:
+                stmt_cleanup = delete(BookingQuote).where(
+                    BookingQuote.tenant_id == tenant_id,
+                    BookingQuote.expires_at < now_utc - datetime.timedelta(hours=1)
+                )
+                await db.execute(stmt_cleanup)
+            except Exception:
+                pass
 
         # 1. Candidate staff
         if staff_id:
@@ -381,15 +405,17 @@ class BookingEngine:
                 db, tenant_id, branch_id, c_staff_id, service_ids
             )
             svc_delta = datetime.timedelta(minutes=duration_mins)
+            slot_currency = items_snapshot[0]["currency"] if items_snapshot else "KZT"
 
             # Get staff profile for details
             stmt_sp = select(StaffProfile).where(StaffProfile.id == c_staff_id)
             res_sp = await db.execute(stmt_sp)
             staff_prof = res_sp.scalar_one()
 
-            # Iterate days from search_from to search_to
-            current_day = search_from.date()
-            end_day = search_to.date()
+            # Iterate LOCAL branch days: shifts are defined in local time (M05 UTC/IANA contract).
+            # UTC dates were used before, which skipped a late local shift in negative-offset zones.
+            current_day = search_from.astimezone(tz).date()
+            end_day = search_to.astimezone(tz).date()
 
             while current_day <= end_day:
                 weekday_iso = current_day.isoweekday()
@@ -421,9 +447,10 @@ class BookingEngine:
                         for b in breaks
                     ]
 
-                    # Fetch staff occupancies on this day across ANY branch
-                    day_start_utc = datetime.datetime.combine(current_day, datetime.time.min, tzinfo=datetime.timezone.utc)
-                    day_end_utc = datetime.datetime.combine(current_day, datetime.time.max, tzinfo=datetime.timezone.utc)
+                    # Fetch staff occupancies / time off overlapping THIS shift across ANY branch.
+                    # (A UTC calendar day missed bookings of shifts crossing UTC midnight.)
+                    day_start_utc = shift_start_dt
+                    day_end_utc = shift_end_dt
 
                     stmt_occ = select(StaffOccupancy).where(
                         StaffOccupancy.tenant_id == tenant_id,
@@ -481,7 +508,21 @@ class BookingEngine:
                                 for t_start, t_end in time_off_intervals
                             )
 
-                            if not (has_break_conflict or has_occ_conflict or has_to_conflict):
+                            if not (has_break_conflict or has_occ_conflict or has_to_conflict) and not persist_quotes:
+                                # Preview (time-first): availability only, no quote rows
+                                slots.append({
+                                    "staff_id": str(c_staff_id),
+                                    "staff_name": staff_prof.display_name,
+                                    "staff_role": staff_prof.role_title,
+                                    "starts_at_utc": slot_start.isoformat(),
+                                    "ends_at_utc": slot_end.isoformat(),
+                                    "duration_minutes": duration_mins,
+                                    "price_minor": price_minor,
+                                    "currency": slot_currency,
+                                    "quote_id": None,
+                                    "quote_expires_at": None
+                                })
+                            elif not (has_break_conflict or has_occ_conflict or has_to_conflict):
                                 # Valid slot! Create and persist authoritative quote
                                 quote_id = uuid.uuid4()
                                 quote = BookingQuote(
@@ -506,7 +547,7 @@ class BookingEngine:
                                     "ends_at_utc": slot_end.isoformat(),
                                     "duration_minutes": duration_mins,
                                     "price_minor": price_minor,
-                                    "currency": "KZT",
+                                    "currency": slot_currency,
                                     "quote_id": str(quote_id),
                                     "quote_expires_at": quote.expires_at.isoformat()
                                 })
@@ -515,7 +556,8 @@ class BookingEngine:
 
                 current_day += datetime.timedelta(days=1)
 
-        await db.commit()
+        if persist_quotes:
+            await db.commit()
 
         # Ordering:
         # If staff_mode == 'any': 1) earliest start time, 2) lowest price, 3) stable staff UUID
@@ -528,6 +570,190 @@ class BookingEngine:
             "slots": slots,
             "total_count": len(slots)
         }
+
+    @classmethod
+    async def time_first_preview(
+        cls,
+        db: AsyncSession,
+        tenant_id: uuid.UUID,
+        branch_id: uuid.UUID,
+        from_utc: datetime.datetime,
+        to_utc: datetime.datetime,
+    ) -> Dict[str, Any]:
+        """Time-first step 1 (M06): start times at which at least one online master is free.
+
+        No service is chosen yet, so each master is checked with his shortest online service in
+        this branch: a time is shown only if that master can really start something then.
+        Uses the same search as service/master flows, without writing quotes. The exact fit of the
+        services chosen afterwards is confirmed by search_availability(at=...) and the booking itself.
+        """
+        policy = await cls.get_booking_policy(db, tenant_id, branch_id)
+        if not policy.allow_online_booking:
+            raise BookingEngineError("BOOKING_DISABLED", "Online booking is currently disabled for this location", 403)
+        staff_rows = (await db.execute(
+            select(StaffProfile.id)
+            .join(StaffBranch, and_(StaffBranch.staff_id == StaffProfile.id, StaffBranch.tenant_id == StaffProfile.tenant_id))
+            .where(StaffProfile.tenant_id == tenant_id, StaffBranch.branch_id == branch_id,
+                   StaffProfile.active == True, StaffProfile.online_bookable == True, StaffBranch.active == True)
+        )).scalars().all()
+
+        by_start: Dict[str, set] = {}
+        for staff_id in sorted(staff_rows, key=str):
+            offers = (await db.execute(
+                select(StaffServiceOffer, Service).join(Service, Service.id == StaffServiceOffer.service_id).where(
+                    StaffServiceOffer.tenant_id == tenant_id, StaffServiceOffer.staff_id == staff_id,
+                    StaffServiceOffer.branch_id == branch_id, StaffServiceOffer.active == True,
+                    StaffServiceOffer.online_visible == True, Service.active == True,
+                    Service.online_visible == True, Service.archived_at.is_(None))
+            )).all()
+            if not offers:
+                continue
+
+            def effective(pair):
+                off, svc = pair
+                dur = off.duration_override_minutes if off.duration_override_minutes is not None else svc.base_duration_minutes
+                price = off.price_override_minor if off.price_override_minor is not None else svc.base_price_minor
+                return (dur, price, str(svc.id))
+
+            shortest = min(offers, key=effective)[1]
+            res = await cls.search_availability(
+                db, tenant_id, branch_id, [shortest.id], from_utc, to_utc,
+                staff_id=staff_id, staff_mode="specific", is_public=True, persist_quotes=False)
+            for slot in res["slots"]:
+                by_start.setdefault(slot["starts_at_utc"], set()).add(slot["staff_id"])
+
+        slots = [{"starts_at_utc": t, "available_staff_count": len(ids)} for t, ids in sorted(by_start.items())]
+        return {"slots": slots, "total_count": len(slots)}
+
+    @staticmethod
+    def _subtract(intervals, cuts):
+        """[(a,b)] minus [(c,d)] for half-open UTC intervals; result sorted, non-empty pieces only."""
+        result = []
+        for a, b in intervals:
+            pieces = [(a, b)]
+            for c, d in cuts:
+                nxt = []
+                for x, y in pieces:
+                    if d <= x or c >= y:
+                        nxt.append((x, y))
+                        continue
+                    if x < c:
+                        nxt.append((x, c))
+                    if d < y:
+                        nxt.append((d, y))
+                pieces = nxt
+            result.extend(pieces)
+        return sorted(result)
+
+    @classmethod
+    async def staff_day_windows(
+        cls, db: AsyncSession, tenant_id: uuid.UUID, branch_id: uuid.UUID, staff_id: uuid.UUID,
+        day: datetime.date, tz: zoneinfo.ZoneInfo,
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """What the backend considers a master's day in this branch (M08), in UTC:
+        working = shifts of the LOCAL day minus breaks; busy = active occupancies (bookings and blocks
+        in any branch) and time off; free = working minus busy. Same rules as search_availability.
+        """
+        def iso(pairs):
+            return [{"starts_at_utc": a.isoformat(), "ends_at_utc": b.isoformat()} for a, b in pairs]
+
+        shifts = (await db.execute(select(WeeklyShift).where(
+            WeeklyShift.tenant_id == tenant_id, WeeklyShift.staff_id == staff_id,
+            WeeklyShift.branch_id == branch_id, WeeklyShift.weekday_iso == day.isoweekday()))).scalars().all()
+        working, breaks = [], []
+        for sh in shifts:
+            start = datetime.datetime.combine(day, sh.local_start, tzinfo=tz).astimezone(datetime.timezone.utc)
+            end = datetime.datetime.combine(day, sh.local_end, tzinfo=tz).astimezone(datetime.timezone.utc)
+            sh_breaks = (await db.execute(select(ShiftBreak).where(ShiftBreak.shift_id == sh.id))).scalars().all()
+            brk = [(datetime.datetime.combine(day, b.local_start, tzinfo=tz).astimezone(datetime.timezone.utc),
+                    datetime.datetime.combine(day, b.local_end, tzinfo=tz).astimezone(datetime.timezone.utc)) for b in sh_breaks]
+            breaks.extend(brk)
+            working.extend(cls._subtract([(start, end)], brk))
+        working.sort()
+        if not working:
+            return {"working": [], "busy": [], "free": []}
+        lo, hi = working[0][0], working[-1][1]
+        occ = (await db.execute(select(StaffOccupancy).where(
+            StaffOccupancy.tenant_id == tenant_id, StaffOccupancy.staff_id == staff_id,
+            StaffOccupancy.released_at.is_(None), StaffOccupancy.starts_at_utc < hi,
+            StaffOccupancy.ends_at_utc > lo))).scalars().all()
+        off = (await db.execute(select(StaffTimeOff).where(
+            StaffTimeOff.tenant_id == tenant_id, StaffTimeOff.staff_id == staff_id,
+            StaffTimeOff.from_at_utc < hi, StaffTimeOff.to_at_utc > lo))).scalars().all()
+        busy = sorted([(o.starts_at_utc, o.ends_at_utc) for o in occ] + [(t.from_at_utc, t.to_at_utc) for t in off])
+        return {"working": iso(working), "busy": iso(busy), "free": iso(cls._subtract(working, busy))}
+
+    @classmethod
+    async def _claim_idempotency_key(
+        cls, db: AsyncSession, tenant_id: uuid.UUID, scope: str, key: str, payload_hash: str, actor: str,
+    ):
+        """Returns (replay_result, None) for a repeated request, or (None, claimed_record_id)."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        new_id = (await db.execute(
+            pg_insert(IdempotencyRecord).values(
+                id=uuid.uuid4(), scope=scope, tenant_id=tenant_id, actor_or_context_hash=actor,
+                idempotency_key=key, request_hash=payload_hash, response_body_redacted="pending",
+                response_code=0, created_at=now, expires_at=now + datetime.timedelta(hours=24),
+            ).on_conflict_do_nothing().returning(IdempotencyRecord.id)
+        )).scalar_one_or_none()
+        if new_id is not None:
+            return None, new_id
+
+        rec = (await db.execute(select(IdempotencyRecord).where(
+            IdempotencyRecord.tenant_id == tenant_id, IdempotencyRecord.scope == scope,
+            IdempotencyRecord.idempotency_key == key))).scalar_one()
+        if rec.request_hash != payload_hash:
+            raise BookingEngineError(
+                "IDEMPOTENCY_KEY_REUSED",
+                "Idempotency key has already been used with different booking parameters",
+                status_code=409
+            )
+        b = (await db.execute(select(Booking).where(
+            Booking.idempotency_key == key, Booking.tenant_id == tenant_id))).scalar_one_or_none()
+        if b is None:
+            raise BookingEngineError("IDEMPOTENCY_IN_PROGRESS", "The same booking request is still being processed", 409)
+        # same request again: the same booking, with a fresh management link (raw tokens are never stored)
+        raw_token = secrets.token_urlsafe(32)
+        tok = PublicManagementToken(
+            tenant_id=tenant_id, booking_id=b.id, token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+            scope="manage_booking", expires_at=b.busy_ends_at_utc + datetime.timedelta(days=7))
+        db.add(tok)
+        await db.commit()
+        return (b, tok, raw_token), None
+
+    @classmethod
+    async def _alternatives_near(
+        cls, db: AsyncSession, tenant_id: uuid.UUID, branch_id: uuid.UUID, service_ids: List[uuid.UUID],
+        around_utc: datetime.datetime, is_public: bool = True, limit: int = 6,
+        lost_staff_id: Optional[uuid.UUID] = None, lost_minutes: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Nearest free starts (any master) on the same local day, for a 409 response. Never raises."""
+        try:
+            await set_tenant_context(db, tenant_id)
+            branch = (await db.execute(select(Branch).where(Branch.id == branch_id))).scalar_one()
+            tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty")
+            day = around_utc.astimezone(tz).date()
+            day_from = datetime.datetime.combine(day, datetime.time.min, tzinfo=tz).astimezone(datetime.timezone.utc)
+            day_to = datetime.datetime.combine(day, datetime.time.max, tzinfo=tz).astimezone(datetime.timezone.utc)
+            res = await cls.search_availability(db, tenant_id, branch_id, service_ids, day_from, day_to,
+                                                staff_mode="any", is_public=is_public, persist_quotes=False)
+            best: Dict[str, Dict[str, Any]] = {}
+            lost_end = around_utc + datetime.timedelta(minutes=lost_minutes or 0)
+            for slot in res["slots"]:  # already ordered: time, then price
+                # never offer back the interval just lost: the winner may not have committed yet
+                if lost_staff_id is not None and slot["staff_id"] == str(lost_staff_id):
+                    s_start = datetime.datetime.fromisoformat(slot["starts_at_utc"])
+                    s_end = datetime.datetime.fromisoformat(slot["ends_at_utc"])
+                    if s_start == around_utc or (s_start < lost_end and s_end > around_utc):
+                        continue
+                best.setdefault(slot["starts_at_utc"], slot)
+            nearest = sorted(best.values(), key=lambda x: (
+                abs((datetime.datetime.fromisoformat(x["starts_at_utc"]) - around_utc).total_seconds()), x["starts_at_utc"]))
+            picked = sorted(nearest[:limit], key=lambda x: x["starts_at_utc"])
+            return [{"starts_at_utc": x["starts_at_utc"], "staff_id": x["staff_id"], "staff_name": x["staff_name"],
+                     "price_minor": x["price_minor"], "duration_minutes": x["duration_minutes"]} for x in picked]
+        except Exception:
+            return []
 
     @classmethod
     async def create_booking(
@@ -560,41 +786,25 @@ class BookingEngine:
         """
         await set_tenant_context(db, tenant_id)
 
+        # M10: one phone, one spelling — before the idempotency fingerprint and any lookup
+        try:
+            customer_phone_e164 = customer_identity.normalize_phone(customer_phone_e164)
+        except customer_identity.PhoneError as e:
+            raise BookingEngineError("PHONE_INVALID", str(e), 422)
+
         payload_hash = hashlib.sha256(
             f"{tenant_id}:{branch_id}:{staff_id}:{sorted(str(s) for s in service_ids)}:{starts_at_utc.isoformat()}:{customer_phone_e164}".encode()
         ).hexdigest()
 
-        # 1. Idempotency Check with Request Hash Verification
+        # 1. Idempotency: claim the key in THIS transaction before doing anything else.
+        #    A concurrent request with the same key blocks on the unique index until we commit
+        #    (then it replays our booking) or roll back (then it books itself). No check-then-insert race.
+        claimed_idem_id = None
         if idempotency_key:
-            stmt_idem = select(IdempotencyRecord).where(
-                IdempotencyRecord.scope == f"{source}_booking",
-                IdempotencyRecord.idempotency_key == idempotency_key
-            )
-            res_idem = await db.execute(stmt_idem)
-            rec = res_idem.scalar_one_or_none()
-            if rec:
-                if rec.request_hash != payload_hash:
-                    raise BookingEngineError(
-                        "IDEMPOTENCY_KEY_REUSED",
-                        "Idempotency key has already been used with different booking parameters",
-                        status_code=409
-                    )
-                # Return existing booking with fresh management token
-                stmt_b = select(Booking).where(Booking.idempotency_key == idempotency_key, Booking.tenant_id == tenant_id)
-                res_b = await db.execute(stmt_b)
-                b = res_b.scalar_one_or_none()
-                if b:
-                    raw_token = secrets.token_urlsafe(32)
-                    th = hashlib.sha256(raw_token.encode()).hexdigest()
-                    tok = PublicManagementToken(
-                        tenant_id=tenant_id,
-                        booking_id=b.id,
-                        token_hash=th,
-                        scope="manage_booking"
-                    )
-                    db.add(tok)
-                    await db.commit()
-                    return b, tok, raw_token
+            replay, claimed_idem_id = await cls._claim_idempotency_key(
+                db, tenant_id, f"{source}_booking", idempotency_key, payload_hash, customer_phone_e164)
+            if replay is not None:
+                return replay
 
         # 2. Re-calculate actual duration and price from DB
         duration_mins, actual_price_minor, items_data = await cls.calculate_quote_for_staff(
@@ -602,16 +812,22 @@ class BookingEngine:
         )
 
         # 3. Comprehensive Authoritative Validation (past slot, min advance, shifts, breaks)
-        branch, staff, policy = await cls.validate_slot_and_policies(
-            db=db,
-            tenant_id=tenant_id,
-            branch_id=branch_id,
-            staff_id=staff_id,
-            service_ids=service_ids,
-            starts_at_utc=starts_at_utc,
-            duration_minutes=duration_mins,
-            is_client=(source == "public")
-        )
+        try:
+            branch, staff, policy = await cls.validate_slot_and_policies(
+                db=db,
+                tenant_id=tenant_id,
+                branch_id=branch_id,
+                staff_id=staff_id,
+                service_ids=service_ids,
+                starts_at_utc=starts_at_utc,
+                duration_minutes=duration_mins,
+                is_client=(source == "public")
+            )
+        except BookingEngineError as e:
+            if e.code in ("SLOT_CONFLICT", "CALENDAR_BLOCKED"):  # taken before we got here: same answer as a lost race
+                e.details = {**(e.details or {}), "alternatives": await cls._alternatives_near(
+                    db, tenant_id, branch_id, service_ids, starts_at_utc, is_public=(source == "public"), lost_staff_id=staff_id, lost_minutes=duration_mins)}
+            raise
 
         ends_at_utc = starts_at_utc + datetime.timedelta(minutes=duration_mins)
 
@@ -635,7 +851,9 @@ class BookingEngine:
                 raise BookingEngineError(
                     "QUOTE_EXPIRED",
                     "Selected booking quote has expired or was already used. Please select slot again.",
-                    status_code=409
+                    status_code=409,
+                    details={"alternatives": await cls._alternatives_near(
+                        db, tenant_id, branch_id, service_ids, starts_at_utc, is_public=(source == "public"), lost_staff_id=staff_id, lost_minutes=duration_mins)}
                 )
 
             # Strict Quote Binding: verify branch, staff, slot start time, and services
@@ -682,18 +900,20 @@ class BookingEngine:
                 details={"new_price_minor": actual_price_minor, "duration_minutes": duration_mins}
             )
 
-        # 4. Customer resolution or creation (tenant scoped, T10 identity invariant)
-        from apps.api.app.modules.customers.service import resolve_or_create_customer
-        customer, _is_new_cust = await resolve_or_create_customer(
-            db=db,
-            tenant_id=tenant_id,
-            customer_name=customer_name,
-            customer_phone=customer_phone_e164,
-            customer_email=customer_email,
-            notes=notes,
-            source=source,
-            explicit_customer_id=customer_id
-        )
+        # 4. Customer: confirmed identity rules (same normalized phone AND same name), never merges
+        #    two different people who share a phone (M10). Serialized per (company, phone).
+        customer = None
+        if customer_id:
+            c_stmt = select(Customer).where(Customer.id == customer_id, Customer.tenant_id == tenant_id)
+            customer = (await db.execute(c_stmt)).scalar_one_or_none()
+        if not customer:
+            try:
+                resolved = await customer_identity.resolve_customer(
+                    db, tenant_id=tenant_id, full_name=customer_name, phone=customer_phone_e164,
+                    email=customer_email, source=source, notes_private=notes if source == "crm_manual" else None)
+            except customer_identity.PhoneError as e:
+                raise BookingEngineError("PHONE_INVALID", str(e), 422)
+            customer = resolved.customer
 
         # 5. Generate public reference
         # 5. Generate public reference with tenant-specific prefix
@@ -761,10 +981,14 @@ class BookingEngine:
             await db.flush()
         except (IntegrityError, DBAPIError) as exc:
             await db.rollback()
+            if not is_slot_conflict(exc):
+                raise  # a different DB error must not be reported as "slot taken"
             raise BookingEngineError(
                 "SLOT_CONFLICT",
                 "The selected time slot was just booked by another customer. Please select another time.",
-                status_code=409
+                status_code=409,
+                details={"alternatives": await cls._alternatives_near(
+                    db, tenant_id, branch_id, service_ids, starts_at_utc, is_public=(source == "public"), lost_staff_id=staff_id, lost_minutes=duration_mins)}
             )
 
         # 8. Insert Booking Event
@@ -809,19 +1033,12 @@ class BookingEngine:
         )
         db.add(outbox)
 
-        # 11. Idempotency Record
-        if idempotency_key:
-            idem_rec = IdempotencyRecord(
-                scope=f"{source}_booking",
-                tenant_id=tenant_id,
-                actor_or_context_hash=customer_phone_e164,
-                idempotency_key=idempotency_key,
-                request_hash=payload_hash,
-                response_body_redacted=f"booking_ref:{ref_code}",
-                response_code=201,
-                expires_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
+        # 11. Idempotency Record: the key claimed in step 1 now points at the created booking
+        if claimed_idem_id is not None:
+            await db.execute(
+                update(IdempotencyRecord).where(IdempotencyRecord.id == claimed_idem_id)
+                .values(response_body_redacted=f"booking_ref:{ref_code}", response_code=201)
             )
-            db.add(idem_rec)
 
         await db.commit()
         return booking, mgmt_token, raw_token
@@ -833,67 +1050,33 @@ class BookingEngine:
         tenant_id: uuid.UUID,
         booking_id: uuid.UUID,
         reason: str = "Client cancellation",
-        is_client: bool = True
+        is_client: bool = True,
+        actor_id: Optional[uuid.UUID] = None,
     ) -> Booking:
-        """
-        Cancels a booking and releases the staff occupancy atomically.
+        """Cancels a booking through the single lifecycle state machine (M09).
+
+        The booking row is locked, the occupancy is released in the same transaction and the
+        event is appended; nothing is deleted. A client may cancel only a confirmed visit and
+        only before the policy cutoff.
         """
         await set_tenant_context(db, tenant_id)
-        stmt = select(Booking).where(Booking.id == booking_id, Booking.tenant_id == tenant_id)
-        res = await db.execute(stmt)
-        booking = res.scalar_one_or_none()
-        if not booking:
-            raise BookingEngineError("BOOKING_NOT_FOUND", "Booking not found", 404)
-
-        if booking.status != "confirmed":
-            raise BookingEngineError("INVALID_BOOKING_STATUS", f"Cannot cancel booking in '{booking.status}' status", 409)
-
-        # Policy cutoff check for client cancellation
-        if is_client:
-            policy = await cls.get_booking_policy(db, tenant_id, booking.branch_id)
-            cutoff = datetime.timedelta(minutes=policy.cancellation_cutoff_minutes)
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
-            if booking.starts_at_utc - now_utc < cutoff:
-                raise BookingEngineError(
-                    "CANCEL_CUTOFF_EXCEEDED",
-                    f"Self-cancellation is allowed only up to {policy.cancellation_cutoff_minutes // 60} hours before appointment.",
-                    status_code=409
-                )
-
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-        booking.status = "cancelled"
-        booking.cancelled_at = now_utc
-        booking.cancellation_reason = reason
-
-        # Release occupancy
-        stmt_occ = select(StaffOccupancy).where(
-            StaffOccupancy.booking_id == booking.id,
-            StaffOccupancy.released_at.is_(None)
-        )
-        res_occ = await db.execute(stmt_occ)
-        occupancies = res_occ.scalars().all()
-        for occ in occupancies:
-            occ.released_at = now_utc
-
-        # Record event
-        event = BookingEvent(
-            tenant_id=tenant_id,
-            booking_id=booking.id,
-            event_type="cancelled",
-            actor_type="customer" if is_client else "staff",
-            new_json_sanitized={"status": "cancelled", "reason": reason}
-        )
-        db.add(event)
-
-        # Outbox event
-        outbox = OutboxEvent(
-            tenant_id=tenant_id,
-            event_type="booking.cancelled",
-            aggregate_id=str(booking.id),
-            payload_sanitized={"booking_id": str(booking.id), "reason": reason}
-        )
-        db.add(outbox)
-
+        try:
+            booking = await lifecycle.lock_booking(db, tenant_id, booking_id)
+            if is_client:
+                if booking.status != "confirmed":
+                    raise BookingEngineError("INVALID_BOOKING_STATUS", f"Cannot cancel booking in '{booking.status}' status", 409)
+                policy = await cls.get_booking_policy(db, tenant_id, booking.branch_id)
+                cutoff = datetime.timedelta(minutes=policy.cancellation_cutoff_minutes)
+                if booking.starts_at_utc - datetime.datetime.now(datetime.timezone.utc) < cutoff:
+                    raise BookingEngineError(
+                        "CANCEL_CUTOFF_EXCEEDED",
+                        f"Self-cancellation is allowed only up to {policy.cancellation_cutoff_minutes // 60} hours before appointment.",
+                        status_code=409
+                    )
+            await lifecycle.change_status(db, booking, "cancelled", actor_type="customer" if is_client else "staff",
+                                          actor_id=actor_id, reason=reason)
+        except lifecycle.LifecycleError as e:
+            raise BookingEngineError(e.code, e.message, e.status_code, e.details)
         await db.commit()
         return booking
 
@@ -905,28 +1088,31 @@ class BookingEngine:
         booking_id: uuid.UUID,
         new_starts_at_utc: datetime.datetime,
         new_staff_id: Optional[uuid.UUID] = None,
-        is_client: bool = True
+        is_client: bool = True,
+        actor_id: Optional[uuid.UUID] = None,
     ) -> Booking:
-        """
-        Reschedules an appointment atomically:
-        - Releases old occupancy
-        - Takes new occupancy
-        - If conflict occurs on target interval, transaction rolls back and retains old booking intact!
+        """Moves a confirmed visit atomically (M09).
+
+        - the booking row is locked: a parallel cancel/complete/reschedule waits and re-checks;
+        - the old occupancy is released and the new one taken in one transaction; if the new
+          interval is taken, everything rolls back and the original booking stays as it was;
+        - same master: the price and duration snapshot of the booking are kept (the client keeps
+          the price he booked at); another master: items are re-priced for that master, and a
+          client is not moved to a different price silently (409 PRICE_CHANGED);
+        - the event keeps old and new time, master and price.
         """
         await set_tenant_context(db, tenant_id)
-        stmt = select(Booking).where(Booking.id == booking_id, Booking.tenant_id == tenant_id)
-        res = await db.execute(stmt)
-        booking = res.scalar_one_or_none()
-        if not booking:
-            raise BookingEngineError("BOOKING_NOT_FOUND", "Booking not found", 404)
-
+        if new_starts_at_utc.utcoffset() is None:
+            raise BookingEngineError("TIMEZONE_REQUIRED", "new_starts_at_utc must include a timezone offset", 422)
+        try:
+            booking = await lifecycle.lock_booking(db, tenant_id, booking_id)
+        except lifecycle.LifecycleError as e:
+            raise BookingEngineError(e.code, e.message, e.status_code, e.details)
         if booking.status != "confirmed":
             raise BookingEngineError("INVALID_BOOKING_STATUS", f"Cannot reschedule booking in status '{booking.status}'", 409)
 
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         policy = await cls.get_booking_policy(db, tenant_id, booking.branch_id)
-
-        # Policy checks for client self-service
         if is_client:
             if not policy.allow_self_reschedule:
                 raise BookingEngineError("SELF_RESCHEDULE_NOT_ALLOWED", "Self-service reschedule is disabled", 403)
@@ -935,43 +1121,43 @@ class BookingEngine:
                 raise BookingEngineError("CANCEL_CUTOFF_EXCEEDED", f"Reschedule cutoff of {policy.cancellation_cutoff_minutes} minutes has passed", 409)
 
         target_staff_id = new_staff_id or booking.staff_id
-
-        # Recalculate quote and services for target staff
-        stmt_it = select(BookingItem).where(BookingItem.booking_id == booking.id).order_by(BookingItem.sequence)
-        res_it = await db.execute(stmt_it)
-        items = res_it.scalars().all()
+        items = (await db.execute(select(BookingItem).where(
+            BookingItem.tenant_id == tenant_id, BookingItem.booking_id == booking.id).order_by(BookingItem.sequence))).scalars().all()
         service_ids = [it.service_id for it in items]
-
-        duration_mins, new_price_minor, _ = await cls.calculate_quote_for_staff(
-            db, tenant_id, booking.branch_id, target_staff_id, service_ids
-        )
+        same_master = target_staff_id == booking.staff_id
+        if same_master:
+            duration_mins = sum(it.duration_minutes_snapshot for it in items)
+            new_price_minor = booking.amount_minor_snapshot
+            repriced = None
+        else:
+            duration_mins, new_price_minor, repriced = await cls.calculate_quote_for_staff(
+                db, tenant_id, booking.branch_id, target_staff_id, service_ids)
+            if is_client and new_price_minor != booking.amount_minor_snapshot:
+                raise BookingEngineError(
+                    "PRICE_CHANGED", "The other master has a different price: please make a new booking",
+                    409, details={"current_price_minor": booking.amount_minor_snapshot, "new_price_minor": new_price_minor})
         new_ends_at_utc = new_starts_at_utc + datetime.timedelta(minutes=duration_mins)
 
-        # Validate slot, shifts, breaks, and horizon
-        await cls.validate_slot_and_policies(
-            db=db,
-            tenant_id=tenant_id,
-            branch_id=booking.branch_id,
-            staff_id=target_staff_id,
-            service_ids=service_ids,
-            starts_at_utc=new_starts_at_utc,
-            duration_minutes=duration_mins,
-            is_client=is_client,
-            ignore_booking_id=booking.id
-        )
+        try:
+            await cls.validate_slot_and_policies(
+                db=db,
+                tenant_id=tenant_id,
+                branch_id=booking.branch_id,
+                staff_id=target_staff_id,
+                service_ids=service_ids,
+                starts_at_utc=new_starts_at_utc,
+                duration_minutes=duration_mins,
+                is_client=is_client,
+                ignore_booking_id=booking.id
+            )
+        except BookingEngineError as e:
+            if e.code in ("SLOT_CONFLICT", "CALENDAR_BLOCKED"):
+                e.details = {**(e.details or {}), "alternatives": await cls._alternatives_near(
+                    db, tenant_id, booking.branch_id, service_ids, new_starts_at_utc, is_public=is_client, lost_staff_id=target_staff_id, lost_minutes=duration_mins)}
+            raise
 
-        # Release old occupancy
-        stmt_occ = select(StaffOccupancy).where(
-            StaffOccupancy.booking_id == booking.id,
-            StaffOccupancy.released_at.is_(None)
-        )
-        res_occ = await db.execute(stmt_occ)
-        old_occupancies = res_occ.scalars().all()
-        for o in old_occupancies:
-            o.released_at = now_utc
-
-        # Insert new occupancy
-        new_occupancy = StaffOccupancy(
+        released = await lifecycle.release_occupancy(db, booking, now_utc)
+        db.add(StaffOccupancy(
             tenant_id=tenant_id,
             staff_id=target_staff_id,
             branch_id=booking.branch_id,
@@ -979,50 +1165,45 @@ class BookingEngine:
             starts_at_utc=new_starts_at_utc,
             ends_at_utc=new_ends_at_utc,
             occupancy_type="booking"
-        )
-        db.add(new_occupancy)
-
+        ))
         try:
             await db.flush()
-        except (IntegrityError, DBAPIError):
+        except (IntegrityError, DBAPIError) as exc:
             await db.rollback()
+            if not is_slot_conflict(exc):
+                raise  # a different DB error must not be reported as "slot taken"
             raise BookingEngineError(
                 "SLOT_CONFLICT",
                 "The requested reschedule interval is already occupied. Original booking remains active.",
-                status_code=409
+                status_code=409,
+                details={"alternatives": await cls._alternatives_near(
+                    db, tenant_id, booking.branch_id, service_ids, new_starts_at_utc, is_public=is_client, lost_staff_id=target_staff_id, lost_minutes=duration_mins)}
             )
 
-        # Update booking
-        old_start = booking.starts_at_utc
+        old = {"starts_at_utc": booking.starts_at_utc.isoformat(), "staff_id": str(booking.staff_id),
+               "amount_minor": booking.amount_minor_snapshot}
         booking.starts_at_utc = new_starts_at_utc
         booking.service_ends_at_utc = new_ends_at_utc
         booking.busy_ends_at_utc = new_ends_at_utc
         booking.staff_id = target_staff_id
         booking.amount_minor_snapshot = new_price_minor
+        if repriced is not None:
+            by_service = {it["service_id"]: it for it in repriced}
+            for it in items:
+                snap = by_service[it.service_id]
+                it.price_minor_snapshot = snap["price_minor"]
+                it.duration_minutes_snapshot = snap["duration_minutes"]
+                it.currency_snapshot = snap["currency"]
         booking.version += 1
-
-        # Event
-        event = BookingEvent(
-            tenant_id=tenant_id,
-            booking_id=booking.id,
-            event_type="rescheduled",
-            actor_type="customer" if is_client else "staff",
-            old_json_sanitized={"starts_at_utc": old_start.isoformat()},
-            new_json_sanitized={"starts_at_utc": new_starts_at_utc.isoformat(), "version": booking.version}
-        )
-        db.add(event)
-
-        # Outbox
-        outbox = OutboxEvent(
+        lifecycle.record_event(db, booking, "rescheduled", "customer" if is_client else "staff", actor_id, old, {
+            "starts_at_utc": new_starts_at_utc.isoformat(), "staff_id": str(target_staff_id),
+            "amount_minor": new_price_minor, "released_occupancies": released})
+        db.add(OutboxEvent(
             tenant_id=tenant_id,
             event_type="booking.rescheduled",
             aggregate_id=str(booking.id),
-            payload_sanitized={
-                "booking_id": str(booking.id),
-                "starts_at_utc": new_starts_at_utc.isoformat()
-            }
-        )
-        db.add(outbox)
-
+            payload_sanitized={"booking_id": str(booking.id), "starts_at_utc": new_starts_at_utc.isoformat(),
+                               "version": booking.version}
+        ))
         await db.commit()
         return booking

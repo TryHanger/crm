@@ -25,6 +25,12 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      # M15: SMTP sink for the notification smoke
+      mailpit:
+        image: axllent/mailpit:v1.21
+        ports:
+          - 1025:1025
+          - 8025:8025
 
     steps:
       - name: Checkout Code
@@ -78,6 +84,8 @@ jobs:
           ADMIN_DB_PASSWORD: postgrespassword
         run: |
           alembic upgrade head
+          # models and migration head must match: a model change needs its own revision
+          alembic check
 
       - name: Run Pytest Test Suite (Non-Superuser Runtime Role)
         env:
@@ -174,10 +182,16 @@ jobs:
           ADMIN_DB_PASSWORD: postgrespassword
           ENABLE_DEMO_SEED: "true"
           JWT_SECRET_KEY: test-jwt-secret-key-32-chars-long-minimum-length!
+          SMTP_HOST: 127.0.0.1
+          SMTP_PORT: 1025
+          SMTP_SECURITY: none
+          SMTP_FROM: noreply@crm.localhost
+          PUBLIC_BOOKING_URL_TEMPLATE: http://{slug}.localhost:3000
         run: |
           sudo sed -i 's/127.0.0.1 localhost/127.0.0.1 localhost barberhouse.localhost moderncut.localhost/' /etc/hosts
           python -c "from apps.api.app.infrastructure.db.init_db import init_database, seed_database; init_database(); seed_database()"
           uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 &
+          python scripts/outbox_worker.py --interval 1 &
           npm run dev --workspace=@crm/booking-web -- --port 3000 --host 0.0.0.0 &
           npm run dev --workspace=@crm/business-crm -- --port 3001 --host 0.0.0.0 &
           npm run dev --workspace=@crm/platform-console -- --port 3002 --host 0.0.0.0 &
@@ -192,6 +206,34 @@ jobs:
             done
           done
           curl -s http://127.0.0.1:8000/api/v1/public/site -H "Host: barberhouse.book.example.kz"
+          # M01 smoke: public booking for tenant A through Booking Web origin, CRM A sees it, tenant B isolated
+          python scripts/smoke_two_tenants.py
+          # M02 smoke: operator creates company, owner accepts the invite once and logs in
+          python scripts/smoke_onboarding.py
+          # M04 smoke: 8000 KZT service created in CRM is visible in its branch on the booking site
+          python scripts/smoke_pricing.py
+          # M05 smoke: two masters with different shifts and prices show their own hours on the booking site
+          python scripts/smoke_schedules.py
+          # M06 smoke: service-first, master-first and time-first each end with a real booking
+          python scripts/smoke_booking_flows.py
+          # M07 smoke: 20 concurrent clients on one slot -> one booking, others get new slots
+          python scripts/smoke_slot_race.py
+          # M08 smoke: CRM block 13-14 closes the time on the booking site, calendar free windows match
+          python scripts/smoke_calendar_block.py
+          # M09 smoke: reschedule frees the old slot and logs the event, cancel keeps history
+          python scripts/smoke_visit_lifecycle.py
+          # M10 smoke: repeat visit finds its client, a shared phone does not merge people, other companies see nothing
+          python scripts/smoke_customers.py
+          # M11 smoke: completing an 8000 KZT visit -> rendered 8000, paid 0, debt 8000
+          python scripts/smoke_accrual.py
+          # M12 smoke: 3000 of 8000 paid -> debt 5000, cash account reconciles, replay does not double
+          python scripts/smoke_cash.py
+          # M13 smoke: partial payment, refund 1000 and advance 2000 reconciled by the cash shift
+          python scripts/smoke_shift.py
+          # M14 smoke: finance report from the ledger, expense reconciled by the shift
+          python scripts/smoke_reports.py
+          # M15 smoke: real SMTP delivery via Mailpit, manage link opens, master does not see the till
+          python scripts/smoke_notifications.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots

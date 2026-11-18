@@ -331,7 +331,7 @@ def restore_and_verify(
     print(f"[+] Restore and DR Verification PASSED!")
     print(f"    Tables: {table_count}")
     print(f"    Tenants: {tenant_count}")
-    print(f"    RLS Policies: Verified 22 tenant tables with FORCE ROW LEVEL SECURITY")
+    print(f"    RLS Policies: Verified {len(TENANT_TABLES)} tenant tables with FORCE ROW LEVEL SECURITY")
     print(f"    Measured Restore Duration (RTO): {restore_duration:.3f} seconds")
     print(f"    Report saved to: {report_path}")
 

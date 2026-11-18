@@ -2,6 +2,12 @@ import uuid
 import datetime
 from typing import Optional, List, Any, Dict
 from pydantic import BaseModel, Field, EmailStr, model_validator
+from apps.api.app.modules.finance.money import MAX_PRICE_MINOR
+
+# M04 money/catalog contract: prices are integer minor units (KZT tiyn), 0..MAX_PRICE_MINOR;
+# durations are whole minutes within one working day.
+MIN_DURATION_MINUTES = 5
+MAX_DURATION_MINUTES = 720
 
 # Standard Error Envelope
 class ErrorDetail(BaseModel):
@@ -93,12 +99,54 @@ class StaffPublicResponse(BaseModel):
     duration_minutes: Optional[int] = None
 
 class AvailabilitySearchRequest(BaseModel):
+    """M06 contract: the server decides availability and price; the UI only renders slots.
+
+    at_utc (optional): exact start chosen first (time-first step 2). The response then holds
+    quotes only for that start (exact_match=true) or nearby starts that fit (alternatives).
+    """
     branch_id: uuid.UUID
     service_ids: List[uuid.UUID]
     from_date: datetime.date
     to_date: datetime.date
     staff_id: Optional[uuid.UUID] = None
     staff_mode: str = Field(default="any")  # "specific" or "any"
+    at_utc: Optional[datetime.datetime] = None
+
+    @model_validator(mode="after")
+    def _contract(self):
+        if self.staff_mode not in ("any", "specific"):
+            raise ValueError("staff_mode must be 'any' or 'specific'")
+        if self.staff_mode == "specific" and self.staff_id is None:
+            raise ValueError("staff_mode 'specific' requires staff_id")
+        if len(set(self.service_ids)) != len(self.service_ids):
+            raise ValueError("service_ids must not repeat")
+        if self.to_date < self.from_date:
+            raise ValueError("to_date must not be before from_date")
+        if self.at_utc is not None and self.at_utc.utcoffset() is None:
+            raise ValueError("at_utc must include a timezone offset (UTC)")
+        return self
+
+
+class TimeFirstRequest(BaseModel):
+    branch_id: uuid.UUID
+    from_date: datetime.date
+    to_date: datetime.date
+
+    @model_validator(mode="after")
+    def _dates(self):
+        if self.to_date < self.from_date:
+            raise ValueError("to_date must not be before from_date")
+        return self
+
+
+class TimeFirstSlot(BaseModel):
+    starts_at_utc: str
+    available_staff_count: int
+
+
+class TimeFirstResponse(BaseModel):
+    slots: List[TimeFirstSlot]
+    total_count: int
 
 class SlotResponse(BaseModel):
     staff_id: str
@@ -115,6 +163,8 @@ class SlotResponse(BaseModel):
 class AvailabilitySearchResponse(BaseModel):
     slots: List[SlotResponse]
     total_count: int
+    exact_match: Optional[bool] = None       # only with at_utc
+    alternatives: List[str] = []             # starts (UTC ISO) that fit, when at_utc does not
 
 class CreatePublicBookingRequest(BaseModel):
     branch_id: uuid.UUID
@@ -196,7 +246,18 @@ class CalendarBlockCreateRequest(BaseModel):
     staff_id: uuid.UUID
     starts_at_utc: datetime.datetime
     ends_at_utc: datetime.datetime
-    block_reason: str = "Личное"
+    block_reason: str = Field(default="Личное", max_length=255)
+
+    @model_validator(mode="after")
+    def _range(self):
+        # M08: invalid ranges were reported as "time already taken"
+        if self.starts_at_utc.utcoffset() is None or self.ends_at_utc.utcoffset() is None:
+            raise ValueError("starts_at_utc and ends_at_utc must include a timezone offset")
+        if self.ends_at_utc <= self.starts_at_utc:
+            raise ValueError("ends_at_utc must be after starts_at_utc")
+        if self.ends_at_utc - self.starts_at_utc > datetime.timedelta(days=31):
+            raise ValueError("a calendar block cannot be longer than 31 days; use time off instead")
+        return self
 
 class CustomerCreateRequest(BaseModel):
     full_name: str
@@ -227,22 +288,22 @@ class StaffCreateRequest(BaseModel):
 class StaffServiceOfferUpdateRequest(BaseModel):
     branch_id: uuid.UUID
     service_id: uuid.UUID
-    price_override_minor: Optional[int] = None
-    duration_override_minutes: Optional[int] = None
+    price_override_minor: Optional[int] = Field(default=None, ge=0, le=MAX_PRICE_MINOR)
+    duration_override_minutes: Optional[int] = Field(default=None, ge=MIN_DURATION_MINUTES, le=MAX_DURATION_MINUTES)
     active: bool = True
     online_visible: bool = True
 
 class ServiceCreateRequest(BaseModel):
     category_id: Optional[uuid.UUID] = None
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
-    base_price_minor: int
-    base_duration_minutes: int
+    base_price_minor: int = Field(ge=0, le=MAX_PRICE_MINOR)
+    base_duration_minutes: int = Field(ge=MIN_DURATION_MINUTES, le=MAX_DURATION_MINUTES)
     active: bool = True
     online_visible: bool = True
 
 class ServiceCategoryCreateRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     sort_order: int = 0
 
 class BookingPolicyUpdateRequest(BaseModel):
@@ -265,8 +326,10 @@ class BookingBrandingUpdateRequest(BaseModel):
 
 class InviteCreateRequest(BaseModel):
     email: EmailStr
-    role: str = "admin"  # admin, master
+    role: str = "admin"  # admin, master (M15: anything else is rejected)
     branch_scope: Optional[str] = None
+    staff_id: Optional[uuid.UUID] = None          # M15: master invite is linked to this staff profile
+    branch_ids: Optional[List[uuid.UUID]] = None  # M15: admin limited to these branches (empty = all)
 
 # Platform Console Schemas
 class PlatformTenantCreateRequest(BaseModel):
@@ -402,10 +465,10 @@ class StaffTimeOffResponse(BaseModel):
 
 class ServiceUpdateRequest(BaseModel):
     category_id: Optional[uuid.UUID] = None
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = None
-    base_price_minor: Optional[int] = None
-    base_duration_minutes: Optional[int] = None
+    base_price_minor: Optional[int] = Field(default=None, ge=0, le=MAX_PRICE_MINOR)
+    base_duration_minutes: Optional[int] = Field(default=None, ge=MIN_DURATION_MINUTES, le=MAX_DURATION_MINUTES)
     active: Optional[bool] = None
     online_visible: Optional[bool] = None
 

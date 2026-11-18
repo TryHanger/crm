@@ -132,13 +132,24 @@ async def test_crm_calendar_and_master_role_isolation():
         assert cust1.status_code == 201
         assert cust1.json()["duplicate_detected"] is False
 
-        # Attempting to add with SAME phone returns duplicate_detected = True
+        # Same person (same name, phone written as 8 ...) -> duplicate_detected = True (M10)
+        cust_same = await client.post("/api/v1/business/customers", json={
+            "full_name": "  уникальный   клиент ",
+            "phone_e164": "8" + uniq_phone[2:]
+        }, headers=owner_headers)
+        assert cust_same.status_code in (200, 201)
+        assert cust_same.json()["duplicate_detected"] is True
+        assert cust_same.json()["id"] == cust1.json()["id"]
+
+        # Another person with the SAME phone is NOT merged: new client + hint (M10)
         cust2 = await client.post("/api/v1/business/customers", json={
             "full_name": "Тот же номер",
             "phone_e164": uniq_phone
         }, headers=owner_headers)
         assert cust2.status_code in (200, 201)
-        assert cust2.json()["duplicate_detected"] is True
+        assert cust2.json()["duplicate_detected"] is False
+        assert cust2.json()["id"] != cust1.json()["id"]
+        assert [c["id"] for c in cust2.json()["same_phone_customers"]] == [cust1.json()["id"]]
 
 
 @pytest.mark.asyncio
@@ -564,8 +575,11 @@ async def test_crm_revenue_semantics_and_multi_branch_pricing_isolation():
         assert "planned_revenue_minor" in data
         assert "completed_revenue_minor" in data
         assert "paid_revenue_minor" in data
-        assert data["paid_revenue_minor"] == 0, "Cash/ledger payment collection is not enabled on MVP"
-        assert data["payment_collection_enabled"] is False
+        # M14: money figures come from the ledger, not from booking status
+        assert data["payment_collection_enabled"] is True
+        fin = (await client.get("/api/v1/business/reports/finance?from_date=2026-10-01&to_date=2026-11-30", headers=mc_headers)).json()
+        assert data["paid_revenue_minor"] == fin["total"]["received_minor"]
+        assert data["completed_revenue_minor"] == fin["total"]["rendered_minor"]
         assert "revenue_semantics_note" in data
         assert "completed_revenue_minor" in data["revenue_semantics_note"]
 
@@ -602,6 +616,10 @@ async def test_crm_revenue_semantics_and_multi_branch_pricing_isolation():
                 "online_visible": True
             }]
         }, headers=mc_headers)
+
+        # The master must work in Branch 2 before a Branch 2 price can be set (M04)
+        assign = await client.patch(f"/api/v1/business/staff/{staff_id}", json={"branch_ids": [b1_id, b2_id]}, headers=mc_headers)
+        assert assign.status_code == 200, assign.text
 
         # Set price in Branch 2 to 12 000 KZT
         await client.put(f"/api/v1/business/staff/{staff_id}/services", json={

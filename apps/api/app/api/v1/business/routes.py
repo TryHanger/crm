@@ -3,6 +3,23 @@ import datetime
 import zoneinfo
 from typing import List, Optional, Any, Union, Dict
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field, ValidationError
+from apps.api.app.modules.catalog import ownership
+from apps.api.app.infrastructure.security import branch_scope
+from apps.api.app.modules.bookings import lifecycle
+from apps.api.app.modules.finance import accrual, cash as finance_cash, ledger as finance_ledger, shifts as finance_shifts
+from apps.api.app.modules.finance import expenses as finance_expenses, reports as finance_reports
+from apps.api.app.modules.notifications import templates as notification_templates
+from apps.api.app.core.config import settings
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from apps.api.app.modules.finance.ledger import FinanceError
+from apps.api.app.infrastructure.db.models import CashAccount, CashShift, ExpenseCategory, LedgerEntry, Order
+from apps.api.app.infrastructure.db.models import (BranchRoleGrant, NotificationDelivery, NotificationTemplate,
+                                                   OutboxEvent, TenantSettings)
+from apps.api.app.infrastructure.db.session import set_tenant_context
+from apps.api.app.modules.customers import identity as customer_identity
+from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +33,7 @@ from apps.api.app.infrastructure.db.models import (
     TenantMembership, Invite, Subscription, PlanVersion, PlanEntitlement,
     TenantEntitlementOverride
 )
-from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineError
+from apps.api.app.modules.bookings.service import BookingEngine, BookingEngineError, is_slot_conflict
 from apps.api.app.modules.finance.service import FinanceCoreService
 from apps.api.app.modules.schemas import (
     BranchResponse, CRMCreateBookingRequest, StatusUpdateRequest,
@@ -179,7 +196,7 @@ async def create_branch(
         name=data["name"],
         city=data.get("city", "Астана"),
         address=data["address"],
-        timezone_iana=data.get("timezone_iana") or data.get("timezone") or "Asia/Almaty",
+        timezone_iana=ownership.require_timezone(data.get("timezone_iana") or data.get("timezone") or "Asia/Almaty"),
         phone=data.get("phone") or data.get("phone_number")
     )
     db.add(branch)
@@ -207,28 +224,13 @@ async def get_calendar(
     tenant_id = crm_user.tenant_id
     effective_staff_id = staff_id
 
-    # Master role access control
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == tenant_id,
-            StaffProfile.user_id == crm_user.user.id
-        )
-        res_sp = await db.execute(stmt_sp)
-        master_profile = res_sp.scalar_one_or_none()
-        if not master_profile:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Master profile not linked to user account"
-            )
-        effective_staff_id = master_profile.id
-
-    stmt_b = select(Branch).where(Branch.id == branch_id, Branch.tenant_id == tenant_id)
-    res_b = await db.execute(stmt_b)
-    branch = res_b.scalar_one_or_none()
-    try:
-        tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty") if branch else zoneinfo.ZoneInfo("Asia/Almaty")
-    except Exception:
-        tz = zoneinfo.ZoneInfo("Asia/Almaty")
+    # M08: the branch must exist in this company (404) and be within the user's branch scope (403);
+    # a master sees only his own calendar
+    branch = await branch_scope.require_branch(db, crm_user, branch_id)
+    own_staff = await branch_scope.master_profile_id(db, crm_user)
+    if own_staff is not None:
+        effective_staff_id = own_staff
+    tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty")
 
     start_local = datetime.datetime.combine(date, datetime.time.min, tzinfo=tz)
     end_local = datetime.datetime.combine(date, datetime.time.max, tzinfo=tz)
@@ -241,6 +243,7 @@ async def get_calendar(
     ).where(
         StaffProfile.tenant_id == tenant_id,
         StaffBranch.branch_id == branch_id,
+        StaffBranch.active == True,
         StaffProfile.active == True
     )
     if effective_staff_id:
@@ -305,8 +308,12 @@ async def get_calendar(
     return {
         "date": date.isoformat(),
         "branch_id": str(branch_id),
+        "timezone": branch.timezone_iana,
+        # working = shift minus breaks; free = working minus bookings, blocks and time off.
+        # The CRM must not compute availability itself (M08 STOP): render these windows.
         "staff": [
-            {"id": str(s.id), "display_name": s.display_name, "role_title": s.role_title, "color": s.color}
+            {"id": str(s.id), "display_name": s.display_name, "role_title": s.role_title, "color": s.color,
+             **(await BookingEngine.staff_day_windows(db, tenant_id, branch_id, s.id, date, tz))}
             for s in staff_members
         ],
         "bookings": booking_list,
@@ -330,20 +337,16 @@ async def crm_create_booking(
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Creates a booking manually from CRM via unified BookingEngine."""
+    """Creates a booking manually from CRM via the same BookingEngine (and the same overlap
+    constraint) as public bookings: a manual and an online request for one slot cannot both win."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == crm_user.tenant_id,
-            StaffProfile.user_id == crm_user.user.id
+    await branch_scope.require_branch(db, crm_user, req.branch_id)
+    if crm_user.role == "master" and req.staff_id != await branch_scope.master_profile_id(db, crm_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "Access denied: master cannot create appointments for other staff"}
         )
-        res_sp = await db.execute(stmt_sp)
-        sp = res_sp.scalar_one_or_none()
-        if not sp or req.staff_id != sp.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "Access denied: master cannot create appointments for other staff"}
-            )
+    await branch_scope.require_staff_in_branch(db, crm_user, req.staff_id, req.branch_id)
     try:
         booking, mgmt_token, raw_token = await BookingEngine.create_booking(
             db=db,
@@ -370,7 +373,447 @@ async def crm_create_booking(
             "customer_id": str(booking.customer_id) if booking.customer_id else None
         }
     except BookingEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
+
+
+async def _visit_finance(db: AsyncSession, crm_user: AuthenticatedTenantUser, booking: Booking) -> Optional[dict]:
+    if crm_user.role == "master":
+        return None  # masters do not see money (M15)
+    order = await accrual.booking_order(db, booking)
+    if order is None:
+        return {"order_id": None, "currency": booking.currency, "sold_minor": booking.amount_minor_snapshot,
+                "rendered_minor": 0, "received_minor": 0, "advance_applied_minor": 0, "debt_minor": 0}
+    p = await finance_ledger.order_position(db, crm_user.tenant_id, order.id)
+    return {"order_id": str(order.id), "order_status": order.status, "currency": p.currency, "sold_minor": p.sold_minor,
+            "rendered_minor": p.rendered_minor, "received_minor": p.received_minor,
+            "advance_applied_minor": p.advance_applied_minor, "debt_minor": p.debt_minor}
+
+
+class PaymentCreateRequest(BaseModel):
+    amount_minor: int = Field(gt=0)
+    cash_account_id: uuid.UUID
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+def _finance_error(e: FinanceError) -> HTTPException:
+    return HTTPException(status_code=e.http_status, detail={"code": e.code, "message": e.message})
+
+
+@router.get("/cash-accounts")
+async def list_cash_accounts(
+    branch_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Branch cash accounts with the balance the ledger expects in each (M12). Masters: 403."""
+    await branch_scope.require_branch(db, crm_user, branch_id)
+    accounts = await finance_cash.ensure_default_accounts(db, crm_user.tenant_id, branch_id)
+    out = [{"id": str(a.id), "name": a.name, "kind": a.kind, "active": a.active,
+            "balance_minor": await finance_cash.account_balance(db, crm_user.tenant_id, a.id)} for a in accounts]
+    await db.commit()
+    return out
+
+
+@router.post("/bookings/{booking_id}/payments", status_code=status.HTTP_201_CREATED)
+async def create_visit_payment(
+    booking_id: uuid.UUID,
+    req: PaymentCreateRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Cash or external transfer registered manually by the cashier (owner/admin) (M12).
+
+    Partial payments are allowed; paying more than the debt is not; the same Idempotency-Key
+    never takes the money twice."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
+    order = await accrual.booking_order(db, b)
+    if order is None:
+        raise HTTPException(status_code=409, detail={"code": "NOTHING_TO_PAY",
+                                                     "message": "Визит ещё не завершён: оплату принимаем после оказания услуги"})
+    try:
+        res = await finance_cash.record_payment(
+            db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
+            cash_account_id=req.cash_account_id, idempotency_key=idempotency_key or "",
+            actor_id=crm_user.user.id, note=req.note)
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    p = res.position
+    return {"payment_id": str(res.entry.id), "replayed": not res.created, "amount_minor": res.entry.amount_minor,
+            "cash_account_id": str(res.entry.cash_account_id),
+            "finance": {"rendered_minor": p.rendered_minor, "received_minor": p.received_minor, "debt_minor": p.debt_minor}}
+
+
+@router.get("/bookings/{booking_id}/payments")
+async def list_visit_payments(
+    booking_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
+    order = await accrual.booking_order(db, b)
+    if order is None:
+        return []
+    rows = (await db.execute(select(LedgerEntry, CashAccount.name).outerjoin(
+        CashAccount, CashAccount.id == LedgerEntry.cash_account_id).where(
+        LedgerEntry.tenant_id == crm_user.tenant_id, LedgerEntry.order_id == order.id,
+        LedgerEntry.kind.in_(("payment", "refund", "advance_applied"))).order_by(LedgerEntry.created_at))).all()
+    return [{"id": str(e.id), "kind": e.kind, "amount_minor": e.amount_minor, "cash_account": name,
+             "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None, "reason": e.reason,
+             "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None,
+             "created_at": e.created_at} for e, name in rows]
+
+
+class RefundCreateRequest(BaseModel):
+    amount_minor: int = Field(gt=0)
+    cash_account_id: uuid.UUID
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class AdvanceCreateRequest(BaseModel):
+    branch_id: uuid.UUID
+    amount_minor: int = Field(gt=0)
+    cash_account_id: uuid.UUID
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+class ApplyAdvanceRequest(BaseModel):
+    amount_minor: int = Field(gt=0)
+
+
+class ShiftOpenRequest(BaseModel):
+    cash_account_id: uuid.UUID
+    opening_float_minor: int = Field(default=0, ge=0)
+
+
+class ShiftCloseRequest(BaseModel):
+    counted_minor: int = Field(ge=0)
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class ReverseRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+async def _visit_order(db: AsyncSession, crm_user: AuthenticatedTenantUser, booking_id: uuid.UUID):
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
+    order = await accrual.booking_order(db, b)
+    if order is None:
+        raise HTTPException(status_code=409, detail={"code": "NOTHING_TO_PAY", "message": "Визит ещё не завершён"})
+    return b, order
+
+
+def _position(p):
+    return None if p is None else {"rendered_minor": p.rendered_minor, "received_minor": p.received_minor,
+                                   "advance_applied_minor": p.advance_applied_minor, "debt_minor": p.debt_minor}
+
+
+async def _money_call(db: AsyncSession, fn):
+    try:
+        res = await fn()
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return {"entry_id": str(res.entry.id), "kind": res.entry.kind, "amount_minor": res.entry.amount_minor,
+            "replayed": not res.created, "finance": _position(res.position)}
+
+
+@router.post("/bookings/{booking_id}/refunds", status_code=status.HTTP_201_CREATED)
+async def create_visit_refund(
+    booking_id: uuid.UUID, req: RefundCreateRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Money back for the service (M13): refund + matching reduction of rendered; the original payment stays."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    _, order = await _visit_order(db, crm_user, booking_id)
+    return await _money_call(db, lambda: finance_cash.refund(
+        db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
+        cash_account_id=req.cash_account_id, reason=req.reason, idempotency_key=idempotency_key or "",
+        actor_id=crm_user.user.id))
+
+
+@router.post("/bookings/{booking_id}/apply-advance", status_code=status.HTTP_201_CREATED)
+async def apply_customer_advance(
+    booking_id: uuid.UUID, req: ApplyAdvanceRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    _, order = await _visit_order(db, crm_user, booking_id)
+    return await _money_call(db, lambda: finance_cash.apply_advance(
+        db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
+        idempotency_key=idempotency_key or "", actor_id=crm_user.user.id))
+
+
+@router.post("/customers/{customer_id}/advances", status_code=status.HTTP_201_CREATED)
+async def receive_customer_advance(
+    customer_id: uuid.UUID, req: AdvanceCreateRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Money received before the service: a liability to the client, not revenue (M13)."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    await branch_scope.require_branch(db, crm_user, req.branch_id)
+    out = await _money_call(db, lambda: finance_cash.receive_advance(
+        db, tenant_id=crm_user.tenant_id, customer_id=customer_id, branch_id=req.branch_id,
+        amount_minor=req.amount_minor, cash_account_id=req.cash_account_id, idempotency_key=idempotency_key or "",
+        actor_id=crm_user.user.id, note=req.note))
+    await set_tenant_context(db, crm_user.tenant_id)
+    out["advance_balance_minor"] = await finance_cash.advance_balance(db, crm_user.tenant_id, customer_id)
+    return out
+
+
+@router.get("/customers/{customer_id}/advance")
+async def get_customer_advance(
+    customer_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    c = (await db.execute(select(Customer).where(Customer.id == customer_id, Customer.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if c is None:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Клиент не найден"})
+    return {"customer_id": str(c.id), "advance_balance_minor": await finance_cash.advance_balance(db, crm_user.tenant_id, c.id)}
+
+
+@router.post("/ledger-entries/{entry_id}/reverse", status_code=status.HTTP_201_CREATED)
+async def reverse_ledger_entry(
+    entry_id: uuid.UUID, req: ReverseRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Storno of a cashier mistake: an opposite entry in the current shift; nothing is deleted (M13)."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    e = (await db.execute(select(LedgerEntry).where(
+        LedgerEntry.id == entry_id, LedgerEntry.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if e is None:
+        raise HTTPException(status_code=404, detail={"code": "ENTRY_NOT_FOUND", "message": "Операция не найдена"})
+    await branch_scope.require_branch(db, crm_user, e.branch_id)
+    return await _money_call(db, lambda: finance_cash.reverse(
+        db, tenant_id=crm_user.tenant_id, entry_id=entry_id, reason=req.reason,
+        idempotency_key=idempotency_key or "", actor_id=crm_user.user.id))
+
+
+async def _shift_report(db: AsyncSession, shift) -> dict:
+    moves = await finance_shifts.shift_movements(db, shift)
+    expected = finance_shifts.expected_cash(shift, moves)
+    return {"id": str(shift.id), "status": shift.status, "cash_account_id": str(shift.cash_account_id),
+            "branch_id": str(shift.branch_id), "opened_at": shift.opened_at, "closed_at": shift.closed_at,
+            "opening_float_minor": shift.opening_float_minor, "movements": moves,
+            "expected_minor": shift.expected_minor if shift.status == "closed" else expected,
+            "counted_minor": shift.counted_minor, "difference_minor": shift.difference_minor, "close_note": shift.close_note}
+
+
+@router.post("/cash-shifts/open", status_code=status.HTTP_201_CREATED)
+async def open_cash_shift(
+    req: ShiftOpenRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    acc = (await db.execute(select(CashAccount).where(
+        CashAccount.id == req.cash_account_id, CashAccount.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if acc is None:
+        raise HTTPException(status_code=404, detail={"code": "CASH_ACCOUNT_NOT_FOUND", "message": "Касса не найдена"})
+    await branch_scope.require_branch(db, crm_user, acc.branch_id)
+    try:
+        shift = await finance_shifts.open_shift(db, tenant_id=crm_user.tenant_id, account=acc,
+                                                opening_float_minor=req.opening_float_minor, actor_id=crm_user.user.id)
+        out = await _shift_report(db, shift)
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return out
+
+
+@router.post("/cash-shifts/{shift_id}/close")
+async def close_cash_shift(
+    shift_id: uuid.UUID, req: ShiftCloseRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    s = (await db.execute(select(CashShift).where(CashShift.id == shift_id, CashShift.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if s is None:
+        raise HTTPException(status_code=404, detail={"code": "SHIFT_NOT_FOUND", "message": "Смена не найдена"})
+    await branch_scope.require_branch(db, crm_user, s.branch_id)
+    try:
+        shift = await finance_shifts.close_shift(db, tenant_id=crm_user.tenant_id, shift_id=shift_id,
+                                                 counted_minor=req.counted_minor, note=req.note, actor_id=crm_user.user.id)
+        out = await _shift_report(db, shift)
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return out
+
+
+@router.get("/cash-shifts/{shift_id}")
+async def get_cash_shift(
+    shift_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    s = (await db.execute(select(CashShift).where(CashShift.id == shift_id, CashShift.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if s is None:
+        raise HTTPException(status_code=404, detail={"code": "SHIFT_NOT_FOUND", "message": "Смена не найдена"})
+    await branch_scope.require_branch(db, crm_user, s.branch_id)
+    return await _shift_report(db, s)
+
+
+# =========================================================================
+# EXPENSES AND FINANCE REPORT (M14): figures come from the money ledger only
+# =========================================================================
+
+class ExpenseCategoryCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+
+
+class ExpenseCreateRequest(BaseModel):
+    branch_id: uuid.UUID
+    cash_account_id: uuid.UUID
+    category_id: uuid.UUID
+    amount_minor: int = Field(gt=0)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+def _category_out(c: ExpenseCategory) -> dict:
+    return {"id": str(c.id), "name": c.name, "archived": c.archived_at is not None}
+
+
+@router.get("/expense-categories")
+async def list_expense_categories(
+    include_archived: bool = False,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    cats = await finance_expenses.list_categories(db, crm_user.tenant_id, include_archived)
+    out = [_category_out(c) for c in cats]
+    await db.commit()
+    return out
+
+
+@router.post("/expense-categories", status_code=status.HTTP_201_CREATED)
+async def create_expense_category(
+    req: ExpenseCategoryCreateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    try:
+        cat = await finance_expenses.create_category(db, crm_user.tenant_id, req.name)
+        out = _category_out(cat)
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return out
+
+
+@router.post("/expense-categories/{category_id}/archive")
+async def archive_expense_category(
+    category_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    try:
+        out = _category_out(await finance_expenses.archive_category(db, crm_user.tenant_id, category_id))
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return out
+
+
+@router.post("/expenses", status_code=status.HTTP_201_CREATED)
+async def create_expense(
+    req: ExpenseCreateRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Money out of a branch till by expense category (M14). Cash: only within an open shift, never below zero."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    await branch_scope.require_branch(db, crm_user, req.branch_id)
+    return await _money_call(db, lambda: finance_expenses.record_expense(
+        db, tenant_id=crm_user.tenant_id, branch_id=req.branch_id, cash_account_id=req.cash_account_id,
+        category_id=req.category_id, amount_minor=req.amount_minor, reason=req.reason,
+        idempotency_key=idempotency_key or "", actor_id=crm_user.user.id))
+
+
+@router.get("/expenses")
+async def list_expenses(
+    branch_id: uuid.UUID,
+    from_date: datetime.date,
+    to_date: datetime.date,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    branch = await branch_scope.require_branch(db, crm_user, branch_id)
+    try:
+        finance_reports.validate_period(from_date, to_date)
+    except FinanceError as e:
+        raise _finance_error(e)
+    start, end = finance_reports.local_bounds(from_date, to_date, branch.timezone_iana)
+    rows = (await db.execute(select(LedgerEntry, ExpenseCategory.name, CashAccount.name)
+                             .join(ExpenseCategory, ExpenseCategory.id == LedgerEntry.expense_category_id)
+                             .join(CashAccount, CashAccount.id == LedgerEntry.cash_account_id)
+                             .where(LedgerEntry.tenant_id == crm_user.tenant_id, LedgerEntry.branch_id == branch_id,
+                                    LedgerEntry.kind == "expense", LedgerEntry.occurred_at >= start,
+                                    LedgerEntry.occurred_at < end)
+                             .order_by(LedgerEntry.occurred_at, LedgerEntry.created_at))).all()
+    return [{"id": str(e.id), "occurred_at": e.occurred_at, "amount_minor": e.amount_minor, "category": cat,
+             "cash_account": acc, "reason": e.reason, "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None,
+             "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None}
+            for e, cat, acc in rows]
+
+
+async def _report_branches(db: AsyncSession, crm_user: AuthenticatedTenantUser, branch_id: Optional[uuid.UUID]):
+    if branch_id is not None:
+        await branch_scope.require_branch(db, crm_user, branch_id)
+        return {branch_id}
+    return await branch_scope.allowed_branch_ids(db, crm_user)
+
+
+@router.get("/reports/finance")
+async def get_finance_report(
+    from_date: datetime.date,
+    to_date: datetime.date,
+    branch_id: Optional[uuid.UUID] = None,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Rendered, received, advances, expenses, receivables and advance liability for a period (M14).
+
+    Branch-local day boundaries; the company total is the sum of branches. Masters: 403;
+    an admin with branch grants sees only those branches."""
+    branches = await _report_branches(db, crm_user, branch_id)
+    try:
+        return await finance_reports.finance_report(db, crm_user.tenant_id, from_date, to_date, branches)
+    except FinanceError as e:
+        raise _finance_error(e)
 
 
 @router.get("/bookings/{booking_id}")
@@ -394,18 +837,7 @@ async def get_crm_booking_card(
 
     b, c, staff = row
 
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == crm_user.tenant_id,
-            StaffProfile.user_id == crm_user.user.id
-        )
-        res_sp = await db.execute(stmt_sp)
-        sp = res_sp.scalar_one_or_none()
-        if not sp or b.staff_id != sp.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: master cannot view appointments assigned to other staff"
-            )
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
 
     # Items
     stmt_it = select(BookingItem).where(BookingItem.booking_id == b.id).order_by(BookingItem.sequence)
@@ -450,11 +882,20 @@ async def get_crm_booking_card(
             }
             for it in items
         ],
+        "version": b.version,
+        "cancellation_reason": b.cancellation_reason,
+        # M11: money of the visit comes only from the order and the ledger, never from the status
+        "finance": await _visit_finance(db, crm_user, b),
+        "allowed_transitions": list(lifecycle.TRANSITIONS.get(b.status, ())),
+        # full history: what changed, from what to what, by whom (M09)
         "events": [
             {
                 "event_type": ev.event_type,
                 "actor_type": ev.actor_type,
+                "actor_id": str(ev.actor_id) if ev.actor_id else None,
                 "created_at": ev.created_at,
+                "old": ev.old_json_sanitized,
+                "new": ev.new_json_sanitized,
                 "old_data": ev.old_json_sanitized,
                 "new_data": ev.new_json_sanitized,
             }
@@ -470,87 +911,35 @@ async def update_booking_status(
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Validates state machine transitions:
-    confirmed -> arrived -> in_progress -> completed, no_show, cancelled
+    """Status change through the single lifecycle state machine (modules/bookings/lifecycle.py).
+
+    The row is locked for the transition; illegal transitions -> 409 INVALID_TRANSITION with the
+    allowed targets; cancelling releases the occupancy; every change appends an event.
     """
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    stmt = select(Booking).where(Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id)
-    res = await db.execute(stmt)
-    booking = res.scalar_one_or_none()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
-    old_status = booking.status
-    target_status = req.status.lower()
-
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == crm_user.tenant_id,
-            StaffProfile.user_id == crm_user.user.id
-        )
-        res_sp = await db.execute(stmt_sp)
-        sp = res_sp.scalar_one_or_none()
-        if not sp or booking.staff_id != sp.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: master cannot change status of appointments assigned to other staff"
-            )
-
-    VALID_TRANSITIONS = {
-        "confirmed": ["arrived", "in_progress", "completed", "no_show", "cancelled"],
-        "arrived": ["in_progress", "completed", "cancelled"],
-        "in_progress": ["completed", "cancelled"],
-        "completed": [],
-        "no_show": [],
-        "cancelled": []
-    }
-
-    if target_status not in VALID_TRANSITIONS.get(old_status, []):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid transition from '{old_status}' to '{target_status}'"
-        )
-
-    booking.status = target_status
-    if target_status == "cancelled":
-        booking.cancelled_at = datetime.datetime.now(datetime.timezone.utc)
-        booking.cancellation_reason = req.reason or "Отменено сотрудником в CRM"
-        # Release occupancy
-        stmt_occ = select(StaffOccupancy).where(StaffOccupancy.booking_id == booking.id, StaffOccupancy.released_at.is_(None))
-        res_occ = await db.execute(stmt_occ)
-        for o in res_occ.scalars().all():
-            o.released_at = datetime.datetime.now(datetime.timezone.utc)
-
-    # Event
-    event = BookingEvent(
-        tenant_id=crm_user.tenant_id,
-        booking_id=booking.id,
-        event_type="status_changed",
-        actor_type="staff",
-        actor_id=crm_user.user.id,
-        old_json_sanitized={"status": old_status},
-        new_json_sanitized={"status": target_status, "reason": req.reason}
-    )
-    db.add(event)
-
-    # If completed, notify financial core to record fact of service delivery without fake payment
-    if target_status == "completed":
-        fin = await FinanceCoreService.on_visit_completed(booking, db, actor_id=crm_user.user.id)
-    else:
-        fin = await FinanceCoreService.get_visit_financial_summary(booking, db)
-
+    try:
+        booking = await lifecycle.lock_booking(db, crm_user.tenant_id, booking_id)
+        await branch_scope.require_booking_access(db, crm_user, booking.branch_id, booking.staff_id)
+        old_status = booking.status
+        await lifecycle.change_status(db, booking, req.status, actor_type="staff", actor_id=crm_user.user.id,
+                                      reason=req.reason or ("Отменено сотрудником в CRM" if req.status == "cancelled" else None))
+    except lifecycle.LifecycleError as e:
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
     await db.commit()
 
+    # Provide finance summary in response
+    fin = await _visit_finance(db, crm_user, booking)
     return {
         "status": booking.status,
+        "previous_status": old_status,
+        "version": booking.version,
         "message": f"Статус обновлен на '{booking.status}'",
         "finance": fin,
-        "cost_minor": fin["cost_minor"],
-        "rendered_minor": fin["rendered_minor"],
-        "paid_minor": fin["paid_minor"],
-        "debt_minor": fin["debt_minor"],
-        "payment_status": fin["payment_status"]
+        "cost_minor": fin["order_total_minor"] if fin else 0,
+        "rendered_minor": fin["rendered_minor"] if fin else 0,
+        "paid_minor": fin["paid_minor"] if fin else 0,
+        "debt_minor": fin["debt_minor"] if fin else 0,
+        "payment_status": fin["payment_status"] if fin else "unpaid"
     }
 
 
@@ -563,22 +952,13 @@ async def crm_reschedule_booking(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    if crm_user.role == "master":
-        stmt_b = select(Booking).where(Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id)
-        res_b = await db.execute(stmt_b)
-        b = res_b.scalar_one_or_none()
-        if b:
-            stmt_sp = select(StaffProfile).where(
-                StaffProfile.tenant_id == crm_user.tenant_id,
-                StaffProfile.user_id == crm_user.user.id
-            )
-            res_sp = await db.execute(stmt_sp)
-            sp = res_sp.scalar_one_or_none()
-            if not sp or b.staff_id != sp.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: master cannot reschedule appointments assigned to other staff"
-                )
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
+    if req.new_staff_id is not None:
+        await branch_scope.require_staff_in_branch(db, crm_user, req.new_staff_id, b.branch_id)
     try:
         updated = await BookingEngine.reschedule_booking(
             db=db,
@@ -586,11 +966,13 @@ async def crm_reschedule_booking(
             booking_id=booking_id,
             new_starts_at_utc=req.new_starts_at_utc,
             new_staff_id=req.new_staff_id,
-            is_client=False
+            is_client=False,
+            actor_id=crm_user.user.id
         )
-        return {"status": updated.status, "starts_at_utc": updated.starts_at_utc, "version": updated.version}
+        return {"status": updated.status, "starts_at_utc": updated.starts_at_utc, "version": updated.version,
+                "staff_id": str(updated.staff_id), "amount_minor": updated.amount_minor_snapshot}
     except BookingEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
 
 
 @router.post("/bookings/{booking_id}/cancel")
@@ -601,33 +983,23 @@ async def crm_cancel_booking(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    if crm_user.role == "master":
-        stmt_b = select(Booking).where(Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id)
-        res_b = await db.execute(stmt_b)
-        b = res_b.scalar_one_or_none()
-        if b:
-            stmt_sp = select(StaffProfile).where(
-                StaffProfile.tenant_id == crm_user.tenant_id,
-                StaffProfile.user_id == crm_user.user.id
-            )
-            res_sp = await db.execute(stmt_sp)
-            sp = res_sp.scalar_one_or_none()
-            if not sp or b.staff_id != sp.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: master cannot cancel appointments assigned to other staff"
-                )
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
     try:
         cancelled = await BookingEngine.cancel_booking(
             db=db,
             tenant_id=crm_user.tenant_id,
             booking_id=booking_id,
             reason=req.reason or "Отменено сотрудником в CRM",
-            is_client=False
+            is_client=False,
+            actor_id=crm_user.user.id
         )
-        return {"status": cancelled.status, "message": "Запись успешно отменена"}
+        return {"status": cancelled.status, "version": cancelled.version, "message": "Запись успешно отменена"}
     except BookingEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
 
 
 # =========================================================================
@@ -640,20 +1012,10 @@ async def create_calendar_block(
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Creates a calendar block and takes an exclusion occupancy."""
+    """Creates a calendar block and takes an exclusion occupancy (same constraint as bookings)."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == crm_user.tenant_id,
-            StaffProfile.user_id == crm_user.user.id
-        )
-        res_sp = await db.execute(stmt_sp)
-        sp = res_sp.scalar_one_or_none()
-        if not sp or req.staff_id != sp.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: master cannot create blocks for other staff"
-            )
+    await branch_scope.require_branch(db, crm_user, req.branch_id)
+    await branch_scope.require_staff_in_branch(db, crm_user, req.staff_id, req.branch_id)
     block = CalendarBlock(
         tenant_id=crm_user.tenant_id,
         staff_id=req.staff_id,
@@ -680,9 +1042,12 @@ async def create_calendar_block(
 
     try:
         await db.commit()
-    except Exception:
+    except (IntegrityError, DBAPIError) as exc:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Время уже занято другой записью или блокировкой")
+        if not is_slot_conflict(exc):
+            raise  # not an overlap: do not report a different DB error as "time taken"
+        raise HTTPException(status_code=409, detail={"code": "SLOT_CONFLICT",
+                                                     "message": "Время уже занято другой записью или блокировкой"})
 
     return {"block_id": str(block.id), "message": "Блокировка успешно создана"}
 
@@ -700,6 +1065,7 @@ async def delete_calendar_block(
     if not block:
         raise HTTPException(status_code=404, detail="Block not found")
 
+    await branch_scope.require_branch(db, crm_user, block.branch_id)
     if crm_user.role == "master":
         stmt_sp = select(StaffProfile).where(
             StaffProfile.tenant_id == crm_user.tenant_id,
@@ -753,23 +1119,22 @@ async def list_customers(
             return []
         stmt = stmt.join(Booking, Booking.customer_id == Customer.id).where(Booking.staff_id == master_staff.id).distinct()
 
-    if search:
-        s_clean = search.strip()
-        s_term = f"%{s_clean}%"
-        s_digits = "".join(filter(str.isdigit, s_clean))
-        search_conds = [Customer.full_name.ilike(s_term), Customer.phone_e164.like(s_term)]
-        if s_digits:
-            search_conds.append(Customer.phone_digits_index.like(f"%{s_digits}%"))
-        if "@" in s_clean:
-            search_conds.append(Customer.email.ilike(s_term))
-        stmt = stmt.where(or_(*search_conds))
+    if search and search.strip():
+        # M10: phone in any format (+7 / 8 / spaces) matches; LIKE wildcards in the input are literal
+        name_term = f"%{customer_identity.like_escape(search.strip())}%"
+        conds = [Customer.full_name.ilike(name_term, escape="\\"), Customer.phone_e164.like(name_term, escape="\\")]
+        digits = customer_identity.search_digits(search)
+        if digits:
+            conds.append(Customer.phone_digits_index.like(f"%{digits}%"))
+        if "@" in search:
+            conds.append(Customer.email.ilike(name_term, escape="\\"))
+        stmt = stmt.where(or_(*conds))
 
     # Apply sorting
     if sort_by == "full_name":
         stmt = stmt.order_by(Customer.full_name.asc() if order == "asc" else Customer.full_name.desc())
     else:
         stmt = stmt.order_by(Customer.created_at.asc() if order == "asc" else Customer.created_at.desc())
-
     res = await db.execute(stmt)
     customers = res.scalars().all()
 
@@ -827,72 +1192,28 @@ async def create_customer(
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
+    """Same normalized phone AND same name -> the existing client is returned (duplicate_detected).
+    Same phone, another name -> a new client; the others with this phone are listed so the
+    administrator can decide. Two people are never merged automatically (M10)."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    from apps.api.app.modules.customers.service import normalize_kz_phone
     try:
-        norm_phone, phone_digits = normalize_kz_phone(req.phone_e164)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_PHONE", "message": str(e)}
-        )
-
-    clean_name = " ".join(req.full_name.strip().split())
-
-    # Duplicate check within tenant
-    stmt_dup = select(Customer).where(
-        Customer.tenant_id == crm_user.tenant_id,
-        or_(
-            Customer.phone_e164 == norm_phone,
-            Customer.phone_digits_index == phone_digits
-        )
-    )
-    res_dup = await db.execute(stmt_dup)
-    existing_list = res_dup.scalars().all()
-
-    if existing_list:
-        # Check if any existing customer has the exact same name
-        same_name_cust = next((c for c in existing_list if c.full_name.strip().lower() == clean_name.lower()), None)
-        if same_name_cust:
-            return {
-                "id": str(same_name_cust.id),
-                "full_name": same_name_cust.full_name,
-                "duplicate_detected": True,
-                "message": "Клиент с таким именем и телефоном уже существует"
-            }
-
-        # Shared phone with a DIFFERENT human!
-        if not req.confirm_shared_phone:
-            return {
-                "id": str(existing_list[0].id),
-                "full_name": existing_list[0].full_name,
-                "existing_name": existing_list[0].full_name,
-                "existing_customer_id": str(existing_list[0].id),
-                "phone": norm_phone,
-                "duplicate_detected": True,
-                "shared_phone_warning": True,
-                "existing_clients": [{"id": str(c.id), "full_name": c.full_name} for c in existing_list],
-                "message": f"Номер уже привязан к клиенту {existing_list[0].full_name}. Создать отдельного клиента с общим номером?"
-            }
-
-    # Create new customer record
-    cust = Customer(
-        tenant_id=crm_user.tenant_id,
-        full_name=clean_name,
-        phone_e164=norm_phone,
-        phone_digits_index=phone_digits,
-        email=req.email.strip() if req.email else None,
-        notes_private=req.notes_private.strip() if req.notes_private else None,
-        data_source="crm_manual"
-    )
-    db.add(cust)
-    await db.flush()
+        resolved = await customer_identity.resolve_customer(
+            db, tenant_id=crm_user.tenant_id, full_name=req.full_name, phone=req.phone_e164,
+            email=req.email, source="crm_manual", notes_private=req.notes_private)
+    except customer_identity.PhoneError as e:
+        raise HTTPException(status_code=422, detail={"code": "PHONE_INVALID", "message": str(e)})
     await db.commit()
+    c = resolved.customer
+    same_phone_list = [{"id": str(o.id), "full_name": o.full_name} for o in resolved.same_phone_others]
     return {
-        "id": str(cust.id),
-        "full_name": cust.full_name,
-        "duplicate_detected": False,
-        "shared_phone": len(existing_list) > 0
+        "id": str(c.id),
+        "full_name": c.full_name,
+        "phone_e164": c.phone_e164,
+        "duplicate_detected": not resolved.created,
+        "same_phone_customers": same_phone_list,
+        "existing_clients": same_phone_list,
+        "shared_phone": len(same_phone_list) > 0,
+        "message": "Клиент с таким именем и телефоном уже существует" if not resolved.created else None
     }
 
 
@@ -967,6 +1288,8 @@ async def create_staff(
         color=req.color,
         online_bookable=req.online_bookable
     )
+    for b_id in req.branch_ids:
+        await ownership.require_branch(db, crm_user.tenant_id, b_id)
     db.add(staff)
     await db.flush()
 
@@ -1013,13 +1336,30 @@ async def update_staff_services(
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
-    """Sets master-specific price and duration overrides."""
+    """Sets master-specific price and duration overrides.
+
+    Staff, branch and service must belong to the caller's company and the staff member
+    must work in that branch; prices are validated as integer minor units (M04).
+    """
     await check_crm_write_permitted(crm_user.tenant_id, db)
     raw_offers = payload.get("offers", []) if isinstance(payload, dict) else payload
-    offers: List[StaffServiceOfferUpdateRequest] = [
-        off if isinstance(off, StaffServiceOfferUpdateRequest) else StaffServiceOfferUpdateRequest(**off)
-        for off in raw_offers
-    ]
+    try:
+        offers: List[StaffServiceOfferUpdateRequest] = [
+            off if isinstance(off, StaffServiceOfferUpdateRequest) else StaffServiceOfferUpdateRequest(**off)
+            for off in raw_offers
+        ]
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=jsonable_encoder(e.errors(include_url=False, include_context=False)))
+    await ownership.require_staff(db, crm_user.tenant_id, staff_id)
+    seen_pairs = set()
+    for off in offers:
+        pair = (off.branch_id, off.service_id)
+        if pair in seen_pairs:
+            raise HTTPException(status_code=422, detail={"code": "DUPLICATE_OFFER", "message": "Одна и та же услуга филиала указана дважды"})
+        seen_pairs.add(pair)
+        await ownership.require_branch(db, crm_user.tenant_id, off.branch_id)
+        await ownership.require_service(db, crm_user.tenant_id, off.service_id)
+        await ownership.require_staff_in_branch(db, crm_user.tenant_id, staff_id, off.branch_id)
     for off in offers:
         stmt = select(StaffServiceOffer).where(
             StaffServiceOffer.tenant_id == crm_user.tenant_id,
@@ -1101,12 +1441,14 @@ async def create_service(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
+    await ownership.require_category(db, crm_user.tenant_id, req.category_id)
     svc = Service(
         tenant_id=crm_user.tenant_id,
         category_id=req.category_id,
-        name=req.name,
+        name=req.name.strip(),
         description=req.description,
         base_price_minor=req.base_price_minor,
+        currency=await ownership.tenant_currency(db, crm_user.tenant_id),
         base_duration_minutes=req.base_duration_minutes,
         active=req.active,
         online_visible=req.online_visible
@@ -1331,14 +1673,19 @@ async def get_reports_overview(
     tenant_id = crm_user.tenant_id
     from_utc = datetime.datetime.combine(from_date, datetime.time.min, tzinfo=datetime.timezone.utc)
     to_utc = datetime.datetime.combine(to_date, datetime.time.max, tzinfo=datetime.timezone.utc)
+    report_branches = await _report_branches(db, crm_user, branch_id)
+    try:
+        money_report = await finance_reports.finance_report(db, tenant_id, from_date, to_date, report_branches)
+    except FinanceError as e:
+        raise _finance_error(e)
 
     stmt = select(Booking).where(
         Booking.tenant_id == tenant_id,
         Booking.starts_at_utc >= from_utc,
         Booking.starts_at_utc <= to_utc
     )
-    if branch_id:
-        stmt = stmt.where(Booking.branch_id == branch_id)
+    if report_branches is not None:
+        stmt = stmt.where(Booking.branch_id.in_(report_branches))
 
     res = await db.execute(stmt)
     bookings = res.scalars().all()
@@ -1351,11 +1698,19 @@ async def get_reports_overview(
 
     # Planned revenue
     planned_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status != "cancelled")
-    # Completed visits value (service delivered, not confirmed payment)
-    completed_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status == "completed")
-    # Confirmed cash/ledger payments
-    paid_revenue_minor = 0
+    # M14: money comes from the ledger only, never from the booking status
+    completed_revenue_minor = money_report["total"]["rendered_minor"]     # оказано (начислено)
+    paid_revenue_minor = money_report["total"]["received_minor"]          # получено деньгами
     actual_revenue_minor = completed_revenue_minor
+    rendered_by_booking = {}
+    if bookings:
+        rows = (await db.execute(select(Order.booking_id, func.sum(LedgerEntry.amount_minor))
+                                 .join(LedgerEntry, LedgerEntry.order_id == Order.id)
+                                 .where(Order.tenant_id == tenant_id, LedgerEntry.tenant_id == tenant_id,
+                                        Order.booking_id.in_([b.id for b in bookings]),
+                                        LedgerEntry.kind.in_(("service_rendered", "adjustment")))
+                                 .group_by(Order.booking_id))).all()
+        rendered_by_booking = {bid: int(v) for bid, v in rows}
 
     # Occupied minutes from staff_occupancies
     stmt_occ = select(StaffOccupancy).where(
@@ -1376,7 +1731,7 @@ async def get_reports_overview(
     staff_stats = []
     for s in all_staff:
         st_bookings = [b for b in bookings if b.staff_id == s.id and b.status != "cancelled"]
-        st_rev = sum(b.amount_minor_snapshot for b in bookings if b.staff_id == s.id and b.status == "completed")
+        st_rev = sum(rendered_by_booking.get(b.id, 0) for b in bookings if b.staff_id == s.id)
         st_booked_mins = sum((b.service_ends_at_utc - b.starts_at_utc).total_seconds() / 60 for b in st_bookings)
 
         # Calculate scheduled shift minutes in the period
@@ -1432,11 +1787,13 @@ async def get_reports_overview(
         "completed_revenue_minor": completed_revenue_minor,
         "completed_revenue_formatted": f"{completed_revenue_minor / 100:,.0f} ₸".replace(",", " "),
         "paid_revenue_minor": paid_revenue_minor,
-        "paid_revenue_formatted": "0 ₸",
+        "paid_revenue_formatted": f"{paid_revenue_minor / 100:,.0f} ₸".replace(",", " "),
+        "debt_minor": money_report["total"]["receivables_end_minor"],
+        "expenses_minor": money_report["total"]["expenses_minor"],
         "actual_revenue_minor": actual_revenue_minor,
         "actual_revenue_formatted": f"{actual_revenue_minor / 100:,.0f} ₸".replace(",", " "),
-        "payment_collection_enabled": False,
-        "revenue_semantics_note": "completed_revenue_minor отражает стоимость фактически оказанных услуг (завершенные визиты), а не подтвержденные кассовые поступления. Денежный эквайринг/ledger отключен.",
+        "payment_collection_enabled": True,
+        "revenue_semantics_note": "Деньги — из журнала: completed_revenue_minor = оказано (начислено по завершённым визитам, за вычетом возвратов), paid_revenue_minor = получено деньгами (оплаты − возвраты), debt_minor = долг клиентов на конец периода. Авансы не выручка. Подробно: /reports/finance.",
         "new_customers_count": new_customers_count,
         "occupied_minutes": int(occupied_minutes),
         "staff_stats": staff_stats
@@ -1736,7 +2093,12 @@ async def get_customer_card(
         },
         "created_at": c.created_at.isoformat(),
         "history": visits,
-        "notes": notes
+        "notes": notes,
+        # M10: other clients of this company with the same phone (family, colleagues) — never merged automatically
+        "same_phone_customers": [] if is_m else [
+            {"id": str(o.id), "full_name": o.full_name}
+            for o in await customer_identity.same_phone_customers(db, crm_user.tenant_id, c.phone_e164, exclude_id=c.id)
+        ]
     }
 
 
@@ -1761,16 +2123,13 @@ async def update_customer(
     if req.notes_private is not None:
         c.notes_private = req.notes_private
     if req.phone_e164 is not None:
-        from apps.api.app.modules.customers.service import normalize_kz_phone
         try:
-            norm_phone, norm_digits = normalize_kz_phone(req.phone_e164)
-            c.phone_e164 = norm_phone
-            c.phone_digits_index = norm_digits
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "INVALID_PHONE", "message": str(e)}
-            )
+            c.phone_e164 = customer_identity.normalize_phone(req.phone_e164)
+        except customer_identity.PhoneError as e:
+            raise HTTPException(status_code=422, detail={"code": "PHONE_INVALID", "message": str(e)})
+        c.phone_digits_index = customer_identity.phone_digits(c.phone_e164)
+    if req.full_name is not None and not req.full_name.strip():
+        raise HTTPException(status_code=422, detail={"code": "NAME_REQUIRED", "message": "Имя клиента не может быть пустым"})
 
     await db.commit()
     return {"message": "Данные клиента обновлены", "id": str(c.id), "full_name": c.full_name}
@@ -1839,10 +2198,14 @@ async def update_staff_profile(
     if req.active is not None: staff.active = req.active
 
     if req.branch_ids is not None:
+        for b_id in req.branch_ids:
+            await ownership.require_branch(db, crm_user.tenant_id, b_id)
         stmt_del = select(StaffBranch).where(StaffBranch.staff_id == staff.id)
         existing_sb = (await db.execute(stmt_del)).scalars().all()
         for sb in existing_sb:
             await db.delete(sb)
+        # deletes must reach the DB before re-inserting the same (staff, branch) pairs
+        await db.flush()
         for b_id in req.branch_ids:
             new_sb = StaffBranch(tenant_id=crm_user.tenant_id, staff_id=staff.id, branch_id=b_id)
             db.add(new_sb)
@@ -2114,7 +2477,9 @@ async def update_service(
     if not svc:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    if req.name is not None: svc.name = req.name
+    if req.category_id is not None:
+        await ownership.require_category(db, crm_user.tenant_id, req.category_id)
+    if req.name is not None: svc.name = req.name.strip()
     if req.category_id is not None: svc.category_id = req.category_id
     if req.description is not None: svc.description = req.description
     if req.base_price_minor is not None: svc.base_price_minor = req.base_price_minor
@@ -2202,9 +2567,9 @@ async def update_branch(
     if req.city is not None: branch.city = req.city
     if req.address is not None: branch.address = req.address
     if req.timezone_iana is not None:
-        branch.timezone_iana = req.timezone_iana
+        branch.timezone_iana = ownership.require_timezone(req.timezone_iana)
     elif getattr(req, "timezone", None) is not None:
-        branch.timezone_iana = req.timezone
+        branch.timezone_iana = ownership.require_timezone(req.timezone)
     if req.phone is not None:
         branch.phone = req.phone
     elif getattr(req, "phone_number", None) is not None:
@@ -2226,6 +2591,11 @@ async def list_crm_users(
         IdentityUser, IdentityUser.id == TenantMembership.user_id
     ).where(TenantMembership.tenant_id == crm_user.tenant_id)
     rows = (await db.execute(stmt)).all()
+    grants = {}
+    if rows:
+        for mid, bid in (await db.execute(select(BranchRoleGrant.membership_id, BranchRoleGrant.branch_id).where(
+                BranchRoleGrant.membership_id.in_([m.id for m, _ in rows])))).all():
+            grants.setdefault(mid, []).append(str(bid))
 
     return [{
         "id": str(m.id),
@@ -2234,8 +2604,207 @@ async def list_crm_users(
         "display_name": u.display_name,
         "role": m.role,
         "status": m.status,
+        "branch_ids": grants.get(m.id, []),   # M15: admin branches; empty = all
         "created_at": m.joined_at.isoformat() if m.joined_at else None
     } for m, u in rows]
+
+
+# =========================================================================
+# NOTIFICATIONS (M15): settings, templates, limits, delivery log
+# =========================================================================
+
+class NotificationSettingsUpdate(BaseModel):
+    email_notifications_enabled: Optional[bool] = None
+    daily_email_limit: Optional[int] = Field(default=None, ge=1)
+
+
+class NotificationTemplateUpdate(BaseModel):
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=4000)
+    enabled: bool = True
+
+
+async def _tenant_settings(db: AsyncSession, tenant_id: uuid.UUID) -> TenantSettings:
+    ts = (await db.execute(select(TenantSettings).where(TenantSettings.tenant_id == tenant_id))).scalar_one_or_none()
+    if ts is None:   # companies created before settings existed: start from defaults
+        name = (await db.execute(select(Tenant.display_name).where(Tenant.id == tenant_id))).scalar_one()
+        await db.execute(pg_insert(TenantSettings).values(id=uuid.uuid4(), tenant_id=tenant_id, business_name=name,
+                                                          locale="ru", currency="KZT").on_conflict_do_nothing())
+        ts = (await db.execute(select(TenantSettings).where(TenantSettings.tenant_id == tenant_id))).scalar_one()
+    return ts
+
+
+async def _notification_settings_out(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    ts = await _tenant_settings(db, tenant_id)
+    overrides = {t.code: t for t in (await db.execute(select(NotificationTemplate).where(
+        NotificationTemplate.tenant_id == tenant_id))).scalars().all()}
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
+    sent = (await db.execute(select(func.count()).select_from(NotificationDelivery).where(
+        NotificationDelivery.tenant_id == tenant_id, NotificationDelivery.status == "sent",
+        NotificationDelivery.created_at >= since))).scalar_one()
+    items = []
+    for code, (subject, body) in notification_templates.DEFAULTS.items():
+        o = overrides.get(code)
+        items.append({"code": code, "label": notification_templates.LABELS[code],
+                      "subject": o.subject if o else subject, "body": o.body if o else body,
+                      "enabled": o.enabled if o else True, "customized": o is not None})
+    return {"email_notifications_enabled": ts.email_notifications_enabled, "daily_email_limit": ts.daily_email_limit,
+            "daily_email_limit_max": settings.PLATFORM_DAILY_EMAIL_LIMIT_MAX, "sent_last_24h": sent,
+            "platform_email_enabled": settings.EMAIL_NOTIFICATIONS_ENABLED,
+            "placeholders": notification_templates.PLACEHOLDERS, "templates": items}
+
+
+@router.get("/notification-settings")
+async def get_notification_settings(
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    out = await _notification_settings_out(db, crm_user.tenant_id)
+    await db.commit()
+    return out
+
+
+@router.put("/notification-settings")
+async def update_notification_settings(
+    req: NotificationSettingsUpdate,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    ts = await _tenant_settings(db, crm_user.tenant_id)
+    if req.daily_email_limit is not None:
+        if req.daily_email_limit > settings.PLATFORM_DAILY_EMAIL_LIMIT_MAX:
+            raise HTTPException(status_code=422, detail={"code": "EMAIL_LIMIT_TOO_HIGH",
+                                                         "message": f"Не больше {settings.PLATFORM_DAILY_EMAIL_LIMIT_MAX} писем в сутки"})
+        ts.daily_email_limit = req.daily_email_limit
+    if req.email_notifications_enabled is not None:
+        ts.email_notifications_enabled = req.email_notifications_enabled
+    await db.commit()
+    await set_tenant_context(db, crm_user.tenant_id)
+    return await _notification_settings_out(db, crm_user.tenant_id)
+
+
+@router.put("/notification-templates/{code}")
+async def update_notification_template(
+    code: str, req: NotificationTemplateUpdate,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    try:
+        notification_templates.validate(code, req.subject, req.body)
+    except notification_templates.TemplateError as e:
+        raise HTTPException(status_code=404 if e.code == "TEMPLATE_NOT_FOUND" else 422,
+                            detail={"code": e.code, "message": e.message})
+    await db.execute(pg_insert(NotificationTemplate).values(
+        id=uuid.uuid4(), tenant_id=crm_user.tenant_id, code=code, subject=req.subject.strip(), body=req.body.strip(),
+        enabled=req.enabled, updated_by_user_id=crm_user.user.id).on_conflict_do_update(
+        constraint="uq_notification_template_code",
+        set_={"subject": req.subject.strip(), "body": req.body.strip(), "enabled": req.enabled,
+              "updated_by_user_id": crm_user.user.id, "updated_at": func.now()}))
+    await db.commit()
+    await set_tenant_context(db, crm_user.tenant_id)
+    return await _notification_settings_out(db, crm_user.tenant_id)
+
+
+@router.delete("/notification-templates/{code}")
+async def reset_notification_template(
+    code: str,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    if code not in notification_templates.DEFAULTS:
+        raise HTTPException(status_code=404, detail={"code": "TEMPLATE_NOT_FOUND", "message": "Нет такого шаблона"})
+    await db.execute(NotificationTemplate.__table__.delete().where(
+        NotificationTemplate.tenant_id == crm_user.tenant_id, NotificationTemplate.code == code))
+    await db.commit()
+    await set_tenant_context(db, crm_user.tenant_id)
+    return await _notification_settings_out(db, crm_user.tenant_id)
+
+
+@router.get("/notification-deliveries")
+async def list_notification_deliveries(
+    limit: int = Query(50, ge=1, le=200),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    rows = (await db.execute(select(NotificationDelivery, OutboxEvent.aggregate_id)
+                             .join(OutboxEvent, OutboxEvent.id == NotificationDelivery.outbox_event_id)
+                             .where(NotificationDelivery.tenant_id == crm_user.tenant_id)
+                             .order_by(NotificationDelivery.created_at.desc()).limit(limit))).all()
+    return [{"id": str(d.id), "template": d.template_code, "status": d.status, "reason": d.reason,
+             "recipient": d.recipient_masked, "booking_id": agg.split(":")[0], "attempts": d.attempts,
+             "created_at": d.created_at} for d, agg in rows]
+
+
+class MemberBranchesRequest(BaseModel):
+    branch_ids: List[uuid.UUID]
+
+
+@router.put("/users/{membership_id}/branches")
+async def set_member_branches(
+    membership_id: uuid.UUID, req: MemberBranchesRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Which branches an admin works in (M15). Empty list = all branches of the company."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    m = (await db.execute(select(TenantMembership).where(
+        TenantMembership.id == membership_id, TenantMembership.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if m is None:
+        raise HTTPException(status_code=404, detail={"code": "MEMBER_NOT_FOUND", "message": "Сотрудник не найден"})
+    if m.role != "admin":
+        raise HTTPException(status_code=422, detail={"code": "BRANCHES_FOR_ADMIN_ONLY",
+                                                     "message": "Филиалы назначаются администратору: владелец видит все, мастер — свои по профилю"})
+    ids = await _tenant_branch_ids(db, crm_user.tenant_id, req.branch_ids)
+    await db.execute(BranchRoleGrant.__table__.delete().where(BranchRoleGrant.membership_id == m.id))
+    for b in ids:
+        db.add(BranchRoleGrant(membership_id=m.id, branch_id=b))
+    await db.commit()
+    return {"membership_id": str(m.id), "branch_ids": [str(b) for b in ids]}
+
+
+class MemberStaffProfileRequest(BaseModel):
+    staff_id: uuid.UUID
+
+
+@router.put("/users/{membership_id}/staff-profile")
+async def link_member_staff_profile(
+    membership_id: uuid.UUID, req: MemberStaffProfileRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Link a master account to its staff profile (M15): the master then sees only own calendar."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    m = (await db.execute(select(TenantMembership).where(
+        TenantMembership.id == membership_id, TenantMembership.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if m is None:
+        raise HTTPException(status_code=404, detail={"code": "MEMBER_NOT_FOUND", "message": "Сотрудник не найден"})
+    if m.role != "master":
+        raise HTTPException(status_code=422, detail={"code": "PROFILE_FOR_MASTER_ONLY", "message": "Профиль привязывается только к мастеру"})
+    sp = (await db.execute(select(StaffProfile).where(
+        StaffProfile.id == req.staff_id, StaffProfile.tenant_id == crm_user.tenant_id).with_for_update())).scalar_one_or_none()
+    if sp is None:
+        raise HTTPException(status_code=422, detail={"code": "STAFF_PROFILE_NOT_FOUND", "message": "Профиль мастера не найден"})
+    if sp.user_id is not None and sp.user_id != m.user_id:
+        raise HTTPException(status_code=409, detail={"code": "STAFF_PROFILE_LINKED", "message": "У этого мастера уже есть учётная запись"})
+    other = (await db.execute(select(StaffProfile).where(
+        StaffProfile.tenant_id == crm_user.tenant_id, StaffProfile.user_id == m.user_id, StaffProfile.id != sp.id))).scalars().first()
+    if other is not None:
+        raise HTTPException(status_code=409, detail={"code": "ACCOUNT_ALREADY_LINKED", "message": "Учётная запись уже привязана к другому профилю"})
+    sp.user_id = m.user_id
+    await db.commit()
+    return {"membership_id": str(m.id), "staff_id": str(sp.id)}
+
+
+async def _tenant_branch_ids(db: AsyncSession, tenant_id: uuid.UUID, branch_ids) -> list:
+    ids = list(dict.fromkeys(branch_ids or []))
+    if ids:
+        found = set((await db.execute(select(Branch.id).where(Branch.tenant_id == tenant_id, Branch.id.in_(ids)))).scalars().all())
+        if found != set(ids):
+            raise HTTPException(status_code=422, detail={"code": "BRANCH_NOT_FOUND", "message": "Филиал не найден в этой компании"})
+    return ids
 
 
 @router.post("/invites", status_code=status.HTTP_201_CREATED)
@@ -2247,6 +2816,21 @@ async def create_crm_invite(
     await check_crm_write_permitted(crm_user.tenant_id, db)
     import secrets
     import hashlib
+    # M15: the owner invites only admins and masters; a master is tied to an unlinked staff profile
+    if req.role not in ("admin", "master"):
+        raise HTTPException(status_code=422, detail={"code": "INVITE_ROLE_INVALID",
+                                                     "message": "Пригласить можно администратора или мастера"})
+    staff_id = None
+    if req.role == "master" and req.staff_id is not None:
+        sp = (await db.execute(select(StaffProfile).where(
+            StaffProfile.id == req.staff_id, StaffProfile.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+        if sp is None:
+            raise HTTPException(status_code=422, detail={"code": "STAFF_PROFILE_NOT_FOUND", "message": "Профиль мастера не найден"})
+        if sp.user_id is not None:
+            raise HTTPException(status_code=409, detail={"code": "STAFF_PROFILE_LINKED",
+                                                         "message": "У этого мастера уже есть учётная запись"})
+        staff_id = sp.id
+    branch_ids = await _tenant_branch_ids(db, crm_user.tenant_id, req.branch_ids) if req.role == "admin" else []
     raw_token = secrets.token_urlsafe(32)
     tok_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -2255,13 +2839,21 @@ async def create_crm_invite(
         email=req.email.lower().strip(),
         role=req.role,
         invite_type="staff",
-        branch_scope="all",
+        branch_scope="selected" if branch_ids else "all",
+        staff_profile_id=staff_id,
+        branch_ids=[str(b) for b in branch_ids] or None,
         token_hash=tok_hash,
         expires_at=now_utc + datetime.timedelta(days=7),
     )
     db.add(inv)
     await db.commit()
+    out_warning = None
+    if req.role == "master" and staff_id is None:
+        # legacy CRM form: the account works only after the owner links it to a staff profile
+        out_warning = {"code": "STAFF_PROFILE_NOT_LINKED",
+                       "message": "Мастер увидит календарь после привязки к профилю: PUT /business/users/{id}/staff-profile"}
     return {
+        "warning": out_warning,
         "invite_id": str(inv.id),
         "email": inv.email,
         "role": inv.role,
