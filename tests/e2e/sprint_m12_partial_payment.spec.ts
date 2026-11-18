@@ -1,6 +1,16 @@
 import { test, expect } from '@playwright/test';
+import { execSync } from 'child_process';
 
 test.describe('Sprint M12 — Ручная касса и частичная оплата (Manual Cash Desk & Partial Payment UX)', () => {
+
+  test.beforeAll(() => {
+    try {
+      execSync('python scripts/clean_test_bookings.py', {
+        stdio: 'inherit',
+        env: { ...process.env, PYTHONPATH: '.' },
+      });
+    } catch (e) {}
+  });
 
   test.beforeEach(async ({ page }) => {
     // Open Business CRM and login as Barber House owner
@@ -59,28 +69,26 @@ test.describe('Sprint M12 — Ручная касса и частичная оп
 
     // 3. Move status to completed: pending -> confirmed -> arrived -> in_progress -> completed
     const confirmBtn = page.locator('[data-testid="status-btn-confirm"]');
-    if (await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await confirmBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
       await confirmBtn.click();
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(600);
     }
 
     const arrivedBtn = page.locator('[data-testid="status-btn-arrived"]');
     if (await arrivedBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await arrivedBtn.click();
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(600);
     }
 
     const inProgressBtn = page.locator('[data-testid="status-btn-in-progress"]');
-    if (await inProgressBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await inProgressBtn.click();
-      await page.waitForTimeout(500);
-    }
+    await expect(inProgressBtn).toBeVisible({ timeout: 5000 });
+    await inProgressBtn.click();
+    await page.waitForTimeout(600);
 
     const completeBtn = page.locator('[data-testid="status-btn-completed"]');
-    if (await completeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await completeBtn.click();
-      await page.waitForTimeout(1000);
-    }
+    await expect(completeBtn).toBeVisible({ timeout: 5000 });
+    await completeBtn.click();
+    await expect(page.locator('text=Завершён').first()).toBeVisible({ timeout: 5000 });
 
     // 4. Strict Accounting Rule Verification:
     // Completing visit marks rendered = 8000, but paid = 0, debt = 8000, status = "Не оплачено"
@@ -99,10 +107,10 @@ test.describe('Sprint M12 — Ручная касса и частичная оп
     const amountInput = page.locator('[data-testid="payment-amount-input"]');
     await amountInput.fill('3000');
 
-    // Select payment method cash
-    const methodSelect = page.locator('[data-testid="payment-method-select"]');
-    if (await methodSelect.isVisible().catch(() => false)) {
-      await methodSelect.selectOption('cash');
+    // Select payment method card / Kaspi
+    const methodCardBtn = page.locator('[data-testid="payment-method-card"]');
+    if (await methodCardBtn.isVisible().catch(() => false)) {
+      await methodCardBtn.click();
     }
 
     await page.screenshot({ path: 'docs/screenshots/sprint-m12-02-payment-modal-partial.png' });
@@ -120,7 +128,7 @@ test.describe('Sprint M12 — Ручная касса и частичная оп
     // Verify Payment History list shows the record
     const historyBlock = page.locator('[data-testid="payment-history-block"]');
     await expect(historyBlock).toBeVisible();
-    await expect(historyBlock).toContainText('Наличные');
+    await expect(historyBlock).toContainText('Карта');
     await expect(historyBlock).toContainText('3 000');
 
     await page.screenshot({ path: 'docs/screenshots/sprint-m12-03-partial-payment-recorded.png' });

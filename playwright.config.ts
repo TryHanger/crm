@@ -23,4 +23,24 @@ export default defineConfig({
       },
     },
   ],
+  webServer: [
+    {
+      command: 'python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000',
+      port: 8000,
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+    {
+      command: 'npm run dev --workspace=@crm/booking-web -- --port 3000',
+      port: 3000,
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+    {
+      command: 'npm run dev --workspace=@crm/business-crm -- --port 3001',
+      port: 3001,
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+  ],
 });

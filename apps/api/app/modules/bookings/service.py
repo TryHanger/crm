@@ -208,7 +208,7 @@ class BookingEngine:
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         ends_at_utc = starts_at_utc + datetime.timedelta(minutes=duration_minutes)
 
-        if starts_at_utc < now_utc:
+        if is_client and starts_at_utc < now_utc:
             raise BookingEngineError("SLOT_IN_PAST", "Cannot book appointment in the past", 400)
 
         if is_client:

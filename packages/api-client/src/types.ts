@@ -929,6 +929,7 @@ export interface PaymentCreateRequest {
 
 export interface PaymentRefundRequest {
   payment_id: string;
+  booking_id?: string;
   amount_minor: number;
   reason: string;
   cashier_name?: string;

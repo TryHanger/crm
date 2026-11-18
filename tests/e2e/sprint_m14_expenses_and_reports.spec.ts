@@ -77,6 +77,10 @@ test.describe('Sprint M14 — Расходы и базовая отчетнос�
     if (await catSelect.isVisible().catch(() => false)) {
       await catSelect.selectOption('supplies');
     }
+    const methodSelect = page.locator('[data-testid="expense-method-select"]');
+    if (await methodSelect.isVisible().catch(() => false)) {
+      await methodSelect.selectOption('account');
+    }
     await page.fill('[data-testid="expense-description-input"]', 'Расходные материалы (M14 E2E)');
 
     await page.screenshot({ path: 'docs/screenshots/sprint-m14-05-add-expense-modal.png' });

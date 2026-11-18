@@ -1,6 +1,9 @@
 import uuid
 import datetime
 import zoneinfo
+import logging
+
+logger = logging.getLogger("saas_crm")
 from typing import List, Optional, Any, Union, Dict
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from fastapi.encoders import jsonable_encoder
@@ -381,18 +384,34 @@ async def _visit_finance(db: AsyncSession, crm_user: AuthenticatedTenantUser, bo
         return None  # masters do not see money (M15)
     order = await accrual.booking_order(db, booking)
     if order is None:
-        return {"order_id": None, "currency": booking.currency, "sold_minor": booking.amount_minor_snapshot,
-                "rendered_minor": 0, "received_minor": 0, "advance_applied_minor": 0, "debt_minor": 0}
+        cost = booking.amount_minor_snapshot or 0
+        return {
+            "order_id": None, "currency": booking.currency, "sold_minor": cost,
+            "cost_minor": cost, "order_total_minor": cost,
+            "rendered_minor": 0, "received_minor": 0, "paid_minor": 0,
+            "advance_applied_minor": 0, "debt_minor": 0, "payment_status": "unpaid"
+        }
     p = await finance_ledger.order_position(db, crm_user.tenant_id, order.id)
-    return {"order_id": str(order.id), "order_status": order.status, "currency": p.currency, "sold_minor": p.sold_minor,
-            "rendered_minor": p.rendered_minor, "received_minor": p.received_minor,
-            "advance_applied_minor": p.advance_applied_minor, "debt_minor": p.debt_minor}
+    paid = p.received_minor + p.advance_applied_minor
+    debt = p.debt_minor
+    cost = p.sold_minor
+    payment_status = "paid" if (paid >= cost and cost > 0) else ("partially_paid" if paid > 0 else "unpaid")
+    return {
+        "order_id": str(order.id), "order_status": order.status, "currency": p.currency,
+        "sold_minor": p.sold_minor, "cost_minor": cost, "order_total_minor": cost,
+        "rendered_minor": p.rendered_minor, "received_minor": p.received_minor, "paid_minor": paid,
+        "advance_applied_minor": p.advance_applied_minor, "debt_minor": debt,
+        "payment_status": payment_status
+    }
 
 
 class PaymentCreateRequest(BaseModel):
     amount_minor: int = Field(gt=0)
-    cash_account_id: uuid.UUID
+    cash_account_id: Optional[uuid.UUID] = None
+    payment_method: Optional[str] = "cash"
     note: Optional[str] = Field(default=None, max_length=500)
+    comment: Optional[str] = Field(default=None, max_length=500)
+    cashier_name: Optional[str] = None
 
 
 def _finance_error(e: FinanceError) -> HTTPException:
@@ -426,6 +445,7 @@ async def create_visit_payment(
 
     Partial payments are allowed; paying more than the debt is not; the same Idempotency-Key
     never takes the money twice."""
+    logger.info("CREATE_VISIT_PAYMENT: booking_id=%s, req=%s", booking_id, req.dict())
     await check_crm_write_permitted(crm_user.tenant_id, db)
     b = (await db.execute(select(Booking).where(
         Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
@@ -434,21 +454,43 @@ async def create_visit_payment(
     await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
     order = await accrual.booking_order(db, b)
     if order is None:
+        logger.info("CREATE_VISIT_PAYMENT: order is None! booking status is %s", b.status)
         raise HTTPException(status_code=409, detail={"code": "NOTHING_TO_PAY",
                                                      "message": "Визит ещё не завершён: оплату принимаем после оказания услуги"})
+    account_id = req.cash_account_id
+    if not account_id:
+        accs = await finance_cash.ensure_default_accounts(db, crm_user.tenant_id, b.branch_id)
+        kind = "cash" if req.payment_method == "cash" else "bank_transfer"
+        acc = next((a for a in accs if a.kind == kind), accs[0] if accs else None)
+        if not acc:
+            raise HTTPException(status_code=400, detail="No cash account available")
+        account_id = acc.id
+
     try:
         res = await finance_cash.record_payment(
             db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
-            cash_account_id=req.cash_account_id, idempotency_key=idempotency_key or "",
-            actor_id=crm_user.user.id, note=req.note)
+            cash_account_id=account_id, idempotency_key=idempotency_key or str(uuid.uuid4()),
+            actor_id=crm_user.user.id, note=req.note or req.comment)
     except FinanceError as e:
+        logger.info("CREATE_VISIT_PAYMENT: FinanceError=%s code=%s msg=%s", e, e.code, e.message)
         await db.rollback()
         raise _finance_error(e)
     await db.commit()
     p = res.position
-    return {"payment_id": str(res.entry.id), "replayed": not res.created, "amount_minor": res.entry.amount_minor,
-            "cash_account_id": str(res.entry.cash_account_id),
-            "finance": {"rendered_minor": p.rendered_minor, "received_minor": p.received_minor, "debt_minor": p.debt_minor}}
+    return {
+        "payment_id": str(res.entry.id),
+        "id": str(res.entry.id),
+        "booking_id": str(booking_id),
+        "replayed": not res.created,
+        "amount_minor": res.entry.amount_minor,
+        "payment_type": "payment",
+        "payment_method": req.payment_method or "cash",
+        "cashier_name": req.cashier_name or "Администратор",
+        "status": "confirmed",
+        "created_at": res.entry.created_at.isoformat() if hasattr(res.entry.created_at, "isoformat") else str(res.entry.created_at),
+        "cash_account_id": str(res.entry.cash_account_id),
+        "finance": {"rendered_minor": p.rendered_minor, "received_minor": p.received_minor, "debt_minor": p.debt_minor}
+    }
 
 
 @router.get("/bookings/{booking_id}/payments")
@@ -465,20 +507,37 @@ async def list_visit_payments(
     order = await accrual.booking_order(db, b)
     if order is None:
         return []
-    rows = (await db.execute(select(LedgerEntry, CashAccount.name).outerjoin(
+    rows = (await db.execute(select(LedgerEntry, CashAccount.name, CashAccount.kind).outerjoin(
         CashAccount, CashAccount.id == LedgerEntry.cash_account_id).where(
         LedgerEntry.tenant_id == crm_user.tenant_id, LedgerEntry.order_id == order.id,
         LedgerEntry.kind.in_(("payment", "refund", "advance_applied"))).order_by(LedgerEntry.created_at))).all()
-    return [{"id": str(e.id), "kind": e.kind, "amount_minor": e.amount_minor, "cash_account": name,
-             "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None, "reason": e.reason,
-             "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None,
-             "created_at": e.created_at} for e, name in rows]
+    return [{
+        "id": str(e.id),
+        "payment_id": str(e.id),
+        "booking_id": str(booking_id),
+        "kind": e.kind,
+        "payment_type": e.kind,
+        "amount_minor": e.amount_minor,
+        "cash_account": name,
+        "payment_method": "cash" if acc_kind == "cash" else "card",
+        "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None,
+        "original_payment_id": str(e.reverses_entry_id) if e.reverses_entry_id else None,
+        "reason": e.reason,
+        "comment": e.reason,
+        "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None,
+        "cashier_name": "Администратор",
+        "status": "confirmed",
+        "created_at": e.created_at.isoformat() if hasattr(e.created_at, "isoformat") else str(e.created_at)
+    } for e, name, acc_kind in rows]
 
 
 class RefundCreateRequest(BaseModel):
     amount_minor: int = Field(gt=0)
-    cash_account_id: uuid.UUID
+    cash_account_id: Optional[uuid.UUID] = None
     reason: str = Field(min_length=1, max_length=500)
+    comment: Optional[str] = None
+    payment_method: Optional[str] = "cash"
+    payment_id: Optional[str] = None
 
 
 class AdvanceCreateRequest(BaseModel):
@@ -543,10 +602,28 @@ async def create_visit_refund(
 ):
     """Money back for the service (M13): refund + matching reduction of rendered; the original payment stays."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    _, order = await _visit_order(db, crm_user, booking_id)
+    b, order = await _visit_order(db, crm_user, booking_id)
+    account_id = req.cash_account_id
+    if not account_id and req.payment_id:
+        try:
+            orig = (await db.execute(select(LedgerEntry).where(
+                LedgerEntry.tenant_id == crm_user.tenant_id,
+                LedgerEntry.id == uuid.UUID(req.payment_id)))).scalar_one_or_none()
+            if orig:
+                account_id = orig.cash_account_id
+        except Exception:
+            pass
+    if not account_id:
+        accs = await finance_cash.ensure_default_accounts(db, crm_user.tenant_id, b.branch_id)
+        kind = "cash" if req.payment_method == "cash" else "bank_transfer"
+        acc = next((a for a in accs if a.kind == kind), accs[0] if accs else None)
+        account_id = acc.id if acc else None
+    if not account_id:
+        raise HTTPException(status_code=400, detail="No cash account available")
     return await _money_call(db, lambda: finance_cash.refund(
         db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
-        cash_account_id=req.cash_account_id, reason=req.reason, idempotency_key=idempotency_key or "",
+        cash_account_id=account_id, reason=req.reason or req.comment or "Возврат",
+        idempotency_key=idempotency_key or str(uuid.uuid4()),
         actor_id=crm_user.user.id))
 
 
@@ -692,10 +769,15 @@ class ExpenseCategoryCreateRequest(BaseModel):
 
 class ExpenseCreateRequest(BaseModel):
     branch_id: uuid.UUID
-    cash_account_id: uuid.UUID
-    category_id: uuid.UUID
+    cash_account_id: Optional[uuid.UUID] = None
+    category_id: Optional[uuid.UUID] = None
+    category: Optional[str] = None
     amount_minor: int = Field(gt=0)
-    reason: str = Field(min_length=1, max_length=500)
+    reason: Optional[str] = Field(default=None, max_length=500)
+    comment: Optional[str] = Field(default=None, max_length=500)
+    payment_method: Optional[str] = "cash"
+    expense_date: Optional[str] = None
+    created_by: Optional[str] = None
 
 
 def _category_out(c: ExpenseCategory) -> dict:
@@ -757,21 +839,47 @@ async def create_expense(
     """Money out of a branch till by expense category (M14). Cash: only within an open shift, never below zero."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
     await branch_scope.require_branch(db, crm_user, req.branch_id)
+
+    # resolve category
+    category_id = req.category_id
+    if not category_id:
+        cat_name = req.category or "Прочее"
+        cats = await finance_expenses.list_categories(db, crm_user.tenant_id, include_archived=False)
+        cat = next((c for c in cats if c.name.lower() == cat_name.lower()), cats[0] if cats else None)
+        if not cat:
+            cat = await finance_expenses.create_category(db, crm_user.tenant_id, cat_name)
+        category_id = cat.id
+
+    # resolve cash account
+    account_id = req.cash_account_id
+    if not account_id:
+        accs = await finance_cash.ensure_default_accounts(db, crm_user.tenant_id, req.branch_id)
+        kind = "cash" if req.payment_method == "cash" else "bank_transfer"
+        acc = next((a for a in accs if a.kind == kind), accs[0] if accs else None)
+        if not acc:
+            raise HTTPException(status_code=400, detail="No cash account available")
+        account_id = acc.id
+
+    reason = req.reason or req.comment or "Расход"
     return await _money_call(db, lambda: finance_expenses.record_expense(
-        db, tenant_id=crm_user.tenant_id, branch_id=req.branch_id, cash_account_id=req.cash_account_id,
-        category_id=req.category_id, amount_minor=req.amount_minor, reason=req.reason,
-        idempotency_key=idempotency_key or "", actor_id=crm_user.user.id))
+        db, tenant_id=crm_user.tenant_id, branch_id=req.branch_id, cash_account_id=account_id,
+        category_id=category_id, amount_minor=req.amount_minor, reason=reason,
+        idempotency_key=idempotency_key or str(uuid.uuid4()), actor_id=crm_user.user.id))
 
 
 @router.get("/expenses")
 async def list_expenses(
     branch_id: uuid.UUID,
-    from_date: datetime.date,
-    to_date: datetime.date,
+    from_date: Optional[datetime.date] = None,
+    to_date: Optional[datetime.date] = None,
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
     branch = await branch_scope.require_branch(db, crm_user, branch_id)
+    if not to_date:
+        to_date = datetime.date.today()
+    if not from_date:
+        from_date = to_date - datetime.timedelta(days=30)
     try:
         finance_reports.validate_period(from_date, to_date)
     except FinanceError as e:
@@ -784,10 +892,20 @@ async def list_expenses(
                                     LedgerEntry.kind == "expense", LedgerEntry.occurred_at >= start,
                                     LedgerEntry.occurred_at < end)
                              .order_by(LedgerEntry.occurred_at, LedgerEntry.created_at))).all()
-    return [{"id": str(e.id), "occurred_at": e.occurred_at, "amount_minor": e.amount_minor, "category": cat,
-             "cash_account": acc, "reason": e.reason, "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None,
-             "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None}
-            for e, cat, acc in rows]
+    return [{
+        "id": str(e.id),
+        "occurred_at": e.occurred_at,
+        "expense_date": e.occurred_at.date().isoformat() if hasattr(e.occurred_at, "date") else str(e.occurred_at)[:10],
+        "amount_minor": e.amount_minor,
+        "category": cat,
+        "comment": e.reason,
+        "reason": e.reason,
+        "cash_account": acc,
+        "payment_method": "cash" if acc and "нал" in acc.lower() else "account",
+        "created_by": "Владелец" if crm_user.role == "owner" else "Администратор",
+        "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None,
+        "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None
+    } for e, cat, acc in rows]
 
 
 async def _report_branches(db: AsyncSession, crm_user: AuthenticatedTenantUser, branch_id: Optional[uuid.UUID]):
@@ -917,6 +1035,7 @@ async def update_booking_status(
     allowed targets; cancelling releases the occupancy; every change appends an event.
     """
     await check_crm_write_permitted(crm_user.tenant_id, db)
+    logger.info("UPDATE_BOOKING_STATUS: booking_id=%s req=%s", booking_id, req.dict())
     try:
         booking = await lifecycle.lock_booking(db, crm_user.tenant_id, booking_id)
         await branch_scope.require_booking_access(db, crm_user, booking.branch_id, booking.staff_id)

@@ -980,7 +980,10 @@ export class BusinessCrmApiClient {
       if (idempotencyKey) {
         headers['Idempotency-Key'] = idempotencyKey;
       }
-      const res = await fetch(`${this.baseUrl}/api/v1/business/payments`, {
+      const url = payload.booking_id
+        ? `${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(payload.booking_id)}/payments`
+        : `${this.baseUrl}/api/v1/business/payments`;
+      const res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -1056,13 +1059,19 @@ export class BusinessCrmApiClient {
     tenantId: string,
     idempotencyKey?: string
   ): Promise<PaymentRecord> {
+    const all = FinanceMockStorage.getPayments(tenantId);
+    const orig = all.find(p => p.id === payload.payment_id);
+    const bookingId = payload.booking_id || orig?.booking_id;
     try {
       const headers = this.headers(token, tenantId);
       headers['Content-Type'] = 'application/json';
       if (idempotencyKey) {
         headers['Idempotency-Key'] = idempotencyKey;
       }
-      const res = await fetch(`${this.baseUrl}/api/v1/business/payments/${encodeURIComponent(payload.payment_id)}/refund`, {
+      const url = bookingId
+        ? `${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(bookingId)}/refunds`
+        : `${this.baseUrl}/api/v1/business/payments/${encodeURIComponent(payload.payment_id)}/refund`;
+      const res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -1073,10 +1082,6 @@ export class BusinessCrmApiClient {
         return record;
       }
     } catch (_) {}
-
-    // Check original payment
-    const all = FinanceMockStorage.getPayments(tenantId);
-    const orig = all.find(p => p.id === payload.payment_id);
     if (!orig) {
       throw new ApiError(404, 'PAYMENT_NOT_FOUND', 'Исходный платеж не найден');
     }
@@ -1502,7 +1507,26 @@ export class BusinessCrmApiClient {
         method: 'GET',
         headers: this.headers(token, tenantId),
       });
-      if (res.ok) return await handleResponse<FinanceReportData>(res);
+      if (res.ok) {
+        const raw = await handleResponse<any>(res);
+        if (raw && raw.total) {
+          const t = raw.total;
+          const cashIn = t.received_by_account_kind?.cash ?? 0;
+          const cardIn = (t.received_by_account_kind?.bank_transfer ?? 0) + (t.received_by_account_kind?.card ?? 0);
+          return {
+            rendered_minor: t.rendered_minor ?? 0,
+            paid_minor: t.received_minor ?? 0,
+            debt_minor: t.receivables_end_minor ?? 0,
+            expenses_minor: t.expenses_minor ?? 0,
+            refunds_minor: 0,
+            advances_minor: t.advances_received_minor ?? 0,
+            net_cash_flow_minor: t.net_cash_flow_minor ?? 0,
+            cash_inflow_minor: cashIn,
+            card_inflow_minor: cardIn,
+          };
+        }
+        return raw;
+      }
     } catch (_) {}
 
     // Strict Sprint M14 Rule:

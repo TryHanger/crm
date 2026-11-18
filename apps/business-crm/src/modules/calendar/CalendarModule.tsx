@@ -420,22 +420,22 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         setSelectedBooking(prev => prev ? {
           ...prev,
           status: targetStatus,
-          cost_minor: res.cost_minor,
-          rendered_minor: res.rendered_minor,
-          paid_minor: res.paid_minor,
-          debt_minor: res.debt_minor,
-          payment_status: res.payment_status,
+          cost_minor: res.finance.cost_minor ?? res.cost_minor,
+          rendered_minor: res.finance.rendered_minor ?? res.rendered_minor,
+          paid_minor: res.finance.paid_minor ?? res.paid_minor,
+          debt_minor: res.finance.debt_minor ?? res.debt_minor,
+          payment_status: res.finance.payment_status ?? res.payment_status,
           finance: res.finance
         } : null);
         if (bookingDetail) {
           setBookingDetail(prev => prev ? {
             ...prev,
             status: targetStatus,
-            cost_minor: res.cost_minor,
-            rendered_minor: res.rendered_minor,
-            paid_minor: res.paid_minor,
-            debt_minor: res.debt_minor,
-            payment_status: res.payment_status,
+            cost_minor: res.finance.cost_minor ?? res.cost_minor,
+            rendered_minor: res.finance.rendered_minor ?? res.rendered_minor,
+            paid_minor: res.finance.paid_minor ?? res.paid_minor,
+            debt_minor: res.finance.debt_minor ?? res.debt_minor,
+            payment_status: res.finance.payment_status ?? res.payment_status,
             finance: res.finance
           } : null);
         }
@@ -594,6 +594,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           reason: refundReason,
           comment: refundComment.trim() || undefined,
           cashier_name: userRole === 'owner' ? 'Владелец' : 'Администратор',
+          payment_method: selectedPaymentForRefund.payment_method || 'card',
         },
         token,
         tenantId,
@@ -1542,7 +1543,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         const renderedMinor = bookingDetail?.rendered_minor ?? active.rendered_minor ?? (active.status === 'completed' ? costMinor : 0);
         
         // Sum from actual payments (refunds are negative movements!)
-        const paymentsNetMinor = visitPayments.reduce((acc, p) => p.payment_type === 'refund' ? acc - p.amount_minor : acc + p.amount_minor, 0);
+        const paymentsNetMinor = visitPayments.reduce((acc, p) => {
+          const isRefund = p.payment_type === 'refund' || (p as any).kind === 'refund';
+          return isRefund ? acc - p.amount_minor : acc + p.amount_minor;
+        }, 0);
         const paidMinor = visitPayments.length > 0 ? Math.max(0, paymentsNetMinor) : (bookingDetail?.paid_minor ?? active.paid_minor ?? 0);
         
         // Debt: strictly calculated from rendered services upon completion
@@ -1852,7 +1856,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   ) : (
                     <div data-testid="payment-history-list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {visitPayments.map((p) => {
-                        const isRefund = p.payment_type === 'refund';
+                        const isRefund = p.payment_type === 'refund' || (p as any).kind === 'refund';
                         const d = new Date(p.created_at);
                         const dateStr = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                         const methodLabel = p.payment_method === 'cash' ? 'Наличные' : p.payment_method === 'card' ? 'Карта' : p.payment_method === 'advance' ? 'Аванс' : 'Kaspi / QR';

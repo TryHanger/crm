@@ -67,10 +67,29 @@ test.describe('Sprint M13 — Возвраты (сторнирование), а�
     await bookingCard.click();
     await expect(page.locator('[data-testid="visit-card-modal"]')).toBeVisible({ timeout: 5000 });
 
+    // Complete the visit to accrue the order
+    const arrivedBtn = page.locator('[data-testid="status-btn-arrived"]');
+    if (await arrivedBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await arrivedBtn.click();
+      await page.waitForTimeout(600);
+    }
+    const inProgressBtn = page.locator('[data-testid="status-btn-in-progress"]');
+    await expect(inProgressBtn).toBeVisible({ timeout: 5000 });
+    await inProgressBtn.click();
+    await page.waitForTimeout(600);
+    const completeBtn = page.locator('[data-testid="status-btn-completed"]');
+    await expect(completeBtn).toBeVisible({ timeout: 5000 });
+    await completeBtn.click();
+    await expect(page.locator('text=Завершён').first()).toBeVisible({ timeout: 5000 });
+
     // Register initial payment of 4 000 KZT
     await page.click('[data-testid="register-payment-btn"]');
     await expect(page.locator('[data-testid="payment-modal"]')).toBeVisible({ timeout: 5000 });
     await page.fill('[data-testid="payment-amount-input"]', '4000');
+    const methodCardBtn = page.locator('[data-testid="payment-method-card"]');
+    if (await methodCardBtn.isVisible().catch(() => false)) {
+      await methodCardBtn.click();
+    }
     await page.click('[data-testid="submit-payment-btn"]');
     await page.waitForTimeout(1000);
 

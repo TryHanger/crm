@@ -61,7 +61,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
   const [expenseCategory, setExpenseCategory] = useState('Материалы и косметика');
   const [expenseAmountStr, setExpenseAmountStr] = useState('');
   const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [expenseMethod, setExpenseMethod] = useState<'cash' | 'account'>('cash');
+  const [expenseMethod, setExpenseMethod] = useState<'cash' | 'account'>('account');
   const [expenseComment, setExpenseComment] = useState('');
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
 
@@ -147,7 +147,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     }
     try {
       setIsSubmittingExpense(true);
-      await api.createExpense(
+      const newExp = await api.createExpense(
         {
           branch_id: currentBranchId,
           category: expenseCategory === 'supplies' ? 'Материалы и косметика' : expenseCategory,
@@ -160,6 +160,9 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
         token,
         tenantId
       );
+      if (newExp) {
+        setExpenses(prev => [newExp, ...prev.filter(e => e.id !== newExp.id)]);
+      }
       onShowToast?.('Расход успешно добавлен');
       setShowExpenseModal(false);
       setExpenseAmountStr('');
@@ -242,8 +245,9 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     onShowToast?.('Файл отчёта экспортирован в CSV');
   };
 
-  const formatCurrency = (minor: number) => {
-    return `${(minor / 100).toLocaleString('ru-RU')} ₸`;
+  const formatCurrency = (minor?: number) => {
+    const val = typeof minor === 'number' && !isNaN(minor) ? minor : 0;
+    return `${(val / 100).toLocaleString('ru-RU')} ₸`;
   };
 
   return (
@@ -999,12 +1003,13 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                   Способ списания *
                 </label>
                 <select
+                  data-testid="expense-method-select"
                   value={expenseMethod}
                   onChange={e => setExpenseMethod(e.target.value as 'cash' | 'account')}
                   style={{ height: '40px', padding: '0 10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
                 >
-                  <option value="cash">💵 Наличные из кассы</option>
                   <option value="account">🏦 Безналичный расчётный счёт</option>
+                  <option value="cash">💵 Наличные из кассы</option>
                 </select>
               </div>
 
