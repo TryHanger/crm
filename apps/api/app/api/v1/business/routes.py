@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from apps.api.app.modules.catalog import ownership
+from apps.api.app.infrastructure.security import branch_scope
+from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -207,28 +209,13 @@ async def get_calendar(
     tenant_id = crm_user.tenant_id
     effective_staff_id = staff_id
 
-    # Master role access control
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == tenant_id,
-            StaffProfile.user_id == crm_user.user.id
-        )
-        res_sp = await db.execute(stmt_sp)
-        master_profile = res_sp.scalar_one_or_none()
-        if not master_profile:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Master profile not linked to user account"
-            )
-        effective_staff_id = master_profile.id
-
-    stmt_b = select(Branch).where(Branch.id == branch_id, Branch.tenant_id == tenant_id)
-    res_b = await db.execute(stmt_b)
-    branch = res_b.scalar_one_or_none()
-    try:
-        tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty") if branch else zoneinfo.ZoneInfo("Asia/Almaty")
-    except Exception:
-        tz = zoneinfo.ZoneInfo("Asia/Almaty")
+    # M08: the branch must exist in this company (404) and be within the user's branch scope (403);
+    # a master sees only his own calendar
+    branch = await branch_scope.require_branch(db, crm_user, branch_id)
+    own_staff = await branch_scope.master_profile_id(db, crm_user)
+    if own_staff is not None:
+        effective_staff_id = own_staff
+    tz = zoneinfo.ZoneInfo(branch.timezone_iana or "Asia/Almaty")
 
     start_local = datetime.datetime.combine(date, datetime.time.min, tzinfo=tz)
     end_local = datetime.datetime.combine(date, datetime.time.max, tzinfo=tz)
@@ -241,6 +228,7 @@ async def get_calendar(
     ).where(
         StaffProfile.tenant_id == tenant_id,
         StaffBranch.branch_id == branch_id,
+        StaffBranch.active == True,
         StaffProfile.active == True
     )
     if effective_staff_id:
@@ -297,8 +285,12 @@ async def get_calendar(
     return {
         "date": date.isoformat(),
         "branch_id": str(branch_id),
+        "timezone": branch.timezone_iana,
+        # working = shift minus breaks; free = working minus bookings, blocks and time off.
+        # The CRM must not compute availability itself (M08 STOP): render these windows.
         "staff": [
-            {"id": str(s.id), "display_name": s.display_name, "role_title": s.role_title, "color": s.color}
+            {"id": str(s.id), "display_name": s.display_name, "role_title": s.role_title, "color": s.color,
+             **(await BookingEngine.staff_day_windows(db, tenant_id, branch_id, s.id, date, tz))}
             for s in staff_members
         ],
         "bookings": booking_list,
@@ -322,20 +314,16 @@ async def crm_create_booking(
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Creates a booking manually from CRM via unified BookingEngine."""
+    """Creates a booking manually from CRM via the same BookingEngine (and the same overlap
+    constraint) as public bookings: a manual and an online request for one slot cannot both win."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == crm_user.tenant_id,
-            StaffProfile.user_id == crm_user.user.id
+    await branch_scope.require_branch(db, crm_user, req.branch_id)
+    if crm_user.role == "master" and req.staff_id != await branch_scope.master_profile_id(db, crm_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "Access denied: master cannot create appointments for other staff"}
         )
-        res_sp = await db.execute(stmt_sp)
-        sp = res_sp.scalar_one_or_none()
-        if not sp or req.staff_id != sp.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "Access denied: master cannot create appointments for other staff"}
-            )
+    await branch_scope.require_staff_in_branch(db, crm_user, req.staff_id, req.branch_id)
     try:
         booking, mgmt_token, raw_token = await BookingEngine.create_booking(
             db=db,
@@ -360,7 +348,7 @@ async def crm_create_booking(
             "total_amount_minor": booking.amount_minor_snapshot
         }
     except BookingEngineError as e:
-        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
 
 
 @router.get("/bookings/{booking_id}")
@@ -597,20 +585,10 @@ async def create_calendar_block(
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Creates a calendar block and takes an exclusion occupancy."""
+    """Creates a calendar block and takes an exclusion occupancy (same constraint as bookings)."""
     await check_crm_write_permitted(crm_user.tenant_id, db)
-    if crm_user.role == "master":
-        stmt_sp = select(StaffProfile).where(
-            StaffProfile.tenant_id == crm_user.tenant_id,
-            StaffProfile.user_id == crm_user.user.id
-        )
-        res_sp = await db.execute(stmt_sp)
-        sp = res_sp.scalar_one_or_none()
-        if not sp or req.staff_id != sp.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: master cannot create blocks for other staff"
-            )
+    await branch_scope.require_branch(db, crm_user, req.branch_id)
+    await branch_scope.require_staff_in_branch(db, crm_user, req.staff_id, req.branch_id)
     block = CalendarBlock(
         tenant_id=crm_user.tenant_id,
         staff_id=req.staff_id,
@@ -637,9 +615,12 @@ async def create_calendar_block(
 
     try:
         await db.commit()
-    except Exception:
+    except (IntegrityError, DBAPIError) as exc:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Время уже занято другой записью или блокировкой")
+        if "staff_occupancy_no_overlap" not in str(exc):
+            raise  # not an overlap: do not report a different DB error as "time taken"
+        raise HTTPException(status_code=409, detail={"code": "SLOT_CONFLICT",
+                                                     "message": "Время уже занято другой записью или блокировкой"})
 
     return {"block_id": str(block.id), "message": "Блокировка успешно создана"}
 
@@ -657,6 +638,7 @@ async def delete_calendar_block(
     if not block:
         raise HTTPException(status_code=404, detail="Block not found")
 
+    await branch_scope.require_branch(db, crm_user, block.branch_id)
     if crm_user.role == "master":
         stmt_sp = select(StaffProfile).where(
             StaffProfile.tenant_id == crm_user.tenant_id,

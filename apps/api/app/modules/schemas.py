@@ -232,7 +232,18 @@ class CalendarBlockCreateRequest(BaseModel):
     staff_id: uuid.UUID
     starts_at_utc: datetime.datetime
     ends_at_utc: datetime.datetime
-    block_reason: str = "Личное"
+    block_reason: str = Field(default="Личное", max_length=255)
+
+    @model_validator(mode="after")
+    def _range(self):
+        # M08: invalid ranges were reported as "time already taken"
+        if self.starts_at_utc.utcoffset() is None or self.ends_at_utc.utcoffset() is None:
+            raise ValueError("starts_at_utc and ends_at_utc must include a timezone offset")
+        if self.ends_at_utc <= self.starts_at_utc:
+            raise ValueError("ends_at_utc must be after starts_at_utc")
+        if self.ends_at_utc - self.starts_at_utc > datetime.timedelta(days=31):
+            raise ValueError("a calendar block cannot be longer than 31 days; use time off instead")
+        return self
 
 class CustomerCreateRequest(BaseModel):
     full_name: str

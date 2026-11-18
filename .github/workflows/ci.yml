@@ -206,6 +206,8 @@ jobs:
           python scripts/smoke_booking_flows.py
           # M07 smoke: 20 concurrent clients on one slot -> one booking, others get new slots
           python scripts/smoke_slot_race.py
+          # M08 smoke: CRM block 13-14 closes the time on the booking site, calendar free windows match
+          python scripts/smoke_calendar_block.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots

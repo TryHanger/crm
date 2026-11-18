@@ -268,7 +268,8 @@ class BookingEngine:
         )
         res_cb = await db.execute(stmt_cb)
         if res_cb.scalars().first():
-            raise BookingEngineError("CALENDAR_BLOCKED", "Master schedule is blocked at this time", 400)
+            # M08: a blocked time is "taken" for the client exactly like a booked one: 409 + alternatives
+            raise BookingEngineError("CALENDAR_BLOCKED", "Master schedule is blocked at this time", 409)
 
         # 11. Occupancies Validation
         stmt_occ = select(StaffOccupancy).where(
@@ -600,6 +601,64 @@ class BookingEngine:
         slots = [{"starts_at_utc": t, "available_staff_count": len(ids)} for t, ids in sorted(by_start.items())]
         return {"slots": slots, "total_count": len(slots)}
 
+    @staticmethod
+    def _subtract(intervals, cuts):
+        """[(a,b)] minus [(c,d)] for half-open UTC intervals; result sorted, non-empty pieces only."""
+        result = []
+        for a, b in intervals:
+            pieces = [(a, b)]
+            for c, d in cuts:
+                nxt = []
+                for x, y in pieces:
+                    if d <= x or c >= y:
+                        nxt.append((x, y))
+                        continue
+                    if x < c:
+                        nxt.append((x, c))
+                    if d < y:
+                        nxt.append((d, y))
+                pieces = nxt
+            result.extend(pieces)
+        return sorted(result)
+
+    @classmethod
+    async def staff_day_windows(
+        cls, db: AsyncSession, tenant_id: uuid.UUID, branch_id: uuid.UUID, staff_id: uuid.UUID,
+        day: datetime.date, tz: zoneinfo.ZoneInfo,
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """What the backend considers a master's day in this branch (M08), in UTC:
+        working = shifts of the LOCAL day minus breaks; busy = active occupancies (bookings and blocks
+        in any branch) and time off; free = working minus busy. Same rules as search_availability.
+        """
+        def iso(pairs):
+            return [{"starts_at_utc": a.isoformat(), "ends_at_utc": b.isoformat()} for a, b in pairs]
+
+        shifts = (await db.execute(select(WeeklyShift).where(
+            WeeklyShift.tenant_id == tenant_id, WeeklyShift.staff_id == staff_id,
+            WeeklyShift.branch_id == branch_id, WeeklyShift.weekday_iso == day.isoweekday()))).scalars().all()
+        working, breaks = [], []
+        for sh in shifts:
+            start = datetime.datetime.combine(day, sh.local_start, tzinfo=tz).astimezone(datetime.timezone.utc)
+            end = datetime.datetime.combine(day, sh.local_end, tzinfo=tz).astimezone(datetime.timezone.utc)
+            sh_breaks = (await db.execute(select(ShiftBreak).where(ShiftBreak.shift_id == sh.id))).scalars().all()
+            brk = [(datetime.datetime.combine(day, b.local_start, tzinfo=tz).astimezone(datetime.timezone.utc),
+                    datetime.datetime.combine(day, b.local_end, tzinfo=tz).astimezone(datetime.timezone.utc)) for b in sh_breaks]
+            breaks.extend(brk)
+            working.extend(cls._subtract([(start, end)], brk))
+        working.sort()
+        if not working:
+            return {"working": [], "busy": [], "free": []}
+        lo, hi = working[0][0], working[-1][1]
+        occ = (await db.execute(select(StaffOccupancy).where(
+            StaffOccupancy.tenant_id == tenant_id, StaffOccupancy.staff_id == staff_id,
+            StaffOccupancy.released_at.is_(None), StaffOccupancy.starts_at_utc < hi,
+            StaffOccupancy.ends_at_utc > lo))).scalars().all()
+        off = (await db.execute(select(StaffTimeOff).where(
+            StaffTimeOff.tenant_id == tenant_id, StaffTimeOff.staff_id == staff_id,
+            StaffTimeOff.from_at_utc < hi, StaffTimeOff.to_at_utc > lo))).scalars().all()
+        busy = sorted([(o.starts_at_utc, o.ends_at_utc) for o in occ] + [(t.from_at_utc, t.to_at_utc) for t in off])
+        return {"working": iso(working), "busy": iso(busy), "free": iso(cls._subtract(working, busy))}
+
     @classmethod
     async def _claim_idempotency_key(
         cls, db: AsyncSession, tenant_id: uuid.UUID, scope: str, key: str, payload_hash: str, actor: str,
@@ -726,7 +785,7 @@ class BookingEngine:
                 is_client=(source == "public")
             )
         except BookingEngineError as e:
-            if e.code == "SLOT_CONFLICT":  # taken before we got here: same answer as a lost race
+            if e.code in ("SLOT_CONFLICT", "CALENDAR_BLOCKED"):  # taken before we got here: same answer as a lost race
                 e.details = {**(e.details or {}), "alternatives": await cls._alternatives_near(
                     db, tenant_id, branch_id, service_ids, starts_at_utc, is_public=(source == "public"))}
             raise
