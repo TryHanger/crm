@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from apps.api.app.modules.catalog import ownership
 from apps.api.app.infrastructure.security import branch_scope
 from apps.api.app.modules.bookings import lifecycle
+from apps.api.app.modules.finance import accrual, ledger as finance_ledger
 from apps.api.app.modules.customers import identity as customer_identity
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy import select, and_, or_, func, text
@@ -353,6 +354,19 @@ async def crm_create_booking(
         raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
 
 
+async def _visit_finance(db: AsyncSession, crm_user: AuthenticatedTenantUser, booking: Booking) -> Optional[dict]:
+    if crm_user.role == "master":
+        return None  # masters do not see money (M15)
+    order = await accrual.booking_order(db, booking)
+    if order is None:
+        return {"order_id": None, "currency": booking.currency, "sold_minor": booking.amount_minor_snapshot,
+                "rendered_minor": 0, "received_minor": 0, "advance_applied_minor": 0, "debt_minor": 0}
+    p = await finance_ledger.order_position(db, crm_user.tenant_id, order.id)
+    return {"order_id": str(order.id), "order_status": order.status, "currency": p.currency, "sold_minor": p.sold_minor,
+            "rendered_minor": p.rendered_minor, "received_minor": p.received_minor,
+            "advance_applied_minor": p.advance_applied_minor, "debt_minor": p.debt_minor}
+
+
 @router.get("/bookings/{booking_id}")
 async def get_crm_booking_card(
     booking_id: uuid.UUID,
@@ -411,6 +425,8 @@ async def get_crm_booking_card(
         ],
         "version": b.version,
         "cancellation_reason": b.cancellation_reason,
+        # M11: money of the visit comes only from the order and the ledger, never from the status
+        "finance": await _visit_finance(db, crm_user, b),
         "allowed_transitions": list(lifecycle.TRANSITIONS.get(b.status, ())),
         # full history: what changed, from what to what, by whom (M09)
         "events": [

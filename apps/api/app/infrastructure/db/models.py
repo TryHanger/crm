@@ -872,14 +872,14 @@ class OrderItem(Base):
     discount_minor: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_minor: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
-    price_source: Mapped[str] = mapped_column(String(16), nullable=False)  # base, staff_override, manual
+    price_source: Mapped[str] = mapped_column(String(16), nullable=False)  # base, staff_override, manual, booking
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_order_item_tenant_id"),
         UniqueConstraint("tenant_id", "order_id", "sequence", name="uq_order_item_sequence"),
         CheckConstraint("kind IN ('service')", name="ck_order_item_kind"),
-        CheckConstraint("price_source IN ('base', 'staff_override', 'manual')", name="ck_order_item_price_source"),
+        CheckConstraint("price_source IN ('base', 'staff_override', 'manual', 'booking')", name="ck_order_item_price_source"),
         CheckConstraint("quantity >= 1", name="ck_order_item_quantity"),
         CheckConstraint("unit_price_minor >= 0", name="ck_order_item_unit_price"),
         CheckConstraint("discount_minor >= 0 AND discount_minor <= unit_price_minor::bigint * quantity", name="ck_order_item_discount"),

@@ -106,6 +106,12 @@ async def change_status(
         new["released_occupancies"] = await release_occupancy(db, booking, now)
     elif reason:
         new["reason"] = reason.strip()
+    if target == "completed":
+        # M11: the service is rendered -> order from the booking snapshot + "rendered" in the ledger,
+        # in this same transaction and idempotent per visit (no payment is implied)
+        from apps.api.app.modules.finance import accrual
+        order = await accrual.accrue_completed_visit(db, booking, actor_id=actor_id, now=now)
+        new["order_id"] = str(order.id)
     record_event(db, booking, "cancelled" if target == "cancelled" else "status_changed",
                  actor_type, actor_id, {"status": current}, new)
     db.add(OutboxEvent(

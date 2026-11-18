@@ -212,6 +212,8 @@ jobs:
           python scripts/smoke_visit_lifecycle.py
           # M10 smoke: repeat visit finds its client, a shared phone does not merge people, other companies see nothing
           python scripts/smoke_customers.py
+          # M11 smoke: completing an 8000 KZT visit -> rendered 8000, paid 0, debt 8000
+          python scripts/smoke_accrual.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots

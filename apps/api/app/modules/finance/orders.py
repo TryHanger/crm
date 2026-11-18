@@ -16,7 +16,7 @@ from apps.api.app.modules.catalog import ownership
 from apps.api.app.modules.finance import money
 from apps.api.app.modules.finance.ledger import FinanceError
 
-PRICE_SOURCES = ("base", "staff_override", "manual")
+PRICE_SOURCES = ("base", "staff_override", "manual", "booking")
 
 
 async def new_order(
