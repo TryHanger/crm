@@ -81,16 +81,16 @@ test.describe('Sprint M08 — Календарь (Журнал админист�
     // Select Damir who works on Wednesday
     const bookingStaffSelect = page.locator('[data-testid="booking-staff-select"]');
     if (await bookingStaffSelect.isVisible().catch(() => false)) {
-      const options = await bookingStaffSelect.locator('option').allTextContents();
-      const damirOption = options.find(o => o.includes('Дамир'));
-      if (damirOption) {
-        await bookingStaffSelect.selectOption({ label: damirOption });
+      const damirOption = bookingStaffSelect.locator('option:has-text("Дамир")').first();
+      const damirVal = await damirOption.getAttribute('value');
+      if (damirVal) {
+        await bookingStaffSelect.selectOption(damirVal);
       }
     }
 
     const bookingTimeInput = page.locator('[data-testid="booking-time-input"]');
     if (await bookingTimeInput.isVisible().catch(() => false)) {
-      await bookingTimeInput.fill('12:00');
+      await bookingTimeInput.fill('15:30');
     }
 
     // Select first service if checkboxes/radio exist
