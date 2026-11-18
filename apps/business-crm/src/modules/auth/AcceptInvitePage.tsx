@@ -6,29 +6,45 @@ interface AcceptInvitePageProps {
   api: BusinessCrmApiClient;
   token: string;
   onSuccess: (token: string, memberships: CrmMembership[], user: any) => void;
+  onGoToLogin?: () => void;
 }
 
-export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({ api, token, onSuccess }) => {
+export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
+  api,
+  token,
+  onSuccess,
+  onGoToLogin,
+}) => {
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [requiresCurrentPassword, setRequiresCurrentPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password) {
-      setError('Введите пароль для учетной записи');
-      return;
-    }
-    if (password.length < 8) {
-      setError('Пароль должен содержать минимум 8 символов');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Пароли не совпадают');
-      return;
+
+    if (!requiresCurrentPassword) {
+      if (!password) {
+        setError('Введите пароль для учетной записи');
+        return;
+      }
+      if (password.length < 8) {
+        setError('Пароль должен содержать минимум 8 символов');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Пароли не совпадают');
+        return;
+      }
+    } else {
+      if (!currentPassword) {
+        setError('Введите текущий пароль вашей учетной записи для подтверждения');
+        return;
+      }
     }
 
     try {
@@ -36,18 +52,25 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({ api, token, 
       setError(null);
       const res = await api.acceptInvite({
         token,
-        password,
-        full_name: fullName.trim() || undefined,
-      });
+        password: password || undefined,
+        current_password: currentPassword || undefined,
+        display_name: fullName.trim() || undefined,
+      } as any);
 
       const me = await api.getMe(res.access_token);
       const mems: CrmMembership[] = me.crm_memberships || [];
       setIsSuccess(true);
       setTimeout(() => {
         onSuccess(res.access_token, mems, me);
-      }, 1000);
+      }, 700);
     } catch (err: any) {
-      setError(err.message || 'Ошибка при активации приглашения. Возможно, ссылка устарела или уже была использована.');
+      const msg = err.message || '';
+      if (msg.includes('CURRENT_PASSWORD_REQUIRED')) {
+        setRequiresCurrentPassword(true);
+        setError('Учетная запись с таким email уже зарегистрирована. Введите ваш текущий пароль для подтверждения прав.');
+      } else {
+        setError(msg || 'Ошибка при активации приглашения. Ссылка устарела или уже была использована.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -101,7 +124,9 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({ api, token, 
             Активация доступа в CRM
           </h1>
           <p style={{ margin: 0, fontSize: '14px', color: '#64748B' }}>
-            Задайте пароль для входа в панель управления компанией
+            {requiresCurrentPassword
+              ? 'Подтвердите текущий пароль для связывания организации'
+              : 'Задайте пароль для входа в панель управления компанией'}
           </p>
         </div>
 
@@ -116,9 +141,32 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({ api, token, 
               borderRadius: '10px',
               fontSize: '14px',
               border: '1px solid #FCA5A5',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
             }}
           >
-            {error}
+            <div>{error}</div>
+            {(error.includes('устарела') || error.includes('недействительно') || error.includes('истек')) && onGoToLogin && (
+              <button
+                type="button"
+                data-testid="goto-login-btn"
+                onClick={onGoToLogin}
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  background: '#991B1B',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Войти с паролем →
+              </button>
+            )}
           </div>
         )}
 
@@ -135,74 +183,100 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({ api, token, 
               fontWeight: 600,
             }}
           >
-            Доступ успешно активирован! Перенаправление в панель...
+            ✓ Доступ успешно активирован! Перенаправление в панель управления...
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
-                Ваше имя
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                placeholder="Иван Петров"
-                data-testid="invite-name-input"
-                style={{
-                  height: '44px',
-                  padding: '0 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #CBD5E1',
-                  fontSize: '15px',
-                  outline: 'none',
-                }}
-              />
-            </div>
+            {!requiresCurrentPassword ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
+                    Ваше имя
+                  </label>
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    placeholder="Алибек Сериков"
+                    data-testid="invite-name-input"
+                    style={{
+                      height: '44px',
+                      padding: '0 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '15px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
-                Новый пароль
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Минимум 8 символов"
-                data-testid="invite-password-input"
-                required
-                style={{
-                  height: '44px',
-                  padding: '0 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #CBD5E1',
-                  fontSize: '15px',
-                  outline: 'none',
-                }}
-              />
-            </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
+                    Новый пароль *
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Минимум 8 символов"
+                    data-testid="invite-password-input"
+                    required
+                    style={{
+                      height: '44px',
+                      padding: '0 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '15px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
-                Подтверждение пароля
-              </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Повторите пароль"
-                data-testid="invite-confirm-password-input"
-                required
-                style={{
-                  height: '44px',
-                  padding: '0 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #CBD5E1',
-                  fontSize: '15px',
-                  outline: 'none',
-                }}
-              />
-            </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
+                    Подтверждение пароля *
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Повторите пароль"
+                    data-testid="invite-confirm-password-input"
+                    required
+                    style={{
+                      height: '44px',
+                      padding: '0 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #CBD5E1',
+                      fontSize: '15px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
+                  Текущий пароль учетной записи *
+                </label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                  placeholder="Введите ваш действующий пароль"
+                  data-testid="invite-current-password-input"
+                  required
+                  style={{
+                    height: '44px',
+                    padding: '0 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '15px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            )}
 
             <button
               type="submit"
@@ -229,3 +303,4 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({ api, token, 
     </div>
   );
 };
+export default AcceptInvitePage;

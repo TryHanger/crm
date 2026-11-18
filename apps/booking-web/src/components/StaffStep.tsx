@@ -19,9 +19,13 @@ export const StaffStep: React.FC<StaffStepProps> = ({
   const isAnySelected = selectedStaff === 'any';
   const selectedStaffId = typeof selectedStaff === 'object' && selectedStaff !== null ? selectedStaff.id : null;
 
-  // Calculate base price for selected services
+  // Calculate base price and minimum master price for selected services
   const basePriceMinor = selectedServices.reduce((sum, s) => sum + s.base_price_minor, 0);
   const baseDurationMinutes = selectedServices.reduce((sum, s) => sum + s.base_duration_minutes, 0);
+  const staffPrices = staffList
+    .map(s => s.price_minor)
+    .filter((p): p is number => typeof p === 'number');
+  const minStaffPriceMinor = staffPrices.length > 0 ? Math.min(...staffPrices) : basePriceMinor;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -127,10 +131,10 @@ export const StaffStep: React.FC<StaffStepProps> = ({
           </span>
 
           {/* Price preview */}
-          {basePriceMinor > 0 && (
+          {minStaffPriceMinor > 0 && (
             <span style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right' }}>
               <span style={{ fontSize: '18px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                от {(basePriceMinor / 100).toLocaleString('ru-RU')} ₸
+                от {(minStaffPriceMinor / 100).toLocaleString('ru-RU')} ₸
               </span>
               <span style={{ fontSize: '14px', color: '#64748B' }}>~{baseDurationMinutes} мин</span>
             </span>
@@ -232,14 +236,19 @@ export const StaffStep: React.FC<StaffStepProps> = ({
               </span>
 
               {/* Price & duration preview */}
-              {basePriceMinor > 0 && (
-                <span style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right' }}>
-                  <span style={{ fontSize: '18px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {(basePriceMinor / 100).toLocaleString('ru-RU')} ₸
+              {(() => {
+                const masterPrice = typeof st.price_minor === 'number' ? st.price_minor : basePriceMinor;
+                const masterDur = typeof st.duration_minutes === 'number' ? st.duration_minutes : baseDurationMinutes;
+                if (masterPrice <= 0) return null;
+                return (
+                  <span style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right' }}>
+                    <span style={{ fontSize: '18px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {(masterPrice / 100).toLocaleString('ru-RU')} ₸
+                    </span>
+                    <span style={{ fontSize: '14px', color: '#64748B' }}>{masterDur} мин</span>
                   </span>
-                  <span style={{ fontSize: '14px', color: '#64748B' }}>{baseDurationMinutes} мин</span>
-                </span>
-              )}
+                );
+              })()}
             </button>
           );
         })}

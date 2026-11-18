@@ -436,6 +436,17 @@ class BookingEngine:
                     occupancies = res_occ.scalars().all()
                     occ_intervals = [(o.starts_at_utc, o.ends_at_utc) for o in occupancies]
 
+                    # Also fetch calendar blocks directly to guarantee exclusion redundancy
+                    stmt_cb_direct = select(CalendarBlock).where(
+                        CalendarBlock.tenant_id == tenant_id,
+                        CalendarBlock.staff_id == c_staff_id,
+                        CalendarBlock.starts_at_utc < day_end_utc,
+                        CalendarBlock.ends_at_utc > day_start_utc
+                    )
+                    res_cb_direct = await db.execute(stmt_cb_direct)
+                    for b in res_cb_direct.scalars().all():
+                        occ_intervals.append((b.starts_at_utc, b.ends_at_utc))
+
                     # Fetch staff time off
                     stmt_to = select(StaffTimeOff).where(
                         StaffTimeOff.tenant_id == tenant_id,
@@ -535,7 +546,8 @@ class BookingEngine:
         idempotency_key: Optional[str] = None,
         created_by_user_id: Optional[uuid.UUID] = None,
         quote_id: Optional[uuid.UUID] = None,
-        expected_price_minor: Optional[int] = None
+        expected_price_minor: Optional[int] = None,
+        customer_id: Optional[uuid.UUID] = None
     ) -> Tuple[Booking, PublicManagementToken, str]:
         """
         Creates a booking atomically.
@@ -670,28 +682,18 @@ class BookingEngine:
                 details={"new_price_minor": actual_price_minor, "duration_minutes": duration_mins}
             )
 
-        # 4. Customer resolution or creation (tenant scoped)
-        phone_digits = "".join(filter(str.isdigit, customer_phone_e164))
-        stmt_cust = select(Customer).where(
-            Customer.tenant_id == tenant_id,
-            Customer.phone_e164 == customer_phone_e164
+        # 4. Customer resolution or creation (tenant scoped, T10 identity invariant)
+        from apps.api.app.modules.customers.service import resolve_or_create_customer
+        customer, _is_new_cust = await resolve_or_create_customer(
+            db=db,
+            tenant_id=tenant_id,
+            customer_name=customer_name,
+            customer_phone=customer_phone_e164,
+            customer_email=customer_email,
+            notes=notes,
+            source=source,
+            explicit_customer_id=customer_id
         )
-        res_cust = await db.execute(stmt_cust)
-        customer = res_cust.scalar_one_or_none()
-
-        if not customer:
-            customer = Customer(
-                tenant_id=tenant_id,
-                full_name=customer_name,
-                phone_e164=customer_phone_e164,
-                phone_digits_index=phone_digits,
-                email=customer_email,
-                notes_private=notes if source == "crm_manual" else None,
-                data_source=source,
-                marketing_consent=False
-            )
-            db.add(customer)
-            await db.flush()
 
         # 5. Generate public reference
         # 5. Generate public reference with tenant-specific prefix

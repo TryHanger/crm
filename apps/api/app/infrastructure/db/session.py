@@ -126,8 +126,3 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
-            try:
-                await session.execute(text("RESET app.current_tenant"))
-            except Exception:
-                pass
-            await session.close()

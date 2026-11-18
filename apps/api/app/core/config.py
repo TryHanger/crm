@@ -14,6 +14,19 @@ class Settings(BaseSettings):
     ENABLE_API_DOCS: bool = Field(default=os.getenv("ENABLE_API_DOCS", "false").lower() in ("true", "1", "yes"))
     ALLOW_EMPTY_PLATFORM_IP_ALLOWLIST: bool = Field(default=os.getenv("ALLOW_EMPTY_PLATFORM_IP_ALLOWLIST", "false").lower() in ("true", "1", "yes"))
 
+    @field_validator("TRUSTED_PROXIES", mode="before")
+    @classmethod
+    def assemble_trusted_proxies(cls, v):
+        if isinstance(v, str):
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [p.strip() for p in v.split(",") if p.strip()]
+        return v
+
     # PostgreSQL Direct Connection Strings (preferred if provided, e.g. from Docker Compose / Cloud)
     DATABASE_URL: Optional[str] = Field(default=os.getenv("DATABASE_URL", None))
     ADMIN_DATABASE_URL: Optional[str] = Field(default=os.getenv("ADMIN_DATABASE_URL", None))

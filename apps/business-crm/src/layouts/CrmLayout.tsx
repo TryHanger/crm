@@ -50,6 +50,7 @@ export const CrmLayout: React.FC<CrmLayoutProps> = ({
           { id: 'online-booking' as CrmNavigationSection, label: 'Онлайн-запись', icon: '🌐' },
           { id: 'reports' as CrmNavigationSection, label: 'Отчёты', icon: '📊' },
           { id: 'settings' as CrmNavigationSection, label: 'Настройки', icon: '⚙️' },
+          { id: 'onboarding' as CrmNavigationSection, label: 'Онбординг', icon: '🚀' },
         ]
       : []),
   ];
@@ -428,7 +429,47 @@ export const CrmLayout: React.FC<CrmLayoutProps> = ({
             </div>
           </div>
 
-          {topActions && <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{topActions}</div>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {topActions && <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{topActions}</div>}
+            {!isMaster && (
+              <button
+                type="button"
+                data-testid="header-onboarding-btn"
+                onClick={() => onNavigate('onboarding')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: currentSection === 'onboarding' ? '#EFF6FF' : '#F8FAFC',
+                  border: currentSection === 'onboarding' ? '1px solid #3B82F6' : '1px solid #E2E8F0',
+                  color: currentSection === 'onboarding' ? '#1D4ED8' : '#475569',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <span>🚀</span>
+                <span>Онбординг-чеклист</span>
+                {branches.length === 0 && (
+                  <span
+                    style={{
+                      background: '#EF4444',
+                      color: '#FFFFFF',
+                      borderRadius: '999px',
+                      padding: '1px 6px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    1
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
         </header>
 
         {/* Content Body */}

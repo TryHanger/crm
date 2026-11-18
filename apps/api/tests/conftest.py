@@ -10,6 +10,7 @@ from scripts.setup_test_db import ensure_test_database
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_db():
+    print("\n--> [SETUP_TEST_DB CALLED]")
     if settings.ENVIRONMENT == "production":
         raise RuntimeError("FATAL: Running pytest against PRODUCTION environment is strictly forbidden!")
 
@@ -21,12 +22,14 @@ def setup_test_db():
 
     # Active connection verification before initializing schema
     from sqlalchemy import create_engine, text
-    with create_engine(settings.ADMIN_SYNC_DATABASE_URL).connect() as conn:
+    v_engine = create_engine(settings.ADMIN_SYNC_DATABASE_URL, poolclass=NullPool)
+    with v_engine.connect() as conn:
         res = conn.execute(text("SELECT current_database(), current_user, inet_server_addr();")).one()
         curr_db, curr_user, srv_addr = res[0], res[1], res[2]
         if not curr_db.endswith("_test") or curr_db in ("saas_crm", "postgres", "production"):
             raise RuntimeError(f"FATAL: Connected to unsafe database '{curr_db}'! Must end with '_test'. Aborting!")
         print(f"[TEST SETUP] Verified active connection: db={curr_db}, user={curr_user}, host={srv_addr}")
+    v_engine.dispose()
 
     init_database()
     seed_database()

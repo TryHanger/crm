@@ -31,8 +31,8 @@ async def test_multi_service_duration_and_pricing_snapshot(db_session: AsyncSess
     # Haircut service & Beard service
     res_srv = await db_session.execute(select(Service).where(Service.tenant_id == tenant.id))
     services = res_srv.scalars().all()
-    haircut = next(s for s in services if "стрижка" in s.name.lower())
-    beard = next(s for s in services if "бород" in s.name.lower())
+    haircut = next(s for s in services if "мужская стрижка" in s.name.lower())
+    beard = next(s for s in services if "моделирование бороды" in s.name.lower())
 
     service_ids = [haircut.id, beard.id]
 

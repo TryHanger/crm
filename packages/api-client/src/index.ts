@@ -7,6 +7,8 @@ import {
   AvailabilitySearchResponse,
   CreatePublicBookingRequest,
   BookingCreatedResponse,
+  BookingCardResponse,
+  VisitFinancialSummary,
   PublicManageBookingResponse,
   RescheduleRequest,
   CancelRequest,
@@ -21,6 +23,8 @@ import {
   StaffDetailResponse,
   StaffCreateRequest,
   StaffServiceOfferUpdateRequest,
+  StaffTimeOffResponse,
+  StaffTimeOffCreateRequest,
   WeeklyShiftResponse,
   ServiceDetailResponse,
   ServiceCreateRequest,
@@ -122,9 +126,13 @@ export class PublicApiClient {
     return handleResponse<ServiceItemResponse[]>(res);
   }
 
-  async getStaff(branchId?: string): Promise<StaffPublicResponse[]> {
-    const qs = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
-    const res = await fetch(`${this.baseUrl}/api/v1/public/staff${qs}`, {
+  async getStaff(branchId?: string, serviceIds?: string[]): Promise<StaffPublicResponse[]> {
+    let url = `${this.baseUrl}/api/v1/public/staff`;
+    const params: string[] = [];
+    if (branchId) params.push(`branch_id=${encodeURIComponent(branchId)}`);
+    if (serviceIds && serviceIds.length > 0) params.push(`service_ids=${encodeURIComponent(serviceIds.join(','))}`);
+    if (params.length > 0) url += `?${params.join('&')}`;
+    const res = await fetch(url, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
     });
@@ -227,14 +235,28 @@ export class BusinessCrmApiClient {
   }
 
 
-  async acceptInvite(payload: { token: string; password?: string; full_name?: string }): Promise<TokenResponse> {
+  async acceptInvite(payload: {
+    token: string;
+    password?: string;
+    display_name?: string;
+    full_name?: string;
+    current_password?: string;
+  }): Promise<TokenResponse> {
+    const body: Record<string, any> = {
+      token: payload.token,
+    };
+    if (payload.password) body.password = payload.password;
+    if (payload.current_password) body.current_password = payload.current_password;
+    if (payload.display_name || payload.full_name) {
+      body.display_name = payload.display_name || payload.full_name;
+    }
     const res = await fetch(`${this.baseUrl}/api/v1/auth/accept-invite`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     return handleResponse<TokenResponse>(res);
   }
@@ -294,12 +316,12 @@ export class BusinessCrmApiClient {
     return handleResponse<any>(res);
   }
 
-  async getBooking(id: string, token: string, tenantId: string): Promise<any> {
+  async getBooking(id: string, token: string, tenantId: string): Promise<BookingCardResponse> {
     const res = await fetch(`${this.baseUrl}/api/v1/business/bookings/${id}`, {
       method: 'GET',
       headers: this.headers(token, tenantId),
     });
-    return handleResponse<any>(res);
+    return handleResponse<BookingCardResponse>(res);
   }
 
   async updateBookingStatus(
@@ -337,17 +359,24 @@ export class BusinessCrmApiClient {
 
   async rescheduleBooking(
     id: string,
-    payload: { starts_at_utc: string; staff_id?: string },
+    payload: { starts_at_utc?: string; new_starts_at_utc?: string; staff_id?: string; new_staff_id?: string },
     token: string,
     tenantId: string
   ): Promise<any> {
+    const startsAt = payload.starts_at_utc || payload.new_starts_at_utc;
+    const staffId = payload.staff_id || payload.new_staff_id;
     const res = await fetch(`${this.baseUrl}/api/v1/business/bookings/${id}/reschedule`, {
       method: 'POST',
       headers: {
         ...this.headers(token, tenantId),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        starts_at_utc: startsAt,
+        new_starts_at_utc: startsAt,
+        staff_id: staffId,
+        new_staff_id: staffId,
+      }),
     });
     return handleResponse<any>(res);
   }
@@ -395,12 +424,24 @@ export class BusinessCrmApiClient {
 
   // --- CUSTOMERS ---
   async getCustomers(
-    params: { search?: string; limit?: number; offset?: number } = {},
+    params: {
+      search?: string;
+      min_visits?: number;
+      visits_filter?: string;
+      sort_by?: string;
+      order?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
     token: string,
     tenantId: string
   ): Promise<CustomerResponse[]> {
     const qs = new URLSearchParams();
     if (params.search) qs.append('search', params.search);
+    if (params.min_visits !== undefined) qs.append('min_visits', String(params.min_visits));
+    if (params.visits_filter) qs.append('visits_filter', params.visits_filter);
+    if (params.sort_by) qs.append('sort_by', params.sort_by);
+    if (params.order) qs.append('order', params.order);
     if (params.limit) qs.append('limit', String(params.limit));
     if (params.offset) qs.append('offset', String(params.offset));
 
@@ -420,7 +461,13 @@ export class BusinessCrmApiClient {
   }
 
   async createCustomer(
-    payload: { full_name: string; phone_e164: string; email?: string; notes_private?: string },
+    payload: {
+      full_name: string;
+      phone_e164: string;
+      email?: string;
+      notes_private?: string;
+      confirm_shared_phone?: boolean;
+    },
     token: string,
     tenantId: string
   ): Promise<CustomerResponse> {
@@ -558,13 +605,59 @@ export class BusinessCrmApiClient {
     branchId?: string
   ): Promise<any> {
     const url = `${this.baseUrl}/api/v1/business/staff/${staffId}/schedule${branchId ? '?branch_id=' + branchId : ''}`;
+    const payload = Array.isArray(shifts) ? { shifts } : shifts;
     const res = await fetch(url, {
       method: 'PUT',
       headers: {
         ...this.headers(token, tenantId),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(shifts),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async getStaffTimeOff(
+    staffId: string,
+    token: string,
+    tenantId: string
+  ): Promise<StaffTimeOffResponse[]> {
+    const url = `${this.baseUrl}/api/v1/business/staff/${staffId}/time-off`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<StaffTimeOffResponse[]>(res);
+  }
+
+  async createStaffTimeOff(
+    staffId: string,
+    payload: StaffTimeOffCreateRequest,
+    token: string,
+    tenantId: string
+  ): Promise<StaffTimeOffResponse> {
+    const url = `${this.baseUrl}/api/v1/business/staff/${staffId}/time-off`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...this.headers(token, tenantId),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<StaffTimeOffResponse>(res);
+  }
+
+  async deleteStaffTimeOff(
+    staffId: string,
+    timeOffId: string,
+    token: string,
+    tenantId: string
+  ): Promise<any> {
+    const url = `${this.baseUrl}/api/v1/business/staff/${staffId}/time-off/${timeOffId}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: this.headers(token, tenantId),
     });
     return handleResponse<any>(res);
   }
@@ -841,6 +934,8 @@ export class BusinessCrmApiClient {
     return handleResponse<any>(res);
   }
 }
+
+export * from './types';
 
 export class PlatformApiClient {
   private baseUrl: string;
@@ -1343,3 +1438,5 @@ export class PlatformApiClient {
     return handleResponse<any>(res);
   }
 }
+
+export * from './types';

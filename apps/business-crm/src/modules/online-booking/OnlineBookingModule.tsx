@@ -38,10 +38,11 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
   const [publicUrl, setPublicUrl] = useState('');
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [businessName, setBusinessName] = useState('ВАШ БИЗНЕС');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (publicUrl) {
-      QRCode.toDataURL(publicUrl, { width: 180, margin: 2, errorCorrectionLevel: 'M' })
+      QRCode.toDataURL(publicUrl, { width: 220, margin: 2, errorCorrectionLevel: 'M' })
         .then(url => setQrCodeDataUrl(url))
         .catch(err => console.error('Failed to generate QR code', err));
     } else {
@@ -142,6 +143,114 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleCopyUrl = async () => {
+    if (!publicUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopied(true);
+      onShowToast('Ссылка скопирована в буфер обмена');
+      setTimeout(() => setCopied(false), 2500);
+    } catch (err) {
+      onShowToast('Не удалось скопировать ссылку');
+    }
+  };
+
+  const handlePrintQr = () => {
+    if (!qrCodeDataUrl) return;
+    const printWin = window.open('', '_blank');
+    if (!printWin) {
+      window.print();
+      return;
+    }
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>QR-код для онлайн-записи - ${businessName}</title>
+          <style>
+            @media print {
+              @page { size: auto; margin: 15mm; }
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 90vh;
+              margin: 0;
+              background: #F8FAFC;
+            }
+            .card {
+              background: #FFFFFF;
+              border: 2px solid #E2E8F0;
+              border-radius: 20px;
+              padding: 36px 32px;
+              max-width: 320px;
+              text-align: center;
+              box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+            }
+            .brand {
+              font-size: 20px;
+              font-weight: 800;
+              letter-spacing: 0.04em;
+              color: #0F172A;
+              margin-bottom: 8px;
+              text-transform: uppercase;
+            }
+            .tagline {
+              font-size: 13px;
+              color: #64748B;
+              margin-bottom: 24px;
+              line-height: 1.4;
+            }
+            .qr-wrap {
+              display: inline-block;
+              padding: 12px;
+              background: #FFFFFF;
+              border: 1px solid #E2E8F0;
+              border-radius: 12px;
+              margin-bottom: 16px;
+            }
+            .qr-wrap img {
+              display: block;
+              width: 200px;
+              height: 200px;
+            }
+            .instruction {
+              font-size: 13px;
+              font-weight: 600;
+              color: #334155;
+              margin-bottom: 8px;
+            }
+            .url {
+              font-size: 11px;
+              color: #2563EB;
+              word-break: break-all;
+              font-family: monospace;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="brand">${businessName}</div>
+            <div class="tagline">Онлайн-запись к специалистам</div>
+            <div class="qr-wrap">
+              <img src="${qrCodeDataUrl}" alt="QR код онлайн-записи" />
+            </div>
+            <div class="instruction">Наведите камеру телефона для быстрой записи</div>
+            <div class="url">${publicUrl}</div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
   };
 
   return (
@@ -477,84 +586,125 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
 
               {/* Public Link Card */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 500 }}>Ваша персональная ссылка:</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Ваша персональная ссылка:</label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <input
                     data-testid="booking-public-url-input"
                     type="text"
                     readOnly
                     value={publicUrl}
+                    placeholder="https://ваша-компания.book.example.kz"
                     style={{
-                      flex: 1,
+                      flex: '1 1 240px',
                       height: '40px',
                       padding: '0 12px',
                       borderRadius: '8px',
                       border: '1px solid #CBD5E1',
                       background: '#F8FAFC',
-                      fontSize: '14px',
+                      fontSize: '13px',
+                      color: '#0F172A',
+                      fontFamily: 'monospace',
                     }}
                   />
+                  <button
+                    type="button"
+                    data-testid="booking-copy-url-btn"
+                    onClick={handleCopyUrl}
+                    disabled={!publicUrl}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 14px',
+                      height: '40px',
+                      borderRadius: '8px',
+                      border: copied ? '1px solid #86EFAC' : '1px solid #CBD5E1',
+                      background: copied ? '#F0FDF4' : '#FFFFFF',
+                      color: copied ? '#166534' : '#334155',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: publicUrl ? 'pointer' : 'not-allowed',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {copied ? '✓ Скопировано' : '📋 Копировать'}
+                  </button>
                   <a
                     data-testid="booking-public-url-link"
-                    href={publicUrl}
+                    href={publicUrl || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
+                      justifyContent: 'center',
                       padding: '0 16px',
+                      height: '40px',
                       borderRadius: '8px',
-                      background: '#2563EB',
+                      background: publicUrl ? '#2563EB' : '#94A3B8',
                       color: '#FFFFFF',
                       textDecoration: 'none',
                       fontSize: '13px',
                       fontWeight: 600,
+                      pointerEvents: publicUrl ? 'auto' : 'none',
                     }}
                   >
-                    Открыть
+                    Открыть ↗
                   </a>
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748B' }}>
+                  {isPublished
+                    ? 'Ссылка готова для размещения в соцсетях (Instagram, 2GIS, WhatsApp, Telegram)'
+                    : 'Приостановлено: клиенты при переходе увидят уведомление о временной паузе'}
                 </div>
               </div>
 
               {/* Real Scannable QR Code */}
               <div
                 style={{
-                  padding: '20px',
+                  padding: '24px',
                   border: '1px solid #E2E8F0',
                   borderRadius: '12px',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '12px',
+                  gap: '14px',
                   textAlign: 'center',
                   background: '#F8FAFC',
                 }}
               >
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A' }}>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A' }}>
                   QR-код для онлайн-записи
                 </div>
                 {qrCodeDataUrl ? (
-                  <img
-                    data-testid="booking-qr-code"
-                    src={qrCodeDataUrl}
-                    alt="QR-код онлайн-записи"
+                  <div
                     style={{
-                      width: '180px',
-                      height: '180px',
-                      borderRadius: '8px',
-                      border: '1px solid #E2E8F0',
+                      padding: '12px',
                       background: '#FFFFFF',
-                      padding: '8px',
+                      borderRadius: '12px',
+                      border: '1px solid #E2E8F0',
                       boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                      display: 'inline-block',
                     }}
-                  />
+                  >
+                    <img
+                      data-testid="booking-qr-code"
+                      src={qrCodeDataUrl}
+                      alt="QR-код онлайн-записи"
+                      style={{
+                        width: '200px',
+                        height: '200px',
+                        display: 'block',
+                      }}
+                    />
+                  </div>
                 ) : (
                   <div
                     style={{
-                      width: '180px',
-                      height: '180px',
+                      width: '200px',
+                      height: '200px',
                       background: '#FFFFFF',
-                      borderRadius: '8px',
+                      borderRadius: '12px',
                       border: '1px dashed #CBD5E1',
                       display: 'flex',
                       alignItems: 'center',
@@ -566,22 +716,52 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
                     Генерация QR-кода...
                   </div>
                 )}
-                <div style={{ fontSize: '13px', color: '#64748B' }}>
-                  Распечатайте этот QR-код для стойки администратора, зеркал или визиток клиентов
+                <div style={{ fontSize: '13px', color: '#64748B', maxWidth: '380px', lineHeight: 1.4 }}>
+                  Разместите этот QR-код на стойке администратора, рабочих местах мастеров, входной группе или визитках
                 </div>
                 {qrCodeDataUrl && (
-                  <a
-                    href={qrCodeDataUrl}
-                    download="booking-qr.png"
-                    style={{
-                      fontSize: '12px',
-                      color: '#2563EB',
-                      textDecoration: 'none',
-                      fontWeight: 600,
-                    }}
-                  >
-                    Скачать PNG
-                  </a>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    <a
+                      data-testid="booking-qr-download-link"
+                      href={qrCodeDataUrl}
+                      download="booking-qr.png"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#1D4ED8',
+                        textDecoration: 'none',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      📥 Скачать PNG
+                    </a>
+                    <button
+                      type="button"
+                      data-testid="booking-qr-print-btn"
+                      onClick={handlePrintQr}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#334155',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🖨️ Печать карточки
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

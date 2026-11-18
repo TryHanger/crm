@@ -639,3 +639,110 @@ async def test_crm_revenue_semantics_and_multi_branch_pricing_isolation():
         await client.patch(f"/api/v1/business/branches/{b2_id}", json={
             "timezone_iana": "Asia/Almaty"
         }, headers=mc_headers)
+
+
+@pytest.mark.asyncio
+async def test_m02_owner_onboarding_and_first_branch_creation():
+    """
+    SPRINT M02 INTEGRATION TEST (T02 OWNER ONBOARDING GATE):
+    1. Operator creates company tenant & issues owner invite
+    2. Owner activates access without dev bypass (sets password & display_name)
+    3. Initially, new company has 0 branches (triggers CRM Onboarding Checklist)
+    4. Owner creates their first branch via CRM API
+    5. Single-use invite token cannot be reused
+    6. Normal login succeeds with the activated credentials
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Login as Platform Admin
+        p_login = await client.post("/api/v1/auth/login", json={
+            "email": "owner@platform.example.kz",
+            "password": "Password123!"
+        })
+        assert p_login.status_code == 200, f"Platform admin login failed: {p_login.text}"
+        p_token = p_login.json()["access_token"]
+        p_headers = {"Authorization": f"Bearer {p_token}"}
+
+        # 2. Provision new company tenant with owner invitation
+        unique_id = random.randint(100000, 999999)
+        new_slug = f"onboard{unique_id}"
+        owner_email = f"owner_{new_slug}@beautykz.internal"
+        create_res = await client.post("/api/v1/platform/tenants", json={
+            "slug": new_slug,
+            "display_name": f"Салон Стиль {unique_id}",
+            "owner_email": owner_email,
+            "owner_name": "Кайрат Маратов",
+            "vertical": "beauty",
+            "plan_code": "start"
+        }, headers=p_headers)
+        assert create_res.status_code == 201, f"Tenant creation failed: {create_res.text}"
+        tenant_info = create_res.json()
+        raw_invite_token = tenant_info["invite_token"]
+        tenant_id = tenant_info["tenant_id"]
+        assert raw_invite_token, "Single-use raw invite token must be returned in test mode"
+
+        # 3. Owner accepts invite (no dev bypass!)
+        owner_password = "OwnerSecretPass123!"
+        accept_res = await client.post("/api/v1/auth/accept-invite", json={
+            "token": raw_invite_token,
+            "password": owner_password,
+            "display_name": "Кайрат Маратов"
+        })
+        assert accept_res.status_code == 200, f"Invite acceptance failed: {accept_res.text}"
+        owner_auth_data = accept_res.json()
+        owner_token = owner_auth_data["access_token"]
+        owner_headers = {
+            "Authorization": f"Bearer {owner_token}",
+            "X-Tenant-ID": tenant_id
+        }
+
+        # 4. Verify owner profile & tenant membership
+        me_res = await client.get("/api/v1/auth/me", headers=owner_headers)
+        assert me_res.status_code == 200
+        me_data = me_res.json()
+        assert me_data["email"] == owner_email
+        assert len(me_data["crm_memberships"]) >= 1
+        membership = next(m for m in me_data["crm_memberships"] if m["tenant_id"] == tenant_id)
+        assert membership["role"] == "owner"
+
+        # 5. Verify that company initially has NO branches (onboarding trigger)
+        branches_empty_res = await client.get("/api/v1/business/branches", headers=owner_headers)
+        assert branches_empty_res.status_code == 200
+        assert len(branches_empty_res.json()) == 0, "Brand new company must have 0 branches"
+
+        # 6. Step 1 of Onboarding: Owner creates their first branch
+        first_branch_res = await client.post("/api/v1/business/branches", json={
+            "name": "Флагманский филиал на Абая",
+            "city": "Алматы",
+            "address": "пр. Абая, 150",
+            "timezone_iana": "Asia/Almaty",
+            "phone": "+7 701 333-44-55"
+        }, headers=owner_headers)
+        assert first_branch_res.status_code == 201, f"First branch creation failed: {first_branch_res.text}"
+        created_branch = first_branch_res.json()
+        assert created_branch["name"] == "Флагманский филиал на Абая"
+        assert created_branch["city"] == "Алматы"
+        assert created_branch["timezone_iana"] == "Asia/Almaty"
+
+        # 7. Verify branch list now contains the created branch
+        branches_res = await client.get("/api/v1/business/branches", headers=owner_headers)
+        assert branches_res.status_code == 200
+        branches_list = branches_res.json()
+        assert len(branches_list) == 1
+        assert branches_list[0]["id"] == created_branch["id"]
+
+        # 8. Replay check: Reusing the same token must fail
+        replay_res = await client.post("/api/v1/auth/accept-invite", json={
+            "token": raw_invite_token,
+            "password": "AnotherPassword999!"
+        })
+        assert replay_res.status_code == 400, "Consumed invite token must not be accepted again"
+
+        # 9. Normal login with new credentials succeeds
+        login_res = await client.post("/api/v1/auth/login", json={
+            "email": owner_email,
+            "password": owner_password
+        })
+        assert login_res.status_code == 200
+        assert login_res.json()["role"] == "owner"
+

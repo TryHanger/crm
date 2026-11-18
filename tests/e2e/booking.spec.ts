@@ -1,6 +1,18 @@
 import { test, expect } from '@playwright/test';
+import { execSync } from 'child_process';
 
 test.describe('SaaS Booking Web & CRM Integration', () => {
+
+  test.beforeAll(() => {
+    try {
+      execSync('python scripts/clean_test_bookings.py', {
+        stdio: 'inherit',
+        env: { ...process.env, PYTHONPATH: '.' },
+      });
+    } catch (e) {
+      console.warn('Could not reset test bookings via clean_test_bookings.py:', e);
+    }
+  });
 
   test('Desktop Booking Flow - Barber House', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -325,7 +337,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await page.locator('button:has-text("Любой свободный мастер")').click();
     await page.locator('button:has-text("Выбрать дату и время")').click();
 
-    const dateBtn = page.locator('button[data-date]').nth(1);
+    const dateBtn = page.locator('button[data-date]').nth(2);
     const initialDate = await dateBtn.getAttribute('data-date');
     await dateBtn.click();
 
@@ -366,7 +378,7 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
     await expect(freshPage.locator('h2:has-text("Выберите новое время")')).toBeVisible();
 
     const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + 2);
+    futureDate.setDate(futureDate.getDate() + 3);
     const futureDateStr = futureDate.toISOString().split('T')[0];
     await freshPage.fill('input[type="date"]', futureDateStr);
 

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { CalendarBooking, CalendarStaff, CalendarBlockItem } from '../../types';
-import { BusinessCrmApiClient } from '@crm/api-client';
+import React, { useState, useRef } from 'react';
+import { CalendarBooking, CalendarStaff, CalendarBlockItem, BookingCardResponse, VisitFinancialSummary } from '../../types';
+import { BusinessCrmApiClient, CustomerResponse } from '@crm/api-client';
 
 export function localToUtcIso(dateStr: string, timeStr: string, timeZone: string = 'Asia/Almaty'): string {
   if (!dateStr || !timeStr) {
@@ -108,6 +108,7 @@ interface CalendarModuleProps {
   onShowToast: (msg: string) => void;
   userRole: string;
   timezoneIana?: string;
+  onOpenCustomer?: (customerId: string) => void;
 }
 
 export const CalendarModule: React.FC<CalendarModuleProps> = ({
@@ -125,9 +126,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   onShowToast,
   userRole,
   timezoneIana = 'Asia/Almaty',
+  onOpenCustomer,
 }) => {
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'list'>('day');
   const [weekData, setWeekData] = useState<Record<string, CalendarBooking[]>>({});
+  const [weekBlocks, setWeekBlocks] = useState<Record<string, CalendarBlockItem[]>>({});
   const [isLoadingWeek, setIsLoadingWeek] = useState(false);
   const [weekError, setWeekError] = useState<string | null>(null);
 
@@ -153,14 +156,27 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               staff_id: b.staff_id,
               status: b.status,
               amount_minor: b.amount_minor,
+              cost_minor: b.cost_minor ?? b.amount_minor,
+              rendered_minor: b.rendered_minor ?? (b.status === 'completed' ? b.amount_minor : 0),
+              paid_minor: b.paid_minor ?? 0,
+              debt_minor: b.debt_minor ?? (b.status === 'completed' ? b.amount_minor : 0),
+              payment_status: b.payment_status ?? 'unpaid',
+              finance: b.finance,
               public_ref: b.public_ref,
               services: b.services || ['Визит'],
             }));
-            return { date: d, bookings: mapped, ok: true };
+            const mappedBlocks: CalendarBlockItem[] = (cal.blocks || []).map((bl: any) => ({
+              id: bl.id,
+              staff_id: bl.staff_id,
+              starts_at_utc: bl.starts_at_utc,
+              ends_at_utc: bl.ends_at_utc,
+              block_reason: bl.reason || bl.block_reason || 'Блокировка времени',
+            }));
+            return { date: d, bookings: mapped, blocks: mappedBlocks, ok: true };
           } catch (err: any) {
             hasError = true;
             lastErrMsg = err?.message || 'Ошибка сети или API';
-            return { date: d, bookings: [], ok: false };
+            return { date: d, bookings: [], blocks: [], ok: false };
           }
         })
       );
@@ -168,10 +184,13 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         setWeekError(`Не удалось загрузить данные части дней расписания (${lastErrMsg}).`);
       }
       const map: Record<string, CalendarBooking[]> = {};
+      const blkMap: Record<string, CalendarBlockItem[]> = {};
       for (const r of results) {
         map[r.date] = r.bookings;
+        blkMap[r.date] = r.blocks;
       }
       setWeekData(map);
+      setWeekBlocks(blkMap);
     } catch (e: any) {
       setWeekError(e?.message || 'Ошибка загрузки недели');
     } finally {
@@ -187,7 +206,38 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   }, [viewMode, currentDate, branchId, loadWeekBookings]);
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('all');
   const [selectedBooking, setSelectedBooking] = useState<CalendarBooking | null>(null);
+  const [selectedBlock, setSelectedBlock] = useState<CalendarBlockItem | null>(null);
+  const [isDeletingBlock, setIsDeletingBlock] = useState(false);
+  const [bookingDetail, setBookingDetail] = useState<BookingCardResponse | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Cancel & Reschedule state
+  const [cancelReason, setCancelReason] = useState('Отмена по просьбе клиента');
+  const [rescheduleDate, setRescheduleDate] = useState(currentDate);
+  const [rescheduleTime, setRescheduleTime] = useState('12:00');
+  const [rescheduleStaffId, setRescheduleStaffId] = useState('');
+
+  const handleSelectBooking = React.useCallback(async (b: CalendarBooking) => {
+    setSelectedBooking(b);
+    setRescheduleStaffId(b.staff_id);
+    setRescheduleDate(b.starts_at_utc ? b.starts_at_utc.split('T')[0] : currentDate);
+    if (b.starts_at_utc) {
+      const { hour, minute } = getLocalHourAndMinute(new Date(b.starts_at_utc), timezoneIana);
+      setRescheduleTime(`${hour < 10 ? '0' : ''}${hour}:${minute < 10 ? '0' : ''}${minute}`);
+    }
+    setBookingDetail(null);
+    if (!token || !tenantId) return;
+    setIsLoadingDetail(true);
+    try {
+      const card = await api.getBooking(b.id, token, tenantId);
+      setBookingDetail(card);
+    } catch (err) {
+      console.error('Failed to load full booking details:', err);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  }, [api, token, tenantId, currentDate, timezoneIana]);
 
   // Modals state
   const [showNewBookingModal, setShowNewBookingModal] = useState(false);
@@ -203,10 +253,53 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [newServiceIds, setNewServiceIds] = useState<string[]>([]);
   const [allServices, setAllServices] = useState<any[]>([]);
 
-  // Cancel & Reschedule state
-  const [cancelReason, setCancelReason] = useState('Отмена по просьбе клиента');
-  const [rescheduleDate, setRescheduleDate] = useState(currentDate);
-  const [rescheduleTime, setRescheduleTime] = useState('12:00');
+  // Customer Autocomplete / Link State
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
+  const [custSuggestions, setCustSuggestions] = useState<CustomerResponse[]>([]);
+  const [isSearchingCust, setIsSearchingCust] = useState(false);
+  const searchCustomerTimeoutRef = useRef<any>(null);
+
+  const handleCustPhoneOrNameChange = (nameVal: string, phoneVal: string) => {
+    setNewCustName(nameVal);
+    setNewCustPhone(phoneVal);
+    // If user edits text after selecting a customer, clear selection link
+    if (selectedCustomerId && nameVal !== selectedCustomerName) {
+      setSelectedCustomerId(null);
+      setSelectedCustomerName(null);
+    }
+    const query = phoneVal.trim().length >= 3 ? phoneVal.trim() : nameVal.trim();
+    if (searchCustomerTimeoutRef.current) clearTimeout(searchCustomerTimeoutRef.current);
+    if (!query || query.length < 2) {
+      setCustSuggestions([]);
+      return;
+    }
+    searchCustomerTimeoutRef.current = setTimeout(async () => {
+      try {
+        setIsSearchingCust(true);
+        const res = await api.getCustomers({ search: query, limit: 5 }, token, tenantId);
+        setCustSuggestions(res || []);
+      } catch (e) {
+        setCustSuggestions([]);
+      } finally {
+        setIsSearchingCust(false);
+      }
+    }, 250);
+  };
+
+  const handleSelectCustomer = (c: CustomerResponse) => {
+    setNewCustName(c.full_name);
+    setNewCustPhone((c as any).phone || c.phone_e164 || '');
+    setSelectedCustomerId(c.id);
+    setSelectedCustomerName(c.full_name);
+    setCustSuggestions([]);
+  };
+
+  const handleClearSelectedCustomer = () => {
+    setSelectedCustomerId(null);
+    setSelectedCustomerName(null);
+  };
+
 
   // Block modal state
   const [blockStaffId, setBlockStaffId] = useState('');
@@ -244,9 +337,12 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       setAllServices(svcs);
       if (svcs.length > 0) setNewServiceIds([svcs[0].id]);
       if (staffList.length > 0) setNewStaffId(staffList[0].id);
+      setSelectedCustomerId(null);
+      setSelectedCustomerName(null);
+      setCustSuggestions([]);
       setShowNewBookingModal(true);
     } catch (err: any) {
-      alert(`Ошибка загрузки услуг: ${err.message || err}`);
+      onShowToast(`Ошибка загрузки услуг: ${err.message || err}`);
     }
   };
 
@@ -254,7 +350,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   const handleCreateBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCustName.trim() || !newCustPhone.trim() || !newStaffId || newServiceIds.length === 0) {
-      alert('Заполните все обязательные поля');
+      onShowToast('Заполните все обязательные поля');
       return;
     }
 
@@ -268,6 +364,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           starts_at_utc: startsAtUtc,
           customer_name: newCustName.trim(),
           customer_phone: newCustPhone.trim(),
+          customer_id: selectedCustomerId || undefined,
         },
         token,
         tenantId
@@ -276,8 +373,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       setShowNewBookingModal(false);
       onShowToast('Запись успешно создана');
       onRefresh();
+      if (viewMode === 'week') {
+        loadWeekBookings(weekDates);
+      }
     } catch (err: any) {
-      alert(`Ошибка создания записи: ${err.message || err}`);
+      onShowToast(`Ошибка создания записи: ${err.message || err}`);
     }
   };
 
@@ -286,17 +386,48 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
     if (!selectedBooking) return;
     try {
       setIsUpdatingStatus(true);
-      await api.updateBookingStatus(
+      const res = await api.updateBookingStatus(
         selectedBooking.id,
         { status: targetStatus },
         token,
         tenantId
       );
       onShowToast(`Статус обновлен на «${targetStatus}»`);
-      setSelectedBooking(null);
+
+      // Update active modal with authoritative financial data from backend
+      if (res && res.finance) {
+        setSelectedBooking(prev => prev ? {
+          ...prev,
+          status: targetStatus,
+          cost_minor: res.cost_minor,
+          rendered_minor: res.rendered_minor,
+          paid_minor: res.paid_minor,
+          debt_minor: res.debt_minor,
+          payment_status: res.payment_status,
+          finance: res.finance
+        } : null);
+        if (bookingDetail) {
+          setBookingDetail(prev => prev ? {
+            ...prev,
+            status: targetStatus,
+            cost_minor: res.cost_minor,
+            rendered_minor: res.rendered_minor,
+            paid_minor: res.paid_minor,
+            debt_minor: res.debt_minor,
+            payment_status: res.payment_status,
+            finance: res.finance
+          } : null);
+        }
+      } else {
+        setSelectedBooking(prev => prev ? { ...prev, status: targetStatus } : null);
+      }
+
       onRefresh();
+      if (viewMode === 'week') {
+        loadWeekBookings(weekDates);
+      }
     } catch (err: any) {
-      alert(`Ошибка обновления статуса: ${err.message || err}`);
+      onShowToast(`Ошибка обновления статуса: ${err.message || err}`);
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -312,8 +443,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       setSelectedBooking(null);
       onShowToast('Запись отменена');
       onRefresh();
+      if (viewMode === 'week') {
+        loadWeekBookings(weekDates);
+      }
     } catch (err: any) {
-      alert(`Ошибка отмены: ${err.message || err}`);
+      onShowToast(`Ошибка отмены: ${err.message || err}`);
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -325,13 +459,27 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
     try {
       setIsUpdatingStatus(true);
       const newStartsAt = localToUtcIso(rescheduleDate, rescheduleTime, timezoneIana);
-      await api.rescheduleBooking(selectedBooking.id, { starts_at_utc: newStartsAt }, token, tenantId);
+      const targetStaff = rescheduleStaffId || selectedBooking.staff_id;
+      await api.rescheduleBooking(
+        selectedBooking.id,
+        {
+          starts_at_utc: newStartsAt,
+          new_starts_at_utc: newStartsAt,
+          staff_id: targetStaff,
+          new_staff_id: targetStaff,
+        },
+        token,
+        tenantId
+      );
       setShowRescheduleModal(false);
       setSelectedBooking(null);
       onShowToast('Запись перенесена');
       onRefresh();
+      if (viewMode === 'week') {
+        loadWeekBookings(weekDates);
+      }
     } catch (err: any) {
-      alert(`Ошибка переноса: ${err.message || err}`);
+      onShowToast(`Ошибка переноса: ${err.message || err}`);
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -340,15 +488,19 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   // Create Calendar Block
   const handleCreateBlock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!blockStaffId) return;
+    const effectiveStaffId = blockStaffId || (staffList.length > 0 ? staffList[0].id : '');
+    if (!effectiveStaffId) {
+      onShowToast('Выберите специалиста для блокировки времени');
+      return;
+    }
     try {
       await api.createCalendarBlock(
         {
           branch_id: branchId,
-          staff_id: blockStaffId,
+          staff_id: effectiveStaffId,
           starts_at_utc: localToUtcIso(currentDate, blockStart, timezoneIana),
           ends_at_utc: localToUtcIso(currentDate, blockEnd, timezoneIana),
-          block_reason: blockReason,
+          block_reason: blockReason || 'Блокировка времени',
         },
         token,
         tenantId
@@ -356,8 +508,30 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       setShowBlockModal(false);
       onShowToast('Блокировка времени добавлена');
       onRefresh();
+      if (viewMode === 'week') {
+        loadWeekBookings(weekDates);
+      }
     } catch (err: any) {
-      alert(`Ошибка создания блокировки: ${err.message || err}`);
+      onShowToast(`Ошибка создания блокировки: ${err.message || err}`);
+    }
+  };
+
+  // Delete Calendar Block
+  const handleDeleteBlock = async () => {
+    if (!selectedBlock) return;
+    try {
+      setIsDeletingBlock(true);
+      await api.deleteCalendarBlock(selectedBlock.id, token, tenantId);
+      setSelectedBlock(null);
+      onShowToast('Блокировка времени удалена');
+      onRefresh();
+      if (viewMode === 'week') {
+        loadWeekBookings(weekDates);
+      }
+    } catch (err: any) {
+      onShowToast(`Ошибка удаления блокировки: ${err.message || err}`);
+    } finally {
+      setIsDeletingBlock(false);
     }
   };
 
@@ -469,6 +643,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           >
             <button
               type="button"
+              data-testid="calendar-view-day"
               onClick={() => setViewMode('day')}
               style={{
                 border: 'none',
@@ -486,6 +661,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             </button>
             <button
               type="button"
+              data-testid="calendar-view-week"
               onClick={() => setViewMode('week')}
               style={{
                 border: 'none',
@@ -520,10 +696,40 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             </button>
           </div>
 
+          <button
+            type="button"
+            data-testid="calendar-refresh-btn"
+            onClick={() => {
+              onRefresh();
+              if (viewMode === 'week') {
+                loadWeekBookings(weekDates);
+              }
+            }}
+            title="Синхронизировать расписание"
+            style={{
+              height: '36px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#334155',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span>🔄</span>
+            <span>Обновить</span>
+          </button>
+
           {userRole !== 'master' && (
             <>
               <button
                 type="button"
+                data-testid="calendar-create-block-btn"
                 onClick={() => {
                   if (staffList.length > 0) setBlockStaffId(staffList[0].id);
                   setShowBlockModal(true);
@@ -544,6 +750,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               </button>
               <button
                 type="button"
+                data-testid="calendar-create-booking-btn"
                 onClick={handleOpenNewBooking}
                 style={{
                   height: '36px',
@@ -759,7 +966,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         key={b.id}
                         data-booking-id={b.id}
                         data-public-ref={b.public_ref}
-                        onClick={() => setSelectedBooking(b)}
+                        onClick={() => handleSelectBooking(b)}
                         style={{
                           position: 'absolute',
                           top: `${top}px`,
@@ -800,8 +1007,102 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         <div style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {b.customer_name}
                         </div>
-                        <div style={{ fontSize: '11px', color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {b.services.join(', ')} · {(b.amount_minor / 100).toLocaleString('ru-RU')} ₸
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {b.services.join(', ')} · {(b.amount_minor / 100).toLocaleString('ru-RU')} ₸
+                          </span>
+                          {b.status === 'completed' && (b.debt_minor ?? b.amount_minor) > 0 && (
+                            <span
+                              style={{
+                                fontSize: '9px',
+                                fontWeight: 700,
+                                color: '#991B1B',
+                                background: '#FEE2E2',
+                                padding: '1px 4px',
+                                borderRadius: '4px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Долг
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Calendar Blocks rendered in Column */}
+                  {staffBlocks.map(bl => {
+                    const startDate = new Date(bl.starts_at_utc);
+                    const endDate = new Date(bl.ends_at_utc);
+                    const { hour: startH, minute: startM } = getLocalHourAndMinute(startDate, timezoneIana);
+                    const { hour: endH, minute: endM } = getLocalHourAndMinute(endDate, timezoneIana);
+
+                    const top = (startH - 9) * 80 + (startM / 60) * 80 + 54;
+                    const durationM = (endH - startH) * 60 + (endM - startM);
+                    const height = Math.max((durationM / 60) * 80 - 4, 34);
+
+                    const startTimeStr = formatTimeInZone(bl.starts_at_utc, timezoneIana);
+                    const endTimeStr = formatTimeInZone(bl.ends_at_utc, timezoneIana);
+
+                    return (
+                      <div
+                        key={bl.id}
+                        data-block-id={bl.id}
+                        onClick={() => setSelectedBlock(bl)}
+                        title={`${bl.block_reason || 'Блокировка'} (${startTimeStr}–${endTimeStr})`}
+                        style={{
+                          position: 'absolute',
+                          top: `${top}px`,
+                          left: '4px',
+                          right: '4px',
+                          height: `${height}px`,
+                          background: '#F1F5F9',
+                          backgroundImage: 'repeating-linear-gradient(135deg, #F1F5F9 0 6px, #E2E8F0 6px 7px)',
+                          border: '1px solid #CBD5E1',
+                          borderLeft: '4px solid #64748B',
+                          borderRadius: '8px',
+                          padding: '4px 8px',
+                          boxSizing: 'border-box',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          zIndex: 5,
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#334155' }}>
+                            🔒 {startTimeStr}–{endTimeStr}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              background: '#E2E8F0',
+                              color: '#475569',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            Занято
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            color: '#1E293B',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            marginTop: '2px',
+                          }}
+                        >
+                          {bl.block_reason || 'Блокировка времени'}
                         </div>
                       </div>
                     );
@@ -874,6 +1175,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     if (selectedStaffFilter === 'all') return true;
                     return b.staff_id === selectedStaffFilter;
                   });
+                  const dayBlocks = (weekBlocks[dateStr] || []).filter(bl => {
+                    if (selectedStaffFilter === 'all') return true;
+                    return bl.staff_id === selectedStaffFilter;
+                  });
                   const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
                   const [y, m, d] = dateStr.split('-').map(Number);
                   const isCurrent = dateStr === currentDate;
@@ -917,11 +1222,24 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         )}
                       </div>
 
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: dayBookings.length > 0 ? '#2563EB' : '#94A3B8' }}>
-                        Записей: {dayBookings.length}
+                      <div style={{ display: 'flex', gap: '6px', fontSize: '11px', fontWeight: 600 }}>
+                        <span style={{ color: dayBookings.length > 0 ? '#2563EB' : '#94A3B8' }}>
+                          Записей: {dayBookings.length}
+                        </span>
+                        {dayBlocks.length > 0 && (
+                          <span style={{ color: '#64748B' }}>
+                            · Блоков: {dayBlocks.length}
+                          </span>
+                        )}
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1 }}>
+                        {dayBookings.length === 0 && dayBlocks.length === 0 && (
+                          <div style={{ padding: '20px 8px', textAlign: 'center', fontSize: '12px', color: '#94A3B8' }}>
+                            Свободно
+                          </div>
+                        )}
+
                         {dayBookings.map(b => {
                           const badge = getStatusBadge(b.status);
                           const startTime = formatTimeInZone(b.starts_at_utc, timezoneIana);
@@ -933,7 +1251,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               key={b.id}
                               data-booking-id={b.id}
                               data-public-ref={b.public_ref}
-                              onClick={() => setSelectedBooking(b)}
+                              onClick={() => handleSelectBooking(b)}
                               style={{
                                 padding: '8px',
                                 background: '#FFFFFF',
@@ -959,6 +1277,48 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               <div style={{ fontSize: '11px', color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {b.services[0] || 'Визит'} · {staff?.name || 'Мастер'}
                               </div>
+                            </div>
+                          );
+                        })}
+
+                        {dayBlocks.map(bl => {
+                          const startTime = formatTimeInZone(bl.starts_at_utc, timezoneIana);
+                          const endTime = formatTimeInZone(bl.ends_at_utc, timezoneIana);
+                          const staff = staffList.find(s => s.id === bl.staff_id);
+
+                          return (
+                            <div
+                              key={bl.id}
+                              data-block-id={bl.id}
+                              onClick={() => setSelectedBlock(bl)}
+                              style={{
+                                padding: '8px',
+                                background: '#F8FAFC',
+                                backgroundImage: 'repeating-linear-gradient(135deg, #F8FAFC 0 6px, #E2E8F0 6px 7px)',
+                                border: '1px solid #CBD5E1',
+                                borderLeft: '3px solid #64748B',
+                                borderRadius: '8px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '3px',
+                                cursor: 'pointer',
+                                transition: 'box-shadow 0.15s',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                                <span style={{ fontWeight: 700, color: '#334155' }}>🔒 {startTime}–{endTime}</span>
+                                <span style={{ fontSize: '9px', fontWeight: 600, padding: '1px 4px', borderRadius: '3px', background: '#E2E8F0', color: '#475569' }}>
+                                  Занято
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '12px', fontWeight: 600, color: '#1E293B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {bl.block_reason || 'Блокировка времени'}
+                              </div>
+                              {staff && (
+                                <div style={{ fontSize: '11px', color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {staff.name}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1001,7 +1361,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     return (
                       <tr
                         key={b.id}
-                        onClick={() => setSelectedBooking(b)}
+                        data-booking-id={b.id}
+                        data-public-ref={b.public_ref}
+                        onClick={() => handleSelectBooking(b)}
                         style={{ borderBottom: '1px solid #F1F5F9', cursor: 'pointer' }}
                       >
                         <td style={{ padding: '12px', fontWeight: 600 }}>{b.public_ref}</td>
@@ -1040,150 +1402,436 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       </div>
 
       {/* Selected Booking Detail Modal */}
-      {selectedBooking && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15,23,42,0.4)',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-          }}
-        >
+      {selectedBooking && (() => {
+        const active = selectedBooking;
+        const badge = getStatusBadge(active.status);
+        const costMinor = bookingDetail?.cost_minor ?? active.cost_minor ?? active.amount_minor;
+        const renderedMinor = bookingDetail?.rendered_minor ?? active.rendered_minor ?? (active.status === 'completed' ? active.amount_minor : 0);
+        const paidMinor = bookingDetail?.paid_minor ?? active.paid_minor ?? 0;
+        const debtMinor = bookingDetail?.debt_minor ?? active.debt_minor ?? (active.status === 'completed' ? Math.max(0, costMinor - paidMinor) : 0);
+        const paymentStatus = bookingDetail?.payment_status ?? active.payment_status ?? (paidMinor >= renderedMinor && renderedMinor > 0 ? 'paid' : paidMinor > 0 ? 'partially_paid' : 'unpaid');
+        const currency = bookingDetail?.finance?.currency || 'KZT';
+        const currencySymbol = currency === 'KZT' ? '₸' : currency;
+
+        return (
           <div
             style={{
-              width: '100%',
-              maxWidth: '460px',
-              background: '#FFFFFF',
-              borderRadius: '20px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-              padding: '24px',
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15,23,42,0.4)',
+              zIndex: 100,
               display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: 700 }}>Карточка записи</div>
-              <button
-                type="button"
-                onClick={() => setSelectedBooking(null)}
-                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '520px',
+                background: '#FFFFFF',
+                borderRadius: '20px',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+                padding: '24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '18px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+              }}
+              data-testid="visit-card-modal"
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>
+                    Карточка записи #{active.public_ref}
+                  </div>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>{active.customer_name}</span>
+                    {active.customer_id && onOpenCustomer && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cid = active.customer_id!;
+                          setSelectedBooking(null);
+                          setBookingDetail(null);
+                          onOpenCustomer(cid);
+                        }}
+                        title="Перейти в карточку клиента"
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid #3B82F6',
+                          background: '#EFF6FF',
+                          color: '#1D4ED8',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        👤 Карточка
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>
+                    {active.customer_phone}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    data-testid="visit-status-badge"
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      background: badge.bg,
+                      color: badge.text,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                    }}
+                  >
+                    {badge.label}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedBooking(null); setBookingDetail(null); }}
+                    style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748B', padding: '4px' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* M11 Financial Block */}
+              <div
+                data-testid="visit-financial-block"
+                style={{
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
               >
-                ✕
-              </button>
-            </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Финансовый расчёт визита
+                  </div>
+                  <div>
+                    {paymentStatus === 'paid' && (
+                      <span
+                        data-testid="payment-status-badge"
+                        style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: '#DCFCE7', color: '#166534', border: '1px solid #86EFAC' }}
+                      >
+                        ✓ Оплачено
+                      </span>
+                    )}
+                    {paymentStatus === 'partially_paid' && (
+                      <span
+                        data-testid="payment-status-badge"
+                        style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: '#DBEAFE', color: '#1E40AF', border: '1px solid #93C5FD' }}
+                      >
+                        Частичная оплата
+                      </span>
+                    )}
+                    {paymentStatus === 'unpaid' && (
+                      <span
+                        data-testid="payment-status-badge"
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          background: debtMinor > 0 ? '#FEF2F2' : '#F1F5F9',
+                          color: debtMinor > 0 ? '#991B1B' : '#475569',
+                          border: debtMinor > 0 ? '1px solid #FCA5A5' : '1px solid #CBD5E1',
+                        }}
+                      >
+                        {debtMinor > 0 ? 'Не оплачено (Долг)' : 'Не оплачено'}
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '14px' }}>
-              <div><b>Код бронирования:</b> {selectedBooking.public_ref}</div>
-              <div><b>Клиент:</b> {selectedBooking.customer_name}</div>
-              <div><b>Телефон:</b> {selectedBooking.customer_phone}</div>
-              <div><b>Услуги:</b> {selectedBooking.services.join(', ')}</div>
-              <div><b>Сумма:</b> {(selectedBooking.amount_minor / 100).toLocaleString('ru-RU')} ₸</div>
-              <div><b>Статус:</b> {selectedBooking.status}</div>
-            </div>
+                {/* 4 Separate Financial Fields */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                  {/* 1. Стоимость */}
+                  <div
+                    data-testid="financial-cost-tile"
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '12px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>Стоимость</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A' }}>
+                      {(costMinor / 100).toLocaleString('ru-RU')} {currencySymbol}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#94A3B8' }}>По прайсу визита</div>
+                  </div>
 
-            {/* Action buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
-              {selectedBooking.status === 'confirmed' && (
-                <button
-                  type="button"
-                  onClick={() => handleUpdateStatus('arrived')}
-                  disabled={isUpdatingStatus}
+                  {/* 2. Оказано */}
+                  <div
+                    data-testid="financial-rendered-tile"
+                    style={{
+                      background: renderedMinor > 0 ? '#F0FDF4' : '#FFFFFF',
+                      border: `1px solid ${renderedMinor > 0 ? '#BBF7D0' : '#E2E8F0'}`,
+                      borderRadius: '12px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: renderedMinor > 0 ? '#166534' : '#64748B', fontWeight: 600 }}>
+                      Оказано
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: renderedMinor > 0 ? '#15803D' : '#64748B' }}>
+                      {(renderedMinor / 100).toLocaleString('ru-RU')} {currencySymbol}
+                    </div>
+                    <div style={{ fontSize: '10px', color: renderedMinor > 0 ? '#16A34A' : '#94A3B8' }}>
+                      {renderedMinor > 0 ? 'Факт оказания подтверждён' : 'Визит ещё не завершён'}
+                    </div>
+                  </div>
+
+                  {/* 3. Получено */}
+                  <div
+                    data-testid="financial-paid-tile"
+                    style={{
+                      background: paidMinor > 0 ? '#EFF6FF' : '#FFFFFF',
+                      border: `1px solid ${paidMinor > 0 ? '#BFDBFE' : '#E2E8F0'}`,
+                      borderRadius: '12px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: paidMinor > 0 ? '#1E40AF' : '#64748B', fontWeight: 600 }}>
+                      Получено
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: paidMinor > 0 ? '#2563EB' : '#64748B' }}>
+                      {(paidMinor / 100).toLocaleString('ru-RU')} {currencySymbol}
+                    </div>
+                    <div style={{ fontSize: '10px', color: paidMinor > 0 ? '#2563EB' : '#94A3B8' }}>
+                      {paidMinor > 0 ? 'Оплата внесена' : 'Оплат не поступало'}
+                    </div>
+                  </div>
+
+                  {/* 4. Долг */}
+                  <div
+                    data-testid="financial-debt-tile"
+                    style={{
+                      background: debtMinor > 0 ? '#FEF2F2' : '#FFFFFF',
+                      border: `1px solid ${debtMinor > 0 ? '#FCA5A5' : '#E2E8F0'}`,
+                      borderRadius: '12px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: debtMinor > 0 ? '#991B1B' : '#64748B', fontWeight: 600 }}>
+                      Долг
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: debtMinor > 0 ? '#DC2626' : '#15803D' }}>
+                      {(debtMinor / 100).toLocaleString('ru-RU')} {currencySymbol}
+                    </div>
+                    <div style={{ fontSize: '10px', color: debtMinor > 0 ? '#B91C1C' : '#16A34A' }}>
+                      {debtMinor > 0 ? 'Подлежит оплате' : 'Долг отсутствует'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Explanatory Policy Notice */}
+                <div
                   style={{
-                    height: '42px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: '#D97706',
-                    color: '#FFFFFF',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Клиент прибыл
-                </button>
-              )}
-              {selectedBooking.status === 'arrived' && (
-                <button
-                  type="button"
-                  onClick={() => handleUpdateStatus('in_progress')}
-                  disabled={isUpdatingStatus}
-                  style={{
-                    height: '42px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: '#2563EB',
-                    color: '#FFFFFF',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Начать визит
-                </button>
-              )}
-              {selectedBooking.status === 'in_progress' && (
-                <button
-                  type="button"
-                  onClick={() => handleUpdateStatus('completed')}
-                  disabled={isUpdatingStatus}
-                  style={{
-                    height: '42px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: '#059669',
-                    color: '#FFFFFF',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Завершить визит
-                </button>
-              )}
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowRescheduleModal(true)}
-                  style={{
-                    flex: 1,
-                    height: '38px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    fontSize: '11px',
+                    color: '#475569',
                     background: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Перенести
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCancelModal(true)}
-                  style={{
-                    flex: 1,
-                    height: '38px',
+                    padding: '8px 10px',
                     borderRadius: '8px',
-                    border: '1px solid #FCA5A5',
-                    background: '#FEF2F2',
-                    color: '#991B1B',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
+                    border: '1px solid #E2E8F0',
+                    lineHeight: '1.4',
                   }}
                 >
-                  Отменить
-                </button>
+                  ℹ️ <b>Разделение статуса и денег:</b> Завершение визита фиксирует факт оказания услуги, но не закрывает долг и не создаёт фиктивной оплаты.
+                </div>
+              </div>
+
+              {/* Services breakdown */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+                  Состав заказа ({bookingDetail?.items?.length || active.services.length})
+                </div>
+                {isLoadingDetail ? (
+                  <div style={{ fontSize: '12px', color: '#94A3B8' }}>Загрузка деталей услуг…</div>
+                ) : bookingDetail?.items && bookingDetail.items.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {bookingDetail.items.map((it, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '8px 10px',
+                          background: '#F8FAFC',
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontWeight: 600, color: '#0F172A' }}>{it.service_name}</span>
+                          <span style={{ fontSize: '11px', color: '#64748B', marginLeft: '6px' }}>
+                            ({it.duration_minutes} мин.)
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 700, color: '#0F172A' }}>
+                          {(it.price_minor / 100).toLocaleString('ru-RU')} {currencySymbol}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: '#64748B' }}>
+                    {active.services.join(', ')} — {(active.amount_minor / 100).toLocaleString('ru-RU')} {currencySymbol}
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
+                {active.status === 'confirmed' && (
+                  <button
+                    type="button"
+                    data-testid="status-btn-arrived"
+                    onClick={() => handleUpdateStatus('arrived')}
+                    disabled={isUpdatingStatus}
+                    style={{
+                      height: '42px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: '#D97706',
+                      color: '#FFFFFF',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isUpdatingStatus ? 'Обновление...' : 'Клиент прибыл'}
+                  </button>
+                )}
+                {active.status === 'arrived' && (
+                  <button
+                    type="button"
+                    data-testid="status-btn-in-progress"
+                    onClick={() => handleUpdateStatus('in_progress')}
+                    disabled={isUpdatingStatus}
+                    style={{
+                      height: '42px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: '#2563EB',
+                      color: '#FFFFFF',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isUpdatingStatus ? 'Обновление...' : 'Начать визит'}
+                  </button>
+                )}
+                {active.status === 'in_progress' && (
+                  <button
+                    type="button"
+                    data-testid="status-btn-completed"
+                    onClick={() => handleUpdateStatus('completed')}
+                    disabled={isUpdatingStatus}
+                    style={{
+                      height: '42px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: '#059669',
+                      color: '#FFFFFF',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isUpdatingStatus ? 'Обновление...' : 'Завершить визит'}
+                  </button>
+                )}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {active.status !== 'completed' && active.status !== 'cancelled' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowRescheduleModal(true)}
+                        style={{
+                          flex: 1,
+                          height: '38px',
+                          borderRadius: '8px',
+                          border: '1px solid #CBD5E1',
+                          background: '#FFFFFF',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Перенести
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowCancelModal(true)}
+                        style={{
+                          flex: 1,
+                          height: '38px',
+                          borderRadius: '8px',
+                          border: '1px solid #FCA5A5',
+                          background: '#FEF2F2',
+                          color: '#991B1B',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Отменить
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    data-testid="visit-card-close-btn"
+                    onClick={() => { setSelectedBooking(null); setBookingDetail(null); }}
+                    style={{
+                      flex: (active.status === 'completed' || active.status === 'cancelled') ? 1 : 'none',
+                      padding: '0 16px',
+                      height: '38px',
+                      borderRadius: '8px',
+                      border: '1px solid #CBD5E1',
+                      background: '#F8FAFC',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Закрыть
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Cancel Modal */}
       {showCancelModal && selectedBooking && (
@@ -1276,6 +1924,20 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           >
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Перенос записи</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 500 }}>Специалист</label>
+              <select
+                value={rescheduleStaffId || selectedBooking.staff_id}
+                onChange={e => setRescheduleStaffId(e.target.value)}
+                style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '14px' }}
+              >
+                {staffList.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.role_title || 'Специалист'})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Новая дата</label>
               <input
                 type="date"
@@ -1351,12 +2013,28 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               </button>
             </div>
 
+            {/* Linked customer badge */}
+            {selectedCustomerId && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#EFF6FF', borderRadius: '8px', border: '1px solid #BFDBFE', fontSize: '12px', color: '#1D4ED8' }}>
+                <span>🔗 Связан с карточкой: <b>{selectedCustomerName}</b></span>
+                <button
+                  type="button"
+                  onClick={handleClearSelectedCustomer}
+                  title="Отвязать карточку"
+                  style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Имя клиента</label>
               <input
                 type="text"
+                data-testid="booking-cust-name-input"
                 value={newCustName}
-                onChange={e => setNewCustName(e.target.value)}
+                onChange={e => handleCustPhoneOrNameChange(e.target.value, newCustPhone)}
                 placeholder="Айбек Жумабаев"
                 required
                 style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
@@ -1367,17 +2045,40 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Телефон</label>
               <input
                 type="tel"
+                data-testid="booking-cust-phone-input"
                 value={newCustPhone}
-                onChange={e => setNewCustPhone(e.target.value)}
+                onChange={e => handleCustPhoneOrNameChange(newCustName, e.target.value)}
                 placeholder="+7 (701) 234-56-78"
                 required
                 style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
               />
             </div>
 
+            {/* Suggestions dropdown */}
+            {custSuggestions.length > 0 && !selectedCustomerId && (
+              <div style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                <div style={{ padding: '6px 10px', fontSize: '11px', color: '#64748B', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                  Найдено в базе клиентов (нажмите для выбора):
+                </div>
+                {custSuggestions.map(c => (
+                  <div
+                    key={c.id}
+                    onClick={() => handleSelectCustomer(c)}
+                    style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #F1F5F9', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#F1F5F9')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#FFFFFF')}
+                  >
+                    <span style={{ fontWeight: 600 }}>{c.full_name}</span>
+                    <span style={{ color: '#64748B' }}>{(c as any).phone || c.phone_e164}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Мастер</label>
               <select
+                data-testid="booking-staff-select"
                 value={newStaffId}
                 onChange={e => setNewStaffId(e.target.value)}
                 style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
@@ -1392,6 +2093,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Время визита</label>
               <input
                 type="time"
+                data-testid="booking-time-input"
                 value={newTime}
                 onChange={e => setNewTime(e.target.value)}
                 style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
@@ -1433,6 +2135,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               </button>
               <button
                 type="submit"
+                data-testid="submit-booking-btn"
                 style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontWeight: 600 }}
               >
                 Создать бронь
@@ -1473,12 +2176,12 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Сотрудник</label>
               <select
-                value={blockStaffId}
+                value={blockStaffId || (staffList.length > 0 ? staffList[0].id : '')}
                 onChange={e => setBlockStaffId(e.target.value)}
                 style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
               >
                 {staffList.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+                  <option key={s.id} value={s.id}>{s.name} ({s.role_title || 'Барбер'})</option>
                 ))}
               </select>
             </div>
@@ -1504,7 +2207,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Причина блокировки</label>
               <input
                 type="text"
@@ -1513,6 +2216,26 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 placeholder="Обед, санитарный час, отгул"
                 style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
               />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '2px' }}>
+                {['Перерыв на обед', 'Обучение', 'Личные дела', 'Технический перерыв'].map(r => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setBlockReason(r)}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #CBD5E1',
+                      background: blockReason === r ? '#0F172A' : '#F1F5F9',
+                      color: blockReason === r ? '#FFFFFF' : '#334155',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
@@ -1525,12 +2248,110 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               </button>
               <button
                 type="submit"
+                data-testid="submit-block-btn"
                 style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#0F172A', color: '#FFFFFF', fontWeight: 600 }}
               >
                 Заблокировать
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Block Details Modal */}
+      {selectedBlock && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15,23,42,0.4)',
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              background: '#FFFFFF',
+              borderRadius: '20px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '18px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>🔒</span>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Блокировка времени</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedBlock(null)}
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748B' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '14px', background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+              <div>
+                <span style={{ color: '#64748B' }}>Специалист: </span>
+                <b>{staffList.find(s => s.id === selectedBlock.staff_id)?.name || 'Все / Не указан'}</b>
+              </div>
+              <div>
+                <span style={{ color: '#64748B' }}>Время: </span>
+                <b>{formatTimeInZone(selectedBlock.starts_at_utc, timezoneIana)} – {formatTimeInZone(selectedBlock.ends_at_utc, timezoneIana)}</b>
+              </div>
+              <div>
+                <span style={{ color: '#64748B' }}>Причина: </span>
+                <b>{selectedBlock.block_reason || 'Перерыв / блокировка'}</b>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedBlock(null)}
+                style={{
+                  flex: 1,
+                  height: '42px',
+                  borderRadius: '10px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Закрыть
+              </button>
+              <button
+                type="button"
+                data-testid="delete-block-btn"
+                onClick={handleDeleteBlock}
+                disabled={isDeletingBlock}
+                style={{
+                  flex: 1,
+                  height: '42px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {isDeletingBlock ? 'Удаление...' : 'Снять блокировку'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

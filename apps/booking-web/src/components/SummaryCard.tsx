@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BranchResponse, ServiceItemResponse, StaffPublicResponse, SlotResponse } from '@crm/api-client';
-import { BookingStep } from '../types';
+import { BookingFlow, BookingStep } from '../types';
 
 interface SummaryCardProps {
   branch: BranchResponse | null;
@@ -8,6 +8,7 @@ interface SummaryCardProps {
   selectedStaff: StaffPublicResponse | 'any' | null;
   selectedSlot: SlotResponse | null;
   currentStep: BookingStep;
+  flow: BookingFlow;
   onNext: () => void;
   accentColor?: string;
 }
@@ -18,6 +19,7 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
   selectedStaff,
   selectedSlot,
   currentStep,
+  flow,
   onNext,
   accentColor = 'var(--accent, #242424)',
 }) => {
@@ -46,19 +48,32 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
     return `${dateFormatted}, ${timeFormatted}`;
   };
 
-  // Determine CTA label and active status
+  // Determine CTA label and active status based on flow and current step
   let ctaLabel = 'Продолжить';
   let canProceed = false;
 
   if (currentStep === 'services') {
-    ctaLabel = selectedStaff ? 'Выбрать время' : 'Выбрать специалиста';
+    if (flow === 'master-first') {
+      ctaLabel = 'Выбрать дату и время';
+    } else {
+      ctaLabel = 'Выбрать специалиста';
+    }
     canProceed = selectedServices.length > 0;
   } else if (currentStep === 'staff') {
-    ctaLabel = selectedServices.length > 0 ? 'Выбрать дату и время' : 'Выбрать услуги';
+    if (flow === 'master-first') {
+      ctaLabel = 'Выбрать услуги';
+    } else {
+      ctaLabel = 'Выбрать дату и время';
+    }
     canProceed = selectedStaff !== null;
   } else if (currentStep === 'datetime') {
-    ctaLabel = selectedServices.length > 0 ? 'Указать контакты' : 'Выбрать услуги';
-    canProceed = selectedSlot !== null;
+    if (flow === 'time-first' && selectedServices.length === 0) {
+      ctaLabel = 'Выбрать услуги';
+      canProceed = selectedSlot !== null;
+    } else {
+      ctaLabel = 'Указать контакты';
+      canProceed = selectedSlot !== null;
+    }
   } else if (currentStep === 'confirm') {
     ctaLabel = 'Подтвердить запись';
     canProceed = true;
@@ -76,7 +91,7 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
         background: 'var(--card, #FFFFFF)',
         border: '1px solid var(--hair, #D9D9D5)',
         borderRadius: 'var(--r, 20px)',
-        boxShadow: 'var(--sh2)',
+        boxShadow: 'var(--sh2, 0 4px 16px rgba(0,0,0,0.06))',
         color: 'var(--ink, #202124)',
         padding: '24px',
         display: 'flex',
@@ -194,7 +209,7 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
             borderRadius: 'var(--r, 16px)',
             background: canProceed ? accentColor : 'var(--tile, #F0F0EE)',
             color: canProceed ? 'var(--on-accent, #FFFFFF)' : 'var(--muted, #646464)',
-            boxShadow: canProceed ? 'var(--sh-acc)' : 'none',
+            boxShadow: canProceed ? 'var(--sh-acc, 0 4px 12px rgba(0,0,0,0.1))' : 'none',
             fontSize: '16px',
             fontWeight: 600,
             display: 'flex',

@@ -35,6 +35,53 @@ export interface BookingCreatedResponse {
   management_url: string;
 }
 
+export interface VisitFinancialSummary {
+  currency: string;
+  cost_minor: number;
+  rendered_minor: number;
+  paid_minor: number;
+  debt_minor: number;
+  payment_status: 'unpaid' | 'partially_paid' | 'paid';
+  order_id?: string | null;
+}
+
+export interface BookingItemDetail {
+  service_name: string;
+  duration_minutes: number;
+  price_minor: number;
+}
+
+export interface BookingEventDetail {
+  event_type: string;
+  actor_type: string;
+  created_at: string;
+}
+
+export interface BookingCardResponse {
+  id: string;
+  public_ref: string;
+  status: string;
+  starts_at_utc: string;
+  service_ends_at_utc: string;
+  staff_id: string;
+  staff_name: string;
+  customer: {
+    id: string;
+    name: string;
+    phone: string;
+    notes?: string | null;
+  };
+  amount_minor: number;
+  cost_minor: number;
+  rendered_minor: number;
+  paid_minor: number;
+  debt_minor: number;
+  payment_status: 'unpaid' | 'partially_paid' | 'paid';
+  finance: VisitFinancialSummary;
+  items: BookingItemDetail[];
+  events: BookingEventDetail[];
+}
+
 export interface BookingPolicyUpdateRequest {
   book_ahead_days?: number | any;
   min_advance_minutes?: number | any;
@@ -66,6 +113,7 @@ export interface CRMCreateBookingRequest {
   customer_phone: string;
   customer_email?: string | any;
   notes?: string | any;
+  customer_id?: string;
 }
 
 export interface CalendarBlockCreateRequest {
@@ -244,6 +292,22 @@ export interface StaffPublicResponse {
   display_name: string;
   role_title: string;
   color: string;
+  price_minor?: number;
+  duration_minutes?: number;
+}
+
+export interface StaffTimeOffResponse {
+  id: string;
+  staff_id: string;
+  from_at_utc: string;
+  to_at_utc: string;
+  reason?: string;
+}
+
+export interface StaffTimeOffCreateRequest {
+  from_at_utc: string;
+  to_at_utc: string;
+  reason?: string;
 }
 
 export interface StaffServiceOfferUpdateRequest {
