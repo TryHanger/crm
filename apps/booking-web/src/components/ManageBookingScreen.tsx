@@ -271,6 +271,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
           <span style={{ fontSize: '14px', color: '#64748B' }}>Код визита: #{booking.public_ref}</span>
         </div>
         <span
+          data-testid="manage-status-badge"
           style={{
             padding: '6px 14px',
             borderRadius: '12px',
@@ -405,6 +406,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
             <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>Дата переноса</label>
             <input
               type="date"
+              data-testid="manage-reschedule-date"
               value={rescheduleDate}
               onChange={e => setRescheduleDate(e.target.value)}
               style={{
@@ -435,6 +437,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
                   <button
                     key={s.quote_id}
                     type="button"
+                    data-testid="manage-slot-btn"
                     onClick={() => setSelectedSlot(s)}
                     style={{
                       height: '42px',
@@ -455,6 +458,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
 
           <button
             type="button"
+            data-testid="manage-confirm-reschedule-btn"
             onClick={handleConfirmReschedule}
             disabled={!selectedSlot || isLoading}
             style={{
@@ -491,6 +495,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
           </p>
           <input
             type="text"
+            data-testid="manage-cancel-reason-input"
             placeholder="Причина отмены (необязательно)"
             value={cancelReason}
             onChange={e => setCancelReason(e.target.value)}
@@ -505,6 +510,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
               type="button"
+              data-testid="manage-confirm-cancel-btn"
               onClick={handleConfirmCancel}
               disabled={isLoading}
               style={{
@@ -546,6 +552,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
             {booking.can_reschedule && (
               <button
                 type="button"
+                data-testid="manage-reschedule-btn"
                 onClick={() => setIsRescheduling(true)}
                 style={{
                   height: '50px',
@@ -565,6 +572,7 @@ export const ManageBookingScreen: React.FC<ManageBookingScreenProps> = ({
             {booking.can_cancel && (
               <button
                 type="button"
+                data-testid="manage-cancel-btn"
                 onClick={() => setIsCancelling(true)}
                 style={{
                   height: '50px',

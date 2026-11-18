@@ -425,6 +425,8 @@ async def get_crm_booking_card(
         "status": b.status,
         "starts_at_utc": b.starts_at_utc,
         "service_ends_at_utc": b.service_ends_at_utc,
+        "cancelled_at": b.cancelled_at,
+        "cancellation_reason": b.cancellation_reason,
         "staff_id": str(b.staff_id),
         "staff_name": staff.display_name,
         "customer": {
@@ -449,7 +451,13 @@ async def get_crm_booking_card(
             for it in items
         ],
         "events": [
-            {"event_type": ev.event_type, "actor_type": ev.actor_type, "created_at": ev.created_at}
+            {
+                "event_type": ev.event_type,
+                "actor_type": ev.actor_type,
+                "created_at": ev.created_at,
+                "old_data": ev.old_json_sanitized,
+                "new_data": ev.new_json_sanitized,
+            }
             for ev in events
         ]
     }

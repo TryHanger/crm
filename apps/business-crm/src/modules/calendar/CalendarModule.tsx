@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { CalendarBooking, CalendarStaff, CalendarBlockItem, BookingCardResponse, VisitFinancialSummary } from '../../types';
-import { BusinessCrmApiClient, CustomerResponse } from '@crm/api-client';
+import { BusinessCrmApiClient, CustomerResponse, PaymentRecord, PaymentMethod } from '@crm/api-client';
 
 export function localToUtcIso(dateStr: string, timeStr: string, timeZone: string = 'Asia/Almaty'): string {
   if (!dateStr || !timeStr) {
@@ -218,6 +218,22 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [rescheduleTime, setRescheduleTime] = useState('12:00');
   const [rescheduleStaffId, setRescheduleStaffId] = useState('');
 
+  // Payments & Cash Desk state (Sprint M12 & M13)
+  const [visitPayments, setVisitPayments] = useState<PaymentRecord[]>([]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentAmountStr, setPaymentAmountStr] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [paymentComment, setPaymentComment] = useState('');
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+
+  // Refund state (Sprint M13)
+  const [showRefundModal, setShowRefundModal] = useState(false);
+  const [selectedPaymentForRefund, setSelectedPaymentForRefund] = useState<PaymentRecord | null>(null);
+  const [refundAmountStr, setRefundAmountStr] = useState('');
+  const [refundReason, setRefundReason] = useState('Отказ от части услуги');
+  const [refundComment, setRefundComment] = useState('');
+  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
+
   const handleSelectBooking = React.useCallback(async (b: CalendarBooking) => {
     setSelectedBooking(b);
     setRescheduleStaffId(b.staff_id);
@@ -227,11 +243,16 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       setRescheduleTime(`${hour < 10 ? '0' : ''}${hour}:${minute < 10 ? '0' : ''}${minute}`);
     }
     setBookingDetail(null);
+    setVisitPayments([]);
     if (!token || !tenantId) return;
     setIsLoadingDetail(true);
     try {
-      const card = await api.getBooking(b.id, token, tenantId);
+      const [card, payments] = await Promise.all([
+        api.getBooking(b.id, token, tenantId),
+        api.getVisitPayments(b.id, token, tenantId),
+      ]);
       setBookingDetail(card);
+      setVisitPayments(payments || []);
     } catch (err) {
       console.error('Failed to load full booking details:', err);
     } finally {
@@ -440,7 +461,19 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       setIsUpdatingStatus(true);
       await api.cancelBooking(selectedBooking.id, { reason: cancelReason }, token, tenantId);
       setShowCancelModal(false);
-      setSelectedBooking(null);
+      try {
+        const updated = await api.getBooking(selectedBooking.id, token, tenantId);
+        setSelectedBooking(prev => prev ? {
+          ...prev,
+          status: updated.status,
+          starts_at_utc: updated.starts_at_utc,
+          service_ends_at_utc: updated.service_ends_at_utc,
+          staff_id: updated.staff_id,
+        } : null);
+        setBookingDetail(updated);
+      } catch {
+        setSelectedBooking(null);
+      }
       onShowToast('Запись отменена');
       onRefresh();
       if (viewMode === 'week') {
@@ -472,7 +505,19 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         tenantId
       );
       setShowRescheduleModal(false);
-      setSelectedBooking(null);
+      try {
+        const updated = await api.getBooking(selectedBooking.id, token, tenantId);
+        setSelectedBooking(prev => prev ? {
+          ...prev,
+          status: updated.status,
+          starts_at_utc: updated.starts_at_utc,
+          service_ends_at_utc: updated.service_ends_at_utc,
+          staff_id: updated.staff_id,
+        } : null);
+        setBookingDetail(updated);
+      } catch {
+        setSelectedBooking(null);
+      }
       onShowToast('Запись перенесена');
       onRefresh();
       if (viewMode === 'week') {
@@ -482,6 +527,90 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       onShowToast(`Ошибка переноса: ${err.message || err}`);
     } finally {
       setIsUpdatingStatus(false);
+    }
+  };
+
+  // Register Payment (Sprint M12)
+  const handleRegisterPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBooking) return;
+    const amountVal = parseFloat(paymentAmountStr);
+    if (isNaN(amountVal) || amountVal <= 0) {
+      onShowToast('Введите корректную сумму оплаты');
+      return;
+    }
+    const amountMinor = Math.round(amountVal * 100);
+    try {
+      setIsSubmittingPayment(true);
+      const idempotencyKey = `pay_${selectedBooking.id}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      await api.createPayment(
+        {
+          booking_id: selectedBooking.id,
+          amount_minor: amountMinor,
+          payment_method: paymentMethod,
+          comment: paymentComment.trim() || undefined,
+          cashier_name: userRole === 'owner' ? 'Владелец' : 'Администратор',
+          customer_id: selectedBooking.customer_id,
+        },
+        token,
+        tenantId,
+        idempotencyKey
+      );
+      onShowToast(`Платёж ${(amountMinor / 100).toLocaleString('ru-RU')} ₸ успешно принят`);
+      setShowPaymentModal(false);
+      setPaymentComment('');
+      // Reload payments
+      const updatedPayments = await api.getVisitPayments(selectedBooking.id, token, tenantId);
+      setVisitPayments(updatedPayments || []);
+      onRefresh();
+    } catch (err: any) {
+      onShowToast(`Ошибка приёма оплаты: ${err.message || err}`);
+    } finally {
+      setIsSubmittingPayment(false);
+    }
+  };
+
+  // Refund Payment (Sprint M13)
+  const handleConfirmRefund = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBooking || !selectedPaymentForRefund) return;
+    const refundVal = parseFloat(refundAmountStr);
+    if (isNaN(refundVal) || refundVal <= 0) {
+      onShowToast('Введите корректную сумму возврата');
+      return;
+    }
+    const refundMinor = Math.round(refundVal * 100);
+    if (refundMinor > selectedPaymentForRefund.amount_minor) {
+      onShowToast('Сумма возврата не может превышать сумму исходного платежа');
+      return;
+    }
+    try {
+      setIsSubmittingRefund(true);
+      const idempotencyKey = `ref_${selectedPaymentForRefund.id}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      await api.refundPayment(
+        {
+          payment_id: selectedPaymentForRefund.id,
+          amount_minor: refundMinor,
+          reason: refundReason,
+          comment: refundComment.trim() || undefined,
+          cashier_name: userRole === 'owner' ? 'Владелец' : 'Администратор',
+        },
+        token,
+        tenantId,
+        idempotencyKey
+      );
+      onShowToast(`Возврат ${(refundMinor / 100).toLocaleString('ru-RU')} ₸ успешно оформлен`);
+      setShowRefundModal(false);
+      setSelectedPaymentForRefund(null);
+      setRefundComment('');
+      // Reload payments
+      const updatedPayments = await api.getVisitPayments(selectedBooking.id, token, tenantId);
+      setVisitPayments(updatedPayments || []);
+      onRefresh();
+    } catch (err: any) {
+      onShowToast(`Ошибка возврата: ${err.message || err}`);
+    } finally {
+      setIsSubmittingRefund(false);
     }
   };
 
@@ -538,6 +667,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   // Format status badge
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'pending':
+        return { bg: '#FEF9C3', text: '#854D0E', label: 'Ожидает' };
       case 'confirmed':
         return { bg: '#DCFCE7', text: '#166534', label: 'Подтверждена' };
       case 'arrived':
@@ -548,6 +679,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         return { bg: '#F1F5F9', text: '#475569', label: 'Завершен' };
       case 'cancelled':
         return { bg: '#FEE2E2', text: '#991B1B', label: 'Отменен' };
+      case 'no_show':
+        return { bg: '#FEE2E2', text: '#B91C1C', label: 'Не явился' };
       default:
         return { bg: '#F1F5F9', text: '#0F172A', label: status };
     }
@@ -1406,12 +1539,18 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         const active = selectedBooking;
         const badge = getStatusBadge(active.status);
         const costMinor = bookingDetail?.cost_minor ?? active.cost_minor ?? active.amount_minor;
-        const renderedMinor = bookingDetail?.rendered_minor ?? active.rendered_minor ?? (active.status === 'completed' ? active.amount_minor : 0);
-        const paidMinor = bookingDetail?.paid_minor ?? active.paid_minor ?? 0;
-        const debtMinor = bookingDetail?.debt_minor ?? active.debt_minor ?? (active.status === 'completed' ? Math.max(0, costMinor - paidMinor) : 0);
-        const paymentStatus = bookingDetail?.payment_status ?? active.payment_status ?? (paidMinor >= renderedMinor && renderedMinor > 0 ? 'paid' : paidMinor > 0 ? 'partially_paid' : 'unpaid');
+        const renderedMinor = bookingDetail?.rendered_minor ?? active.rendered_minor ?? (active.status === 'completed' ? costMinor : 0);
+        
+        // Sum from actual payments (refunds are negative movements!)
+        const paymentsNetMinor = visitPayments.reduce((acc, p) => p.payment_type === 'refund' ? acc - p.amount_minor : acc + p.amount_minor, 0);
+        const paidMinor = visitPayments.length > 0 ? Math.max(0, paymentsNetMinor) : (bookingDetail?.paid_minor ?? active.paid_minor ?? 0);
+        
+        // Debt: strictly calculated from rendered services upon completion
+        const debtMinor = active.status === 'completed' ? Math.max(0, costMinor - paidMinor) : (costMinor - paidMinor > 0 ? costMinor - paidMinor : 0);
+        const paymentStatus = (paidMinor >= costMinor && costMinor > 0) ? 'paid' : (paidMinor > 0 ? 'partially_paid' : 'unpaid');
         const currency = bookingDetail?.finance?.currency || 'KZT';
         const currencySymbol = currency === 'KZT' ? '₸' : currency;
+        const canManageFinance = userRole === 'owner' || userRole === 'admin' || userRole === 'cashier';
 
         return (
           <div
@@ -1503,9 +1642,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </div>
               </div>
 
-              {/* M11 Financial Block */}
-              <div
-                data-testid="visit-financial-block"
+              {/* M15: Master does not see financial ledger or cashbox (мастер не видит кассу) */}
+              {userRole !== 'master' ? (
+                <div
+                  data-testid="visit-financial-block"
                 style={{
                   background: '#F8FAFC',
                   border: '1px solid #E2E8F0',
@@ -1665,7 +1805,190 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 >
                   ℹ️ <b>Разделение статуса и денег:</b> Завершение визита фиксирует факт оказания услуги, но не закрывает долг и не создаёт фиктивной оплаты.
                 </div>
+
+                {/* SPRINT M12: Cash Desk Payment Action */}
+                {canManageFinance && (
+                  <button
+                    type="button"
+                    data-testid="register-payment-btn"
+                    onClick={() => {
+                      setPaymentAmountStr((debtMinor > 0 ? debtMinor / 100 : costMinor / 100).toString());
+                      setShowPaymentModal(true);
+                    }}
+                    style={{
+                      height: '40px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: '#059669',
+                      color: '#FFFFFF',
+                      fontSize: '13.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    💵 {debtMinor > 0 ? `Принять оплату (${(debtMinor / 100).toLocaleString('ru-RU')} ₸)` : 'Принять платёж / аванс'}
+                  </button>
+                )}
+
+                {/* SPRINT M12 & M13: Payment & Refund History */}
+                <div data-testid="payment-history-block" style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155', textTransform: 'uppercase' }}>
+                      История кассовых операций ({visitPayments.length})
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#64748B' }}>
+                      Оплачено: {(paidMinor / 100).toLocaleString('ru-RU')} ₸
+                    </span>
+                  </div>
+
+                  {visitPayments.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic', padding: '4px 0' }}>
+                      Оплат по этому визиту пока не зафиксировано
+                    </div>
+                  ) : (
+                    <div data-testid="payment-history-list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {visitPayments.map((p) => {
+                        const isRefund = p.payment_type === 'refund';
+                        const d = new Date(p.created_at);
+                        const dateStr = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        const methodLabel = p.payment_method === 'cash' ? 'Наличные' : p.payment_method === 'card' ? 'Карта' : p.payment_method === 'advance' ? 'Аванс' : 'Kaspi / QR';
+
+                        return (
+                          <div
+                            key={p.id}
+                            data-testid="payment-history-item"
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              background: isRefund ? '#FEF2F2' : '#F0FDF4',
+                              border: `1px solid ${isRefund ? '#FECACA' : '#DCFCE7'}`,
+                              fontSize: '12px',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 700, color: isRefund ? '#991B1B' : '#166534' }}>
+                                {isRefund ? '↺ Возврат' : '✓ Поступление'}: {isRefund ? '-' : '+'}{(p.amount_minor / 100).toLocaleString('ru-RU')} {currencySymbol}
+                                <span style={{ fontWeight: 400, color: '#64748B', marginLeft: '6px' }}>({methodLabel})</span>
+                              </div>
+                              <div style={{ fontSize: '10.5px', color: '#64748B', marginTop: '2px' }}>
+                                {dateStr} • {p.cashier_name} {p.comment ? `• ${p.comment}` : ''}
+                              </div>
+                            </div>
+
+                            {!isRefund && canManageFinance && (
+                              <button
+                                type="button"
+                                data-testid="refund-payment-btn"
+                                onClick={() => {
+                                  setSelectedPaymentForRefund(p);
+                                  setRefundAmountStr((p.amount_minor / 100).toString());
+                                  setShowRefundModal(true);
+                                }}
+                                title="Оформить возврат средств"
+                                style={{
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #FCA5A5',
+                                  background: '#FFFFFF',
+                                  color: '#B91C1C',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Возврат
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
+              ) : (
+                <div
+                  data-testid="master-restricted-view"
+                  style={{
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>✂️</span>
+                    <span>Рабочий профиль мастера</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.4' }}>
+                    Вы авторизованы как специалист. Доступ к кассовому журналу, долгам и финансовым сводкам компании ограничен ролью управляющего.
+                  </div>
+                </div>
+              )}
+
+              {/* Status Specific Banners (M09) */}
+              {active.status === 'cancelled' && (
+                <div
+                  data-testid="cancelled-banner"
+                  style={{
+                    background: '#FEF2F2',
+                    border: '1px solid #FCA5A5',
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#991B1B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>❌</span>
+                    <span>Запись отменена</span>
+                  </div>
+                  {(bookingDetail?.cancellation_reason || cancelReason) && (
+                    <div style={{ fontSize: '13px', color: '#7F1D1D' }} data-testid="cancellation-reason-text">
+                      <b>Причина:</b> {bookingDetail?.cancellation_reason || cancelReason}
+                    </div>
+                  )}
+                  {bookingDetail?.cancelled_at && (
+                    <div style={{ fontSize: '11px', color: '#991B1B' }}>
+                      Время отмены: {new Date(bookingDetail.cancelled_at).toLocaleString('ru-RU', { timeZone: timezoneIana })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {active.status === 'no_show' && (
+                <div
+                  data-testid="no-show-banner"
+                  style={{
+                    background: '#FFF7ED',
+                    border: '1px solid #FDBA74',
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#9A3412', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>⚠️</span>
+                    <span>Клиент не явился (No-show)</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#C2410C' }}>
+                    Неявка зафиксирована в истории визита.
+                  </div>
+                </div>
+              )}
 
               {/* Services breakdown */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1703,38 +2026,109 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   </div>
                 ) : (
                   <div style={{ fontSize: '13px', color: '#64748B' }}>
-                    {active.services.join(', ')} — {(active.amount_minor / 100).toLocaleString('ru-RU')} {currencySymbol}
+                    {active.services.join(', ')}
+                    {userRole !== 'master' && ` — ${(active.amount_minor / 100).toLocaleString('ru-RU')} ${currencySymbol}`}
                   </div>
+                )}
+              </div>
+
+              {/* Event History / Audit Trail (Sprint M09) */}
+              <div
+                data-testid="visit-history-block"
+                style={{
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '14px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+                    История изменений и событий ({bookingDetail?.events?.length || 0})
+                  </div>
+                </div>
+                {bookingDetail?.events && bookingDetail.events.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
+                    {bookingDetail.events.map((ev, idx) => {
+                      const eventTime = new Date(ev.created_at).toLocaleString('ru-RU', {
+                        timeZone: timezoneIana,
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      });
+                      let title = ev.event_type;
+                      let icon = '📝';
+                      let color = '#334155';
+
+                      if (ev.event_type === 'created') {
+                        title = 'Запись создана';
+                        icon = '✨';
+                        color = '#2563EB';
+                      } else if (ev.event_type === 'confirmed') {
+                        title = 'Запись подтверждена';
+                        icon = '✓';
+                        color = '#16A34A';
+                      } else if (ev.event_type === 'rescheduled') {
+                        title = 'Перенос времени визита';
+                        icon = '📅';
+                        color = '#D97706';
+                      } else if (ev.event_type === 'cancelled') {
+                        title = `Запись отменена: ${bookingDetail?.cancellation_reason || 'по запросу'}`;
+                        icon = '❌';
+                        color = '#DC2626';
+                      } else if (ev.event_type === 'status_changed') {
+                        title = `Смена статуса: ${ev.new_data?.status || 'обновлено'}`;
+                        icon = '🔄';
+                        color = '#475569';
+                      } else if (ev.event_type === 'visit_completed') {
+                        title = 'Визит успешно завершен';
+                        icon = '🏁';
+                        color = '#059669';
+                      }
+
+                      const actorLabel = ev.actor_type === 'customer' ? 'Клиент' : ev.actor_type === 'staff' ? 'Администратор' : 'Система';
+
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '8px',
+                            fontSize: '12px',
+                            background: '#FFFFFF',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '8px',
+                            padding: '6px 10px',
+                          }}
+                        >
+                          <span style={{ fontSize: '13px' }}>{icon}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, color }}>{title}</div>
+                            <div style={{ fontSize: '11px', color: '#64748B' }}>
+                              {actorLabel} • {eventTime}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '12px', color: '#94A3B8' }}>История событий загружается…</div>
                 )}
               </div>
 
               {/* Action buttons */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
-                {active.status === 'confirmed' && (
+                {active.status === 'pending' && (
                   <button
                     type="button"
-                    data-testid="status-btn-arrived"
-                    onClick={() => handleUpdateStatus('arrived')}
-                    disabled={isUpdatingStatus}
-                    style={{
-                      height: '42px',
-                      borderRadius: '10px',
-                      border: 'none',
-                      background: '#D97706',
-                      color: '#FFFFFF',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {isUpdatingStatus ? 'Обновление...' : 'Клиент прибыл'}
-                  </button>
-                )}
-                {active.status === 'arrived' && (
-                  <button
-                    type="button"
-                    data-testid="status-btn-in-progress"
-                    onClick={() => handleUpdateStatus('in_progress')}
+                    data-testid="status-btn-confirm"
+                    onClick={() => handleUpdateStatus('confirmed')}
                     disabled={isUpdatingStatus}
                     style={{
                       height: '42px',
@@ -1747,8 +2141,94 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       cursor: 'pointer',
                     }}
                   >
-                    {isUpdatingStatus ? 'Обновление...' : 'Начать визит'}
+                    {isUpdatingStatus ? 'Обновление...' : '✓ Подтвердить запись'}
                   </button>
+                )}
+                {active.status === 'confirmed' && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      data-testid="status-btn-arrived"
+                      onClick={() => handleUpdateStatus('arrived')}
+                      disabled={isUpdatingStatus}
+                      style={{
+                        flex: 1,
+                        height: '42px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: '#D97706',
+                        color: '#FFFFFF',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {isUpdatingStatus ? 'Обновление...' : 'Клиент прибыл'}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="status-btn-no-show"
+                      onClick={() => handleUpdateStatus('no_show')}
+                      disabled={isUpdatingStatus}
+                      title="Отметить неявку клиента"
+                      style={{
+                        height: '42px',
+                        padding: '0 14px',
+                        borderRadius: '10px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#64748B',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Не явился
+                    </button>
+                  </div>
+                )}
+                {active.status === 'arrived' && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      data-testid="status-btn-in-progress"
+                      onClick={() => handleUpdateStatus('in_progress')}
+                      disabled={isUpdatingStatus}
+                      style={{
+                        flex: 1,
+                        height: '42px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: '#2563EB',
+                        color: '#FFFFFF',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {isUpdatingStatus ? 'Обновление...' : 'Начать визит'}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="status-btn-no-show"
+                      onClick={() => handleUpdateStatus('no_show')}
+                      disabled={isUpdatingStatus}
+                      title="Отметить неявку клиента"
+                      style={{
+                        height: '42px',
+                        padding: '0 14px',
+                        borderRadius: '10px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#64748B',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Не явился
+                    </button>
+                  </div>
                 )}
                 {active.status === 'in_progress' && (
                   <button
@@ -1771,10 +2251,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   </button>
                 )}
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  {active.status !== 'completed' && active.status !== 'cancelled' && (
+                  {active.status !== 'completed' && active.status !== 'cancelled' && active.status !== 'no_show' && (
                     <>
                       <button
                         type="button"
+                        data-testid="visit-card-reschedule-btn"
                         onClick={() => setShowRescheduleModal(true)}
                         style={{
                           flex: 1,
@@ -1791,6 +2272,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       </button>
                       <button
                         type="button"
+                        data-testid="visit-card-cancel-btn"
                         onClick={() => setShowCancelModal(true)}
                         style={{
                           flex: 1,
@@ -1833,7 +2315,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         );
       })()}
 
-      {/* Cancel Modal */}
+      {/* Cancel Modal (Sprint M09) */}
       {showCancelModal && selectedBooking && (
         <div
           style={{
@@ -1850,53 +2332,103 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           <div
             style={{
               width: '100%',
-              maxWidth: '400px',
+              maxWidth: '440px',
               background: '#FFFFFF',
               borderRadius: '16px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
               gap: '16px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
             }}
           >
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Подтверждение отмены записи</h3>
-            <p style={{ margin: 0, fontSize: '14px', color: '#64748B' }}>
-              Запись {selectedBooking.public_ref} будет отменена, а временной интервал освобожден.
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+              Подтверждение отмены записи
+            </h3>
+            <p style={{ margin: 0, fontSize: '13px', color: '#64748B', lineHeight: '1.4' }}>
+              Запись <b>#{selectedBooking.public_ref}</b> ({selectedBooking.customer_name}) будет отменена. Слот будет немедленно освобожден в календаре и публичной записи, а факт отмены сохранится в истории.
             </p>
-            <input
-              type="text"
-              value={cancelReason}
-              onChange={e => setCancelReason(e.target.value)}
-              placeholder="Причина отмены"
-              style={{
-                height: '40px',
-                padding: '0 12px',
-                borderRadius: '8px',
-                border: '1px solid #CBD5E1',
-                fontSize: '14px',
-              }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>
+                Выберите причину отмены:
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {[
+                  'Клиент отменил (звонок / сообщение)',
+                  'Клиент не подтвердил запись',
+                  'Мастер заболел / недоступен',
+                  'Ошибка / дубль записи',
+                  'Форс-мажор салона',
+                ].map(reason => (
+                  <button
+                    key={reason}
+                    type="button"
+                    data-testid="cancel-reason-chip"
+                    onClick={() => setCancelReason(reason)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      border: cancelReason === reason ? '1px solid #EF4444' : '1px solid #CBD5E1',
+                      background: cancelReason === reason ? '#FEF2F2' : '#F8FAFC',
+                      color: cancelReason === reason ? '#B91C1C' : '#334155',
+                      cursor: 'pointer',
+                      fontWeight: cancelReason === reason ? 600 : 400,
+                    }}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                data-testid="cancel-reason-input"
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="Или введите свою причину отмены"
+                style={{
+                  marginTop: '6px',
+                  height: '38px',
+                  padding: '0 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  fontSize: '13px',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
               <button
                 type="button"
                 onClick={() => setShowCancelModal(false)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', cursor: 'pointer' }}
               >
                 Назад
               </button>
               <button
                 type="button"
+                data-testid="confirm-cancel-btn"
                 onClick={handleCancelBooking}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#EF4444', color: '#FFFFFF', fontWeight: 600 }}
+                disabled={isUpdatingStatus}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
               >
-                Подтвердить отмену
+                {isUpdatingStatus ? 'Отмена...' : 'Подтвердить отмену'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Reschedule Modal */}
+      {/* Reschedule Modal (Sprint M08 / M09) */}
       {showRescheduleModal && selectedBooking && (
         <div
           style={{
@@ -1913,19 +2445,24 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           <div
             style={{
               width: '100%',
-              maxWidth: '400px',
+              maxWidth: '420px',
               background: '#FFFFFF',
               borderRadius: '16px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
               gap: '16px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
             }}
           >
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Перенос записи</h3>
+            <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
+              Выберите нового специалиста, дату или время для визита #{selectedBooking.public_ref}.
+            </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Специалист</label>
               <select
+                data-testid="reschedule-staff-select"
                 value={rescheduleStaffId || selectedBooking.staff_id}
                 onChange={e => setRescheduleStaffId(e.target.value)}
                 style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '14px' }}
@@ -1941,6 +2478,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Новая дата</label>
               <input
                 type="date"
+                data-testid="reschedule-date-input"
                 value={rescheduleDate}
                 onChange={e => setRescheduleDate(e.target.value)}
                 style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
@@ -1950,6 +2488,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <label style={{ fontSize: '13px', fontWeight: 500 }}>Новое время</label>
               <input
                 type="time"
+                data-testid="reschedule-time-input"
                 value={rescheduleTime}
                 onChange={e => setRescheduleTime(e.target.value)}
                 style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
@@ -1959,18 +2498,387 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <button
                 type="button"
                 onClick={() => setShowRescheduleModal(false)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', cursor: 'pointer' }}
               >
                 Назад
               </button>
               <button
                 type="button"
+                data-testid="confirm-reschedule-btn"
                 onClick={handleRescheduleBooking}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontWeight: 600 }}
+                disabled={isUpdatingStatus}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontWeight: 600, cursor: 'pointer' }}
               >
-                Перенести запись
+                {isUpdatingStatus ? 'Перенос...' : 'Перенести запись'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SPRINT M12: Register Payment Modal */}
+      {showPaymentModal && selectedBooking && (
+        <div
+          data-testid="payment-modal"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15,23,42,0.5)',
+            zIndex: 110,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              background: '#FFFFFF',
+              borderRadius: '16px',
+              padding: '24px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Приём оплаты</div>
+                <div style={{ fontSize: '12px', color: '#64748B' }}>Запись #{selectedBooking.public_ref} • {selectedBooking.customer_name}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPaymentModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748B' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleRegisterPayment} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Financial Context */}
+              <div style={{ background: '#F8FAFC', padding: '12px 14px', borderRadius: '10px', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                <div>
+                  <div style={{ color: '#64748B', fontSize: '11px' }}>Стоимость заказа</div>
+                  <div style={{ fontWeight: 700, color: '#0F172A', marginTop: '2px' }}>
+                    {((selectedBooking.cost_minor || selectedBooking.amount_minor) / 100).toLocaleString('ru-RU')} ₸
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: '#64748B', fontSize: '11px' }}>Остаток долга</div>
+                  <div style={{ fontWeight: 800, color: '#DC2626', marginTop: '2px' }}>
+                    {((selectedBooking.debt_minor ?? selectedBooking.amount_minor) / 100).toLocaleString('ru-RU')} ₸
+                  </div>
+                </div>
+              </div>
+
+              {/* Amount Input */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Сумма платежа (₸) *
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  data-testid="payment-amount-input"
+                  value={paymentAmountStr}
+                  onChange={e => setPaymentAmountStr(e.target.value)}
+                  placeholder="Например, 3000"
+                  required
+                  style={{
+                    height: '42px',
+                    padding: '0 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              {/* Quick Fill Chips */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <button
+                  type="button"
+                  data-testid="pay-full-amount-btn"
+                  onClick={() => setPaymentAmountStr(((selectedBooking.debt_minor ?? selectedBooking.amount_minor) / 100).toString())}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #BBF7D0',
+                    background: '#F0FDF4',
+                    color: '#15803D',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Вся сумма ({((selectedBooking.debt_minor ?? selectedBooking.amount_minor) / 100).toLocaleString('ru-RU')} ₸)
+                </button>
+                {[1000, 2000, 3000, 5000].map(val => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setPaymentAmountStr(val.toString())}
+                    style={{
+                      padding: '5px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #E2E8F0',
+                      background: '#FFFFFF',
+                      color: '#475569',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {val.toLocaleString('ru-RU')} ₸
+                  </button>
+                ))}
+              </div>
+
+              {/* Payment Method */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Способ оплаты *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {[
+                    { id: 'cash' as PaymentMethod, label: 'Наличные', icon: '💵' },
+                    { id: 'external_transfer' as PaymentMethod, label: 'Kaspi / QR', icon: '📱' },
+                    { id: 'card' as PaymentMethod, label: 'Карта / Терминал', icon: '💳' },
+                  ].map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      data-testid={`payment-method-${m.id}`}
+                      onClick={() => setPaymentMethod(m.id)}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: '8px',
+                        border: paymentMethod === m.id ? '2px solid #2563EB' : '1px solid #CBD5E1',
+                        background: paymentMethod === m.id ? '#EFF6FF' : '#FFFFFF',
+                        color: paymentMethod === m.id ? '#1D4ED8' : '#475569',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span style={{ fontSize: '18px' }}>{m.icon}</span>
+                      <span>{m.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Comment */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Комментарий / номер чека (опционально)
+                </label>
+                <input
+                  type="text"
+                  data-testid="payment-comment-input"
+                  value={paymentComment}
+                  onChange={e => setPaymentComment(e.target.value)}
+                  placeholder="Чек #1234, без сдачи"
+                  style={{
+                    height: '38px',
+                    padding: '0 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentModal(false)}
+                  style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', cursor: 'pointer' }}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  data-testid="submit-payment-btn"
+                  disabled={isSubmittingPayment}
+                  style={{
+                    padding: '9px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#059669',
+                    color: '#FFFFFF',
+                    fontWeight: 700,
+                    cursor: isSubmittingPayment ? 'not-allowed' : 'pointer',
+                    opacity: isSubmittingPayment ? 0.7 : 1,
+                  }}
+                >
+                  {isSubmittingPayment ? 'Проведение платежа…' : 'Внести платёж'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SPRINT M13: Refund Modal */}
+      {showRefundModal && selectedPaymentForRefund && (
+        <div
+          data-testid="refund-modal"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15,23,42,0.5)',
+            zIndex: 110,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              background: '#FFFFFF',
+              borderRadius: '16px',
+              padding: '24px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: '#DC2626' }}>Оформление возврата</div>
+                <div style={{ fontSize: '12px', color: '#64748B' }}>К платежу #{(selectedPaymentForRefund.id).slice(-6)}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowRefundModal(false); setSelectedPaymentForRefund(null); }}
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748B' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmRefund} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ background: '#FEF2F2', padding: '12px 14px', borderRadius: '10px', border: '1px solid #FECACA', fontSize: '12.5px', color: '#991B1B', lineHeight: '1.4' }}>
+                ℹ️ <b>Корректирующее движение:</b> Возврат оформляется обратной проводкой. Исходный платёж сохраняется в кассовом аудите.
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Сумма возврата (₸) *
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  max={selectedPaymentForRefund.amount_minor / 100}
+                  data-testid="refund-amount-input"
+                  value={refundAmountStr}
+                  onChange={e => setRefundAmountStr(e.target.value)}
+                  required
+                  style={{
+                    height: '42px',
+                    padding: '0 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    outline: 'none',
+                  }}
+                />
+                <div style={{ fontSize: '11px', color: '#64748B' }}>
+                  Максимум: {(selectedPaymentForRefund.amount_minor / 100).toLocaleString('ru-RU')} ₸
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Причина возврата *
+                </label>
+                <select
+                  data-testid="refund-reason-select"
+                  value={refundReason}
+                  onChange={e => setRefundReason(e.target.value)}
+                  style={{
+                    height: '40px',
+                    padding: '0 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '13px',
+                    outline: 'none',
+                    background: '#FFFFFF',
+                  }}
+                >
+                  <option value="Отказ от части услуги">Отказ от части услуги</option>
+                  <option value="Ошибка кассира при вводе суммы">Ошибка кассира при вводе суммы</option>
+                  <option value="Претензия по качеству обслуживания">Претензия по качеству обслуживания</option>
+                  <option value="Другое">Другое</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  Пояснение (опционально)
+                </label>
+                <input
+                  type="text"
+                  data-testid="refund-comment-input"
+                  value={refundComment}
+                  onChange={e => setRefundComment(e.target.value)}
+                  placeholder="Дополнительное пояснение"
+                  style={{
+                    height: '38px',
+                    padding: '0 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowRefundModal(false); setSelectedPaymentForRefund(null); }}
+                  style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', cursor: 'pointer' }}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  data-testid="confirm-refund-btn"
+                  disabled={isSubmittingRefund}
+                  style={{
+                    padding: '9px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#DC2626',
+                    color: '#FFFFFF',
+                    fontWeight: 700,
+                    cursor: isSubmittingRefund ? 'not-allowed' : 'pointer',
+                    opacity: isSubmittingRefund ? 0.7 : 1,
+                  }}
+                >
+                  {isSubmittingRefund ? 'Оформление…' : 'Подтвердить возврат'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

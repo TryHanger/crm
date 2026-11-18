@@ -6,6 +6,7 @@ from sqlalchemy import text
 def clean_bookings():
     with admin_sync_engine.connect() as conn:
         conn.execute(text("""
+            DELETE FROM calendar_blocks;
             DELETE FROM staff_occupancies;
             DELETE FROM booking_items;
             DELETE FROM booking_events;

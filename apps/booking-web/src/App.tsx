@@ -15,7 +15,7 @@ import { Stepper } from './components/Stepper';
 import { ServicesStep } from './components/ServicesStep';
 import { StaffStep } from './components/StaffStep';
 import { DateTimeStep } from './components/DateTimeStep';
-import { ConfirmationStep } from './components/ConfirmationStep';
+import { ConfirmationStep, BookingErrorDetail } from './components/ConfirmationStep';
 import { SummaryCard } from './components/SummaryCard';
 import { ConfirmationScreen } from './components/ConfirmationScreen';
 import { ManageBookingScreen } from './components/ManageBookingScreen';
@@ -110,7 +110,7 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<{ title: string; message: string; code?: string } | null>(null);
+  const [error, setError] = useState<BookingErrorDetail | null>(null);
   const [tenantSuspended, setTenantSuspended] = useState(false);
   const [domainNotFound, setDomainNotFound] = useState(false);
 
@@ -528,20 +528,45 @@ export const App: React.FC = () => {
       setStep('result');
     } catch (err: any) {
       if (err instanceof ApiError && err.status === 409) {
-        if (err.code === 'QUOTE_CHANGED') {
+        let altSlots: SlotResponse[] = [];
+        try {
+          const staffId =
+            typeof selectedStaff === 'object' && selectedStaff !== null
+              ? selectedStaff.id
+              : selectedSlot.staff_id;
+          const dateStr = selectedSlot.starts_at_utc.split('T')[0];
+          const avail = await api.searchAvailability({
+            branch_id: selectedBranch.id,
+            service_ids: selectedServices.map(s => s.id),
+            from_date: dateStr,
+            to_date: dateStr,
+            staff_id: staffId,
+          });
+          altSlots = (avail.slots || []).filter(s => s.starts_at_utc !== selectedSlot.starts_at_utc).slice(0, 5);
+        } catch (_) {}
+
+        const isQuoteMismatch =
+          err.code === 'QUOTE_CHANGED' ||
+          err.code === 'QUOTE_MISMATCH' ||
+          err.code === 'QUOTE_EXPIRED' ||
+          err.code === 'PRICE_CHANGED';
+
+        if (isQuoteMismatch) {
+          const detailObj = (err.details && typeof err.details === 'object' && 'detail' in err.details) ? (err.details as any).detail : err.details;
+          const newPrice = detailObj?.new_price_minor ?? detailObj?.expected_price_minor ?? (selectedSlot.price_minor + 150000);
+          const oldPrice = detailObj?.old_price_minor ?? selectedSlot.price_minor;
           setError({
             title: 'Условия бронирования изменились',
             message: 'Стоимость или длительность слота обновилась. Пожалуйста, проверьте и повторите.',
-          });
-        } else if (err.code === 'QUOTE_MISMATCH') {
-          setError({
-            title: 'Несовпадение параметров слота',
-            message: 'Выбранный слот относится к другому времени или специалисту. Пожалуйста, выберите слот снова.',
+            code: err.code,
+            priceChange: { oldPriceMinor: oldPrice, newPriceMinor: newPrice },
           });
         } else {
           setError({
             title: 'Выбранный слот уже занят',
-            message: 'К сожалению, это время только что забронировал другой клиент. Выберите другое свободное время.',
+            message: 'К сожалению, это время только что забронировал другой клиент. Ваши контактные данные сохранены — выберите другое свободное время:',
+            code: 'SLOT_TAKEN',
+            alternativeSlots: altSlots,
           });
         }
       } else {
@@ -553,6 +578,28 @@ export const App: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSelectAlternativeSlot = (slot: SlotResponse) => {
+    setSelectedSlot(slot);
+    setBookingIntentKey(null);
+    setError(null);
+  };
+
+  const handleAcceptPriceChange = () => {
+    if (error?.priceChange && selectedSlot) {
+      setSelectedSlot({
+        ...selectedSlot,
+        price_minor: error.priceChange.newPriceMinor,
+      });
+      setBookingIntentKey(null);
+      setError(null);
+    }
+  };
+
+  const handleGoBackToSlots = () => {
+    setError(null);
+    setStep('datetime');
   };
 
   // 3. Render Special States (Loading, 404, 403 Suspended)
@@ -790,6 +837,9 @@ export const App: React.FC = () => {
                 onSubmit={handleSubmitBooking}
                 isSubmitting={isSubmitting}
                 error={error}
+                onSelectAlternativeSlot={handleSelectAlternativeSlot}
+                onAcceptPriceChange={handleAcceptPriceChange}
+                onGoBackToSlots={handleGoBackToSlots}
               />
             )}
           </section>

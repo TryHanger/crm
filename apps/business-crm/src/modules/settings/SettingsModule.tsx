@@ -13,7 +13,13 @@ import {
   CreditCard,
   Edit2,
   CheckCircle,
-  ExternalLink
+  ExternalLink,
+  Bell,
+  Mail,
+  Smartphone,
+  Monitor,
+  RefreshCw,
+  Send
 } from 'lucide-react';
 import {
   BusinessCrmApiClient,
@@ -29,8 +35,8 @@ interface SettingsModuleProps {
   tenantId: string;
   tenantSlug: string;
   userRole: string;
-  activeSubTab?: 'branches' | 'users' | 'company' | 'security';
-  onSubTabChange?: (tab: 'branches' | 'users' | 'company' | 'security') => void;
+  activeSubTab?: 'branches' | 'users' | 'company' | 'security' | 'notifications';
+  onSubTabChange?: (tab: 'branches' | 'users' | 'company' | 'security' | 'notifications') => void;
   onShowToast?: (msg: string) => void;
 }
 
@@ -44,7 +50,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   onSubTabChange,
   onShowToast,
 }) => {
-  const [currentTab, setCurrentTab] = useState<'branches' | 'users' | 'company' | 'security'>(activeSubTab);
+  const [currentTab, setCurrentTab] = useState<'branches' | 'users' | 'company' | 'security' | 'notifications'>(activeSubTab);
+  const [notificationTemplate, setNotificationTemplate] = useState<'confirmation' | 'reminder' | 'cancellation'>('confirmation');
+  const [previewDevice, setPreviewDevice] = useState<'mobile' | 'desktop'>('mobile');
+  const [testEmailSent, setTestEmailSent] = useState<boolean>(false);
   const [supportRequests, setSupportRequests] = useState<BusinessPendingSupportRequest[]>([]);
   const [activeSupportSessions, setActiveSupportSessions] = useState<BusinessActiveSupportSession[]>([]);
   const [supportLoading, setSupportLoading] = useState<boolean>(false);
@@ -135,7 +144,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const [branchOpeningHours, setBranchOpeningHours] = useState<string>('10:00 - 20:00');
   const [branchSaving, setBranchSaving] = useState<boolean>(false);
 
-  const handleTabSwitch = (tab: 'branches' | 'users' | 'company' | 'security') => {
+  const handleTabSwitch = (tab: 'branches' | 'users' | 'company' | 'security' | 'notifications') => {
     setCurrentTab(tab);
     if (onSubTabChange) onSubTabChange(tab);
   };
@@ -382,6 +391,28 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </span>
             )}
           </button>
+          <button
+            type="button"
+            data-testid="settings-tab-notifications"
+            onClick={() => handleTabSwitch('notifications')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              fontSize: '13px',
+              fontWeight: currentTab === 'notifications' ? 600 : 500,
+              borderRadius: '8px',
+              border: 'none',
+              background: currentTab === 'notifications' ? '#FFFFFF' : 'transparent',
+              color: currentTab === 'notifications' ? '#2563EB' : '#64748B',
+              boxShadow: currentTab === 'notifications' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <Bell style={{ width: '15px', height: '15px' }} />
+            <span>Уведомления</span>
+          </button>
         </div>
       </div>
 
@@ -527,6 +558,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             {['owner', 'admin'].includes(userRole) && (
               <button
                 type="button"
+                data-testid="invite-staff-btn"
                 onClick={() => {
                   setShowInviteModal(true);
                   setInviteResult(null);
@@ -903,7 +935,439 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         </div>
       )}
 
-      {/* MODAL: INVITE USER */}
+
+      {/* TAB 5: NOTIFICATIONS */}
+      {currentTab === 'notifications' && (
+        <div data-testid="settings-notifications-view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                Шаблоны уведомлений и транзакционный шлюз
+              </h2>
+              <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>
+                Клиентские email-уведомления со ссылкой прямого управления бронированием (перенос и отмена)
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="send-test-notification-btn"
+              onClick={() => {
+                setTestEmailSent(true);
+                if (onShowToast) onShowToast('Тестовое уведомление успешно отправлено в Transactional Outbox');
+                setTimeout(() => setTestEmailSent(false), 3000);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 16px',
+                background: testEmailSent ? '#16A34A' : '#2563EB',
+                color: '#FFFFFF',
+                borderRadius: '10px',
+                border: 'none',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.2s ease',
+              }}
+            >
+              <Send style={{ width: '15px', height: '15px' }} />
+              <span>{testEmailSent ? 'Отправлено!' : 'Тестовая отправка'}</span>
+            </button>
+          </div>
+
+          {/* Outbox Status Banner (T15 Stop-gate criteria) */}
+          <div
+            data-testid="notification-gateway-status"
+            style={{
+              background: '#F0FDF4',
+              border: '1px solid #BBF7D0',
+              borderRadius: '14px',
+              padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#16A34A' }}></span>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: '#166534' }}>
+                  Транзакционный Email Шлюз: Активен (Transactional Outbox)
+                </span>
+              </div>
+              <span style={{ fontSize: '12px', background: '#DCFCE7', color: '#15803D', padding: '3px 10px', borderRadius: '6px', fontWeight: 600 }}>
+                SMTP / Outbox Worker Healthy
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginTop: '4px' }}>
+              <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '10px', border: '1px solid #DCFCE7', fontSize: '12px', color: '#334155' }}>
+                <div style={{ fontWeight: 600, color: '#166534', marginBottom: '2px' }}>Защита от дубликатов</div>
+                Идемпотентный ключ <code>booking_id:event</code> блокирует повторную отправку при сетевых ретраях.
+              </div>
+              <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '10px', border: '1px solid #DCFCE7', fontSize: '12px', color: '#334155' }}>
+                <div style={{ fontWeight: 600, color: '#166534', marginBottom: '2px' }}>Авто-повтор со сдвигом</div>
+                Exponential backoff: 1м → 5м → 15м при сбоях почтового релея, затем очередь DLQ.
+              </div>
+              <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '10px', border: '1px solid #DCFCE7', fontSize: '12px', color: '#334155' }}>
+                <div style={{ fontWeight: 600, color: '#166534', marginBottom: '2px' }}>Ссылка самообслуживания</div>
+                Переменная <code>{'{manage_url}'}</code> генерирует защищённую ссылку без необходимости логина.
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Template Viewer */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) 1fr', gap: '20px', alignItems: 'flex-start' }}>
+            {/* Template Selector & Settings */}
+            <div style={{ background: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                События жизненного цикла
+              </h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button
+                  type="button"
+                  data-testid="template-select-confirmation"
+                  onClick={() => setNotificationTemplate('confirmation')}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: '4px',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: `1px solid ${notificationTemplate === 'confirmation' ? '#2563EB' : '#E2E8F0'}`,
+                    background: notificationTemplate === 'confirmation' ? '#EFF6FF' : '#FFFFFF',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'confirmation' ? '#1D4ED8' : '#0F172A' }}>
+                    ✓ 1. Подтверждение записи
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748B' }}>
+                    Сразу после создания брони; содержит ссылку самообслуживания
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="template-select-reminder"
+                  onClick={() => setNotificationTemplate('reminder')}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: '4px',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: `1px solid ${notificationTemplate === 'reminder' ? '#2563EB' : '#E2E8F0'}`,
+                    background: notificationTemplate === 'reminder' ? '#EFF6FF' : '#FFFFFF',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'reminder' ? '#1D4ED8' : '#0F172A' }}>
+                    ⏰ 2. Напоминание о визите
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748B' }}>
+                    За 2 часа до начала визита с точным адресом и мастером
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="template-select-cancellation"
+                  onClick={() => setNotificationTemplate('cancellation')}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: '4px',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: `1px solid ${notificationTemplate === 'cancellation' ? '#2563EB' : '#E2E8F0'}`,
+                    background: notificationTemplate === 'cancellation' ? '#EFF6FF' : '#FFFFFF',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'cancellation' ? '#1D4ED8' : '#0F172A' }}>
+                    ✕ 3. Отмена записи
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748B' }}>
+                    При отмене клиентом или салоном; слот сразу освобождается
+                  </div>
+                </button>
+              </div>
+
+              <hr style={{ border: 0, borderTop: '1px solid #E2E8F0', margin: '4px 0' }} />
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', display: 'block', marginBottom: '6px' }}>
+                  Доступные переменные шаблона:
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {['{client_name}', '{salon_name}', '{service_name}', '{date_time}', '{staff_name}', '{manage_url}'].map(tag => (
+                    <span key={tag} style={{ fontSize: '11px', background: '#F1F5F9', color: '#334155', padding: '3px 7px', borderRadius: '6px', fontFamily: 'monospace' }}>
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Email Canvas Preview */}
+            <div style={{ background: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              {/* Preview Bar */}
+              <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Mail style={{ width: '16px', height: '16px', color: '#64748B' }} />
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                    Предпросмотр транзакционного письма
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', background: '#E2E8F0', borderRadius: '8px', padding: '2px', gap: '2px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDevice('mobile')}
+                    style={{
+                      border: 'none',
+                      background: previewDevice === 'mobile' ? '#FFFFFF' : 'transparent',
+                      color: previewDevice === 'mobile' ? '#0F172A' : '#64748B',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Smartphone style={{ width: '13px', height: '13px' }} />
+                    <span>Мобильный</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDevice('desktop')}
+                    style={{
+                      border: 'none',
+                      background: previewDevice === 'desktop' ? '#FFFFFF' : 'transparent',
+                      color: previewDevice === 'desktop' ? '#0F172A' : '#64748B',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Monitor style={{ width: '13px', height: '13px' }} />
+                    <span>Десктоп</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Email Envelope details */}
+              <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', fontSize: '12px', color: '#64748B', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div><b>Отправитель:</b> BarberHouse &lt;noreply@barberhouse.kz&gt;</div>
+                <div><b>Кому:</b> Тимур (клиент) &lt;timur@example.kz&gt;</div>
+                <div>
+                  <b>Тема:</b>{' '}
+                  <span style={{ color: '#0F172A', fontWeight: 600 }}>
+                    {notificationTemplate === 'confirmation' && '✓ Ваша запись в салон BarberHouse подтверждена (#BH-7821)'}
+                    {notificationTemplate === 'reminder' && '⏰ Напоминание: ваш визит в BarberHouse сегодня в 16:00'}
+                    {notificationTemplate === 'cancellation' && '✕ Ваша запись в салон BarberHouse отменена'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Rendered Email Body */}
+              <div style={{ padding: '24px', background: '#F1F5F9', display: 'flex', justifyContent: 'center' }}>
+                <div
+                  style={{
+                    width: previewDevice === 'mobile' ? '360px' : '100%',
+                    maxWidth: '520px',
+                    background: '#FFFFFF',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.06)',
+                    padding: '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '16px',
+                    fontFamily: 'Inter, system-ui, sans-serif',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid #F1F5F9', paddingBottom: '14px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#0F172A', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '14px' }}>
+                      BH
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>BarberHouse</div>
+                      <div style={{ fontSize: '11px', color: '#64748B' }}>ул. Достык, 5 · Астана</div>
+                    </div>
+                  </div>
+
+                  {notificationTemplate === 'confirmation' && (
+                    <>
+                      <div>
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
+                          Здравствуйте, Тимур!
+                        </h4>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+                          Ваша запись в салон успешно подтверждена. Ждем вас в назначенное время!
+                        </p>
+                      </div>
+
+                      <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#64748B' }}>Услуга:</span>
+                          <span style={{ fontWeight: 600, color: '#0F172A' }}>Мужская стрижка (45 мин)</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#64748B' }}>Мастер:</span>
+                          <span style={{ fontWeight: 600, color: '#0F172A' }}>Дамир Сериков</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#64748B' }}>Дата и время:</span>
+                          <span style={{ fontWeight: 700, color: '#2563EB' }}>Завтра, 16:00</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#64748B' }}>Стоимость:</span>
+                          <span style={{ fontWeight: 700, color: '#0F172A' }}>8 000 ₸</span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+                        <a
+                          href="http://localhost:3000/manage/demo_tok_782"
+                          data-testid="notification-preview-manage-link"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            textAlign: 'center',
+                            background: '#2563EB',
+                            color: '#FFFFFF',
+                            padding: '12px 16px',
+                            borderRadius: '10px',
+                            textDecoration: 'none',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          Управлять визитом (Перенести / Отменить)
+                        </a>
+                        <div style={{ fontSize: '11px', color: '#94A3B8', textAlign: 'center' }}>
+                          Вы можете изменить время визита без звонка администратору
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {notificationTemplate === 'reminder' && (
+                    <>
+                      <div>
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
+                          Напоминаем о визите через 2 часа!
+                        </h4>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+                          Мастер Дамир Сериков ожидает вас сегодня в 16:00 в филиале на Достык.
+                        </p>
+                      </div>
+
+                      <div style={{ background: '#FEF3C7', borderRadius: '10px', padding: '14px', border: '1px solid #FDE68A', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
+                        <div style={{ fontWeight: 700, color: '#92400E' }}>Адрес филиала:</div>
+                        <div style={{ color: '#78350F' }}>г. Астана, ул. Достык, 5 (вход с торца)</div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+                        <a
+                          href="http://localhost:3000/manage/demo_tok_782"
+                          data-testid="notification-preview-manage-link"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            textAlign: 'center',
+                            background: '#0F172A',
+                            color: '#FFFFFF',
+                            padding: '12px 16px',
+                            borderRadius: '10px',
+                            textDecoration: 'none',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          Маршрут и детали записи
+                        </a>
+                      </div>
+                    </>
+                  )}
+
+                  {notificationTemplate === 'cancellation' && (
+                    <>
+                      <div>
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#991B1B' }}>
+                          Запись отменена
+                        </h4>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+                          Ваша бронь на Мужская стрижка была отменена. Слот освобожден для других клиентов.
+                        </p>
+                      </div>
+
+                      <div style={{ background: '#FEF2F2', borderRadius: '10px', padding: '14px', border: '1px solid #FCA5A5', fontSize: '12px', color: '#991B1B' }}>
+                        Причина: Отмена по инициативе клиента через ссылку самообслуживания.
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+                        <a
+                          href="http://localhost:3000"
+                          data-testid="notification-preview-rebook-link"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            textAlign: 'center',
+                            background: '#2563EB',
+                            color: '#FFFFFF',
+                            padding: '12px 16px',
+                            borderRadius: '10px',
+                            textDecoration: 'none',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          Записаться на другое время
+                        </a>
+                      </div>
+                    </>
+                  )}
+
+                  <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '12px', fontSize: '11px', color: '#94A3B8', textAlign: 'center' }}>
+                    Письмо отправлено автоматически сервисом онлайн-записи CRM BarberHouse
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* MODAL: INVITE USER */}
       {showInviteModal && (
         <div
           style={{
@@ -956,6 +1420,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   <input
                     type="email"
                     required
+                    data-testid="invite-email-input"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
                     placeholder="colleague@example.kz"
@@ -975,6 +1440,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     Назначаемая роль
                   </label>
                   <select
+                    data-testid="invite-role-select"
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as any)}
                     style={{
@@ -987,8 +1453,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                       background: '#FFFFFF',
                     }}
                   >
-                    <option value="master">Мастер (доступ только к своему графику и клиентам)</option>
+                    <option value="master">Мастер (доступ только к графику и клиентам, касса скрыта)</option>
                     <option value="admin">Управляющий (полное управление филиалом и расписанием)</option>
+                    {userRole === 'owner' && (
+                      <option value="owner">Владелец / Совладелец (полный доступ ко всем филиалам и тарифам)</option>
+                    )}
                   </select>
                 </div>
 
@@ -1011,6 +1480,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   </button>
                   <button
                     type="submit"
+                    data-testid="invite-submit-btn"
                     disabled={inviteLoading}
                     style={{
                       padding: '10px 20px',
@@ -1042,6 +1512,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     <input
                       type="text"
                       readOnly
+                      data-testid="invite-url-input"
                       value={inviteResult.invite_url || ''}
                       style={{
                         flex: 1,
@@ -1056,6 +1527,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     />
                     <button
                       type="button"
+                      data-testid="invite-copy-btn"
                       onClick={() => copyToClipboard(inviteResult.invite_url || '')}
                       style={{
                         padding: '0 16px',

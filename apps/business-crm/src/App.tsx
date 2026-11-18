@@ -9,6 +9,7 @@ import { CustomersModule } from './modules/customers/CustomersModule';
 import { StaffModule } from './modules/staff/StaffModule';
 import { ServicesModule } from './modules/services/ServicesModule';
 import { OnlineBookingModule } from './modules/online-booking/OnlineBookingModule';
+import { CashModule } from './modules/cash/CashModule';
 import { ReportsModule } from './modules/reports/ReportsModule';
 import { SettingsModule } from './modules/settings/SettingsModule';
 import { OnboardingModule } from './modules/onboarding/OnboardingModule';
@@ -369,6 +370,7 @@ export const App: React.FC = () => {
     staff: { title: 'Сотрудники и график', subtitle: 'Управление командой, рабочими сменами и ставками' },
     services: { title: 'Услуги и цены', subtitle: 'Категории, прайс-лист и доступность для онлайн-записи' },
     'online-booking': { title: 'Настройки онлайн-записи', subtitle: 'Правила бронирования, дизайн виджета и публикация' },
+    cash: { title: 'Касса и смены', subtitle: 'Кассовые смены, приём наличных, авансы и Z-отчёты' },
     reports: { title: 'Отчёты и аналитика', subtitle: 'Операционная выручка, занятость мастеров и статистика' },
     settings: { title: 'Настройки бизнеса', subtitle: 'Филиалы, доступ пользователей и тарифная подписка' },
     onboarding: { title: 'Онбординг-чеклист', subtitle: 'Пошаговая подготовка компании к приёму клиентов' },
@@ -523,6 +525,17 @@ export const App: React.FC = () => {
           />
         )}
 
+        {currentSection === 'cash' && (
+          <CashModule
+            api={api}
+            token={token}
+            tenantId={activeMembership.tenant_id}
+            branchId={selectedBranchId || (branches[0]?.id || '')}
+            userRole={activeMembership.role}
+            onShowToast={showToast}
+          />
+        )}
+
         {currentSection === 'reports' && (
           <ReportsModule
             api={api}
@@ -567,6 +580,7 @@ export const App: React.FC = () => {
             gap: '8px',
             border: '1px solid #334155',
             animation: 'fadeIn 0.2s ease-out',
+            pointerEvents: 'none',
           }}
         >
           <span>✓</span>

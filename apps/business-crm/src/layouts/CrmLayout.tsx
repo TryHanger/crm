@@ -48,6 +48,7 @@ export const CrmLayout: React.FC<CrmLayoutProps> = ({
           { id: 'staff' as CrmNavigationSection, label: 'Сотрудники', icon: '✂️' },
           { id: 'services' as CrmNavigationSection, label: 'Услуги', icon: '🏷️' },
           { id: 'online-booking' as CrmNavigationSection, label: 'Онлайн-запись', icon: '🌐' },
+          { id: 'cash' as CrmNavigationSection, label: 'Касса и смены', icon: '💵' },
           { id: 'reports' as CrmNavigationSection, label: 'Отчёты', icon: '📊' },
           { id: 'settings' as CrmNavigationSection, label: 'Настройки', icon: '⚙️' },
           { id: 'onboarding' as CrmNavigationSection, label: 'Онбординг', icon: '🚀' },

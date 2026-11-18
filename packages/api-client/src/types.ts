@@ -55,6 +55,8 @@ export interface BookingEventDetail {
   event_type: string;
   actor_type: string;
   created_at: string;
+  old_data?: any;
+  new_data?: any;
 }
 
 export interface BookingCardResponse {
@@ -63,6 +65,8 @@ export interface BookingCardResponse {
   status: string;
   starts_at_utc: string;
   service_ends_at_utc: string;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
   staff_id: string;
   staff_name: string;
   customer: {
@@ -851,3 +855,197 @@ export interface BusinessActiveSupportSession {
   minutes_left: number;
   status: string;
 }
+
+// Sprint M07: Concurrency & Alternative Slots
+export interface AlternativeSlot {
+  starts_at_utc: string;
+  ends_at_utc?: string;
+  time_display: string;
+  date_display: string;
+  quote_id: string;
+  price_minor: number;
+  staff_id: string;
+  staff_name: string;
+}
+
+// Sprint M12: Payments & Manual Cash Desk
+export type PaymentMethod = 'cash' | 'card' | 'external_transfer' | 'advance';
+export type PaymentType = 'payment' | 'refund' | 'advance';
+export type PaymentRecordStatus = 'confirmed' | 'cancelled';
+
+export interface PaymentRecord {
+  id: string;
+  tenant_id: string;
+  branch_id?: string;
+  booking_id?: string;
+  customer_id?: string;
+  amount_minor: number;
+  currency: string;
+  payment_method: PaymentMethod;
+  payment_type: PaymentType;
+  status: PaymentRecordStatus;
+  cashier_name: string;
+  cashier_id?: string;
+  comment?: string;
+  created_at: string;
+  shift_id?: string | null;
+  original_payment_id?: string | null;
+  idempotency_key?: string;
+}
+
+export interface PaymentCreateRequest {
+  booking_id: string;
+  amount_minor: number;
+  payment_method: PaymentMethod;
+  payment_type?: PaymentType;
+  cashier_name?: string;
+  comment?: string;
+  shift_id?: string;
+  customer_id?: string;
+}
+
+export interface PaymentRefundRequest {
+  payment_id: string;
+  amount_minor: number;
+  reason: string;
+  cashier_name?: string;
+  payment_method?: PaymentMethod;
+  comment?: string;
+}
+
+// Sprint M13: Cash Register Shift & Advances
+export type CashShiftStatus = 'open' | 'closed';
+
+export interface CashShift {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  status: CashShiftStatus;
+  opened_by: string;
+  opened_at: string;
+  closed_by?: string | null;
+  closed_at?: string | null;
+  opening_balance_minor: number;
+  closing_cash_actual_minor?: number | null;
+  closing_cash_expected_minor?: number | null;
+  difference_minor?: number | null;
+  comment?: string | null;
+}
+
+export interface CashShiftSummary {
+  shift: CashShift;
+  cash_inflow_minor: number;
+  cash_refund_minor: number;
+  card_inflow_minor: number;
+  advance_inflow_minor: number;
+  expected_cash_balance_minor: number;
+  transactions_count: number;
+}
+
+export interface ShiftOpenRequest {
+  branch_id: string;
+  opened_by: string;
+  opening_balance_minor: number;
+  comment?: string;
+}
+
+export interface ShiftCloseRequest {
+  shift_id: string;
+  closed_by: string;
+  closing_cash_actual_minor: number;
+  comment?: string;
+}
+
+// Sprint M14: Expenses & Advanced Reports
+export interface ExpenseRecord {
+  id: string;
+  tenant_id: string;
+  branch_id?: string;
+  category: string;
+  amount_minor: number;
+  currency: string;
+  expense_date: string;
+  created_by: string;
+  payment_method: 'cash' | 'account';
+  comment?: string;
+  created_at: string;
+}
+
+export interface ExpenseCreateRequest {
+  branch_id?: string;
+  category: string;
+  amount_minor: number;
+  expense_date: string;
+  created_by: string;
+  payment_method: 'cash' | 'account';
+  comment?: string;
+}
+
+export interface VisitsReportData {
+  total_bookings: number;
+  completed_bookings: number;
+  cancelled_bookings: number;
+  arrived_bookings: number;
+  in_progress_bookings: number;
+  no_show_bookings: number;
+  completion_rate_percent: number;
+  items: Array<{
+    id: string;
+    public_ref: string;
+    customer_name: string;
+    staff_name: string;
+    services: string[];
+    date_display: string;
+    time_display: string;
+    status: string;
+    amount_minor: number;
+  }>;
+}
+
+export interface ServicesReportData {
+  total_services_count: number;
+  total_rendered_minor: number;
+  average_ticket_minor: number;
+  top_services: Array<{
+    service_id: string;
+    service_name: string;
+    category_name?: string;
+    count: number;
+    total_minor: number;
+    percentage: number;
+  }>;
+}
+
+export interface FinanceReportData {
+  rendered_minor: number;        // Оказано услуг (по завершенным визитам)
+  paid_minor: number;            // Поступления в кассу/безнал
+  debt_minor: number;            // Дебиторская задолженность (Оказано - Оплачено)
+  expenses_minor: number;        // Операционные расходы
+  refunds_minor: number;         // Возвраты клиентам
+  advances_minor: number;        // Авансовые средства клиентов (отдельно от выручки)
+  net_cash_flow_minor: number;   // Чистый денежный поток (Поступления - Возвраты - Расходы)
+  cash_inflow_minor: number;     // Из них наличные
+  card_inflow_minor: number;     // Из них безналичные / Kaspi
+}
+
+export interface DebtItem {
+  booking_id: string;
+  public_ref: string;
+  customer_id?: string;
+  customer_name: string;
+  customer_phone: string;
+  visit_date: string;
+  cost_minor: number;
+  rendered_minor: number;
+  paid_minor: number;
+  debt_minor: number;
+  payment_status: 'unpaid' | 'partially_paid';
+  services: string[];
+}
+
+export interface DebtsReportData {
+  total_debt_minor: number;
+  debtors_count: number;
+  items: DebtItem[];
+}
+

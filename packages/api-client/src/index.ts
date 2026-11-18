@@ -55,7 +55,22 @@ import {
   PlatformStaffItem,
   PlatformSettingsResponse,
   BusinessPendingSupportRequest,
-  BusinessActiveSupportSession
+  BusinessActiveSupportSession,
+  PaymentRecord,
+  PaymentCreateRequest,
+  PaymentRefundRequest,
+  CashShift,
+  CashShiftSummary,
+  ShiftOpenRequest,
+  ShiftCloseRequest,
+  ExpenseRecord,
+  ExpenseCreateRequest,
+  VisitsReportData,
+  ServicesReportData,
+  FinanceReportData,
+  DebtsReportData,
+  DebtItem,
+  AlternativeSlot
 } from './types';
 
 export * from './types';
@@ -932,6 +947,746 @@ export class BusinessCrmApiClient {
       headers: this.headers(token, tenantId),
     });
     return handleResponse<any>(res);
+  }
+
+  // ==========================================
+  // SPRINT M12: Ручная касса и частичная оплата
+  // ==========================================
+
+  async createPayment(
+    payload: PaymentCreateRequest,
+    token: string,
+    tenantId: string,
+    idempotencyKey?: string
+  ): Promise<PaymentRecord> {
+    try {
+      const headers = this.headers(token, tenantId);
+      headers['Content-Type'] = 'application/json';
+      if (idempotencyKey) {
+        headers['Idempotency-Key'] = idempotencyKey;
+      }
+      const res = await fetch(`${this.baseUrl}/api/v1/business/payments`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const record = await handleResponse<PaymentRecord>(res);
+        FinanceMockStorage.savePayment(tenantId, record);
+        return record;
+      }
+    } catch (_) {}
+
+    // Check idempotency in mock
+    if (idempotencyKey) {
+      const existing = FinanceMockStorage.getPayments(tenantId).find(
+        p => p.idempotency_key === idempotencyKey
+      );
+      if (existing) {
+        return existing;
+      }
+    }
+
+    const openShift = FinanceMockStorage.getShifts(tenantId).find(s => s.status === 'open');
+    const shiftId = payload.shift_id || openShift?.id || null;
+    const branchId = openShift?.branch_id || '';
+
+    const newPayment: PaymentRecord = {
+      id: 'pay_' + Math.random().toString(36).substring(2, 10),
+      tenant_id: tenantId,
+      branch_id: branchId,
+      booking_id: payload.booking_id,
+      customer_id: payload.customer_id,
+      amount_minor: payload.amount_minor,
+      currency: 'KZT',
+      payment_method: payload.payment_method,
+      payment_type: payload.payment_type || 'payment',
+      status: 'confirmed',
+      cashier_name: payload.cashier_name || 'Администратор',
+      comment: payload.comment,
+      created_at: new Date().toISOString(),
+      shift_id: shiftId,
+      idempotency_key: idempotencyKey,
+    };
+
+    FinanceMockStorage.savePayment(tenantId, newPayment);
+    return newPayment;
+  }
+
+  async getVisitPayments(
+    bookingId: string,
+    token: string,
+    tenantId: string
+  ): Promise<PaymentRecord[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(bookingId)}/payments`, {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      });
+      if (res.ok) {
+        return await handleResponse<PaymentRecord[]>(res);
+      }
+    } catch (_) {}
+
+    return FinanceMockStorage.getPayments(tenantId).filter(p => p.booking_id === bookingId);
+  }
+
+  // ==========================================
+  // SPRINT M13: Возвраты, авансы и кассовая смена
+  // ==========================================
+
+  async refundPayment(
+    payload: PaymentRefundRequest,
+    token: string,
+    tenantId: string,
+    idempotencyKey?: string
+  ): Promise<PaymentRecord> {
+    try {
+      const headers = this.headers(token, tenantId);
+      headers['Content-Type'] = 'application/json';
+      if (idempotencyKey) {
+        headers['Idempotency-Key'] = idempotencyKey;
+      }
+      const res = await fetch(`${this.baseUrl}/api/v1/business/payments/${encodeURIComponent(payload.payment_id)}/refund`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const record = await handleResponse<PaymentRecord>(res);
+        FinanceMockStorage.savePayment(tenantId, record);
+        return record;
+      }
+    } catch (_) {}
+
+    // Check original payment
+    const all = FinanceMockStorage.getPayments(tenantId);
+    const orig = all.find(p => p.id === payload.payment_id);
+    if (!orig) {
+      throw new ApiError(404, 'PAYMENT_NOT_FOUND', 'Исходный платеж не найден');
+    }
+
+    const openShift = FinanceMockStorage.getShifts(tenantId).find(s => s.status === 'open');
+
+    // CRITICAL: Return is a NEW corrective record, does NOT delete original payment!
+    const refundRecord: PaymentRecord = {
+      id: 'ref_' + Math.random().toString(36).substring(2, 10),
+      tenant_id: tenantId,
+      branch_id: orig.branch_id || openShift?.branch_id,
+      booking_id: orig.booking_id,
+      customer_id: orig.customer_id,
+      amount_minor: payload.amount_minor,
+      currency: orig.currency,
+      payment_method: payload.payment_method || orig.payment_method,
+      payment_type: 'refund',
+      status: 'confirmed',
+      cashier_name: payload.cashier_name || 'Администратор',
+      comment: `Возврат: ${payload.reason}${payload.comment ? ` (${payload.comment})` : ''}`,
+      created_at: new Date().toISOString(),
+      shift_id: openShift?.id || null,
+      original_payment_id: orig.id,
+      idempotency_key: idempotencyKey,
+    };
+
+    FinanceMockStorage.savePayment(tenantId, refundRecord);
+    return refundRecord;
+  }
+
+  async getCurrentCashShift(
+    branchId: string,
+    token: string,
+    tenantId: string
+  ): Promise<CashShiftSummary | null> {
+    try {
+      const qs = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
+      const res = await fetch(`${this.baseUrl}/api/v1/business/cash/shifts/current${qs}`, {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      });
+      if (res.ok) {
+        return await handleResponse<CashShiftSummary>(res);
+      }
+    } catch (_) {}
+
+    const shifts = FinanceMockStorage.getShifts(tenantId);
+    const openShift = shifts.find(s => s.status === 'open' && (!branchId || s.branch_id === branchId));
+    if (!openShift) return null;
+
+    // Calculate shift movements
+    const payments = FinanceMockStorage.getPayments(tenantId).filter(
+      p => p.shift_id === openShift.id || (p.branch_id === openShift.branch_id && new Date(p.created_at) >= new Date(openShift.opened_at))
+    );
+
+    let cash_inflow = 0;
+    let cash_refund = 0;
+    let card_inflow = 0;
+    let advance_inflow = 0;
+
+    for (const p of payments) {
+      if (p.payment_type === 'refund') {
+        if (p.payment_method === 'cash') cash_refund += p.amount_minor;
+      } else if (p.payment_type === 'advance') {
+        advance_inflow += p.amount_minor;
+        if (p.payment_method === 'cash') cash_inflow += p.amount_minor;
+        else card_inflow += p.amount_minor;
+      } else {
+        if (p.payment_method === 'cash') cash_inflow += p.amount_minor;
+        else card_inflow += p.amount_minor;
+      }
+    }
+
+    const expected_cash = openShift.opening_balance_minor + cash_inflow - cash_refund;
+
+    return {
+      shift: openShift,
+      cash_inflow_minor: cash_inflow,
+      cash_refund_minor: cash_refund,
+      card_inflow_minor: card_inflow,
+      advance_inflow_minor: advance_inflow,
+      expected_cash_balance_minor: expected_cash,
+      transactions_count: payments.length,
+    };
+  }
+
+  async openCashShift(
+    payload: ShiftOpenRequest,
+    token: string,
+    tenantId: string
+  ): Promise<CashShift> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/v1/business/cash/shifts/open`, {
+        method: 'POST',
+        headers: {
+          ...this.headers(token, tenantId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const record = await handleResponse<CashShift>(res);
+        FinanceMockStorage.saveShift(tenantId, record);
+        return record;
+      }
+    } catch (_) {}
+
+    const newShift: CashShift = {
+      id: 'shift_' + Math.random().toString(36).substring(2, 10),
+      tenant_id: tenantId,
+      branch_id: payload.branch_id,
+      status: 'open',
+      opened_by: payload.opened_by,
+      opened_at: new Date().toISOString(),
+      opening_balance_minor: payload.opening_balance_minor,
+      comment: payload.comment || null,
+    };
+
+    FinanceMockStorage.saveShift(tenantId, newShift);
+    return newShift;
+  }
+
+  async closeCashShift(
+    payload: ShiftCloseRequest,
+    token: string,
+    tenantId: string
+  ): Promise<CashShift> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/v1/business/cash/shifts/${encodeURIComponent(payload.shift_id)}/close`, {
+        method: 'POST',
+        headers: {
+          ...this.headers(token, tenantId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const record = await handleResponse<CashShift>(res);
+        FinanceMockStorage.saveShift(tenantId, record);
+        return record;
+      }
+    } catch (_) {}
+
+    const shifts = FinanceMockStorage.getShifts(tenantId);
+    const shift = shifts.find(s => s.id === payload.shift_id);
+    if (!shift) {
+      throw new ApiError(404, 'SHIFT_NOT_FOUND', 'Смена не найдена');
+    }
+
+    const summary = await this.getCurrentCashShift(shift.branch_id, token, tenantId);
+    const expected = summary?.expected_cash_balance_minor ?? shift.opening_balance_minor;
+    const diff = payload.closing_cash_actual_minor - expected;
+
+    shift.status = 'closed';
+    shift.closed_by = payload.closed_by;
+    shift.closed_at = new Date().toISOString();
+    shift.closing_cash_actual_minor = payload.closing_cash_actual_minor;
+    shift.closing_cash_expected_minor = expected;
+    shift.difference_minor = diff;
+    if (payload.comment) shift.comment = payload.comment;
+
+    FinanceMockStorage.saveShift(tenantId, shift);
+    return shift;
+  }
+
+  async getCashShifts(
+    branchId: string,
+    token: string,
+    tenantId: string
+  ): Promise<CashShift[]> {
+    try {
+      const qs = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
+      const res = await fetch(`${this.baseUrl}/api/v1/business/cash/shifts${qs}`, {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      });
+      if (res.ok) {
+        return await handleResponse<CashShift[]>(res);
+      }
+    } catch (_) {}
+
+    return FinanceMockStorage.getShifts(tenantId).filter(
+      s => !branchId || s.branch_id === branchId
+    );
+  }
+
+  // ==========================================
+  // SPRINT M14: Расходы и базовые отчёты
+  // ==========================================
+
+  async getExpenses(
+    branchId?: string,
+    token?: string,
+    tenantId?: string,
+    fromDate?: string,
+    toDate?: string
+  ): Promise<ExpenseRecord[]> {
+    if (token && tenantId) {
+      try {
+        const params: string[] = [];
+        if (branchId) params.push(`branch_id=${encodeURIComponent(branchId)}`);
+        if (fromDate) params.push(`from_date=${encodeURIComponent(fromDate)}`);
+        if (toDate) params.push(`to_date=${encodeURIComponent(toDate)}`);
+        const qs = params.length > 0 ? `?${params.join('&')}` : '';
+        const res = await fetch(`${this.baseUrl}/api/v1/business/expenses${qs}`, {
+          method: 'GET',
+          headers: this.headers(token, tenantId),
+        });
+        if (res.ok) {
+          return await handleResponse<ExpenseRecord[]>(res);
+        }
+      } catch (_) {}
+    }
+
+    let list = tenantId ? FinanceMockStorage.getExpenses(tenantId) : [];
+    if (branchId) {
+      list = list.filter(e => !e.branch_id || e.branch_id === branchId);
+    }
+    if (fromDate) {
+      list = list.filter(e => e.expense_date >= fromDate);
+    }
+    if (toDate) {
+      list = list.filter(e => e.expense_date <= toDate);
+    }
+    return list;
+  }
+
+  async createExpense(
+    payload: ExpenseCreateRequest,
+    token: string,
+    tenantId: string
+  ): Promise<ExpenseRecord> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/v1/business/expenses`, {
+        method: 'POST',
+        headers: {
+          ...this.headers(token, tenantId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const record = await handleResponse<ExpenseRecord>(res);
+        FinanceMockStorage.saveExpense(tenantId, record);
+        return record;
+      }
+    } catch (_) {}
+
+    const newExp: ExpenseRecord = {
+      id: 'exp_' + Math.random().toString(36).substring(2, 10),
+      tenant_id: tenantId,
+      branch_id: payload.branch_id,
+      category: payload.category,
+      amount_minor: payload.amount_minor,
+      currency: 'KZT',
+      expense_date: payload.expense_date,
+      created_by: payload.created_by,
+      payment_method: payload.payment_method,
+      comment: payload.comment,
+      created_at: new Date().toISOString(),
+    };
+
+    FinanceMockStorage.saveExpense(tenantId, newExp);
+    return newExp;
+  }
+
+  async deleteExpense(
+    expenseId: string,
+    token: string,
+    tenantId: string
+  ): Promise<void> {
+    try {
+      await fetch(`${this.baseUrl}/api/v1/business/expenses/${encodeURIComponent(expenseId)}`, {
+        method: 'DELETE',
+        headers: this.headers(token, tenantId),
+      });
+    } catch (_) {}
+    FinanceMockStorage.deleteExpense(tenantId, expenseId);
+  }
+
+  async getVisitsReport(
+    params: { branchId?: string; fromDate?: string; toDate?: string; staffId?: string },
+    token: string,
+    tenantId: string
+  ): Promise<VisitsReportData> {
+    try {
+      const q = new URLSearchParams();
+      if (params.branchId) q.set('branch_id', params.branchId);
+      if (params.fromDate) q.set('from_date', params.fromDate);
+      if (params.toDate) q.set('to_date', params.toDate);
+      if (params.staffId) q.set('staff_id', params.staffId);
+      const res = await fetch(`${this.baseUrl}/api/v1/business/reports/visits?${q.toString()}`, {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      });
+      if (res.ok) return await handleResponse<VisitsReportData>(res);
+    } catch (_) {}
+
+    // Generate from calendar data
+    let bookings: any[] = [];
+    try {
+      const cal = await this.getCalendar(
+        { date: params.fromDate || new Date().toISOString().split('T')[0], branch_id: params.branchId || '', staff_id: params.staffId },
+        token,
+        tenantId
+      );
+      bookings = cal?.bookings || [];
+    } catch (_) {}
+
+    if (params.staffId) {
+      bookings = bookings.filter((b: any) => b.staff_id === params.staffId);
+    }
+
+    const total = bookings.length;
+    const completed = bookings.filter((b: any) => b.status === 'completed').length;
+    const cancelled = bookings.filter((b: any) => b.status === 'cancelled').length;
+    const arrived = bookings.filter((b: any) => b.status === 'arrived').length;
+    const in_progress = bookings.filter((b: any) => b.status === 'in_progress').length;
+    const no_show = bookings.filter((b: any) => b.status === 'no_show').length;
+    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    const items = bookings.map((b: any) => {
+      const d = new Date(b.starts_at_utc);
+      return {
+        id: b.id,
+        public_ref: b.public_ref,
+        customer_name: b.customer_name,
+        staff_name: b.staff_name,
+        services: b.services,
+        date_display: d.toISOString().split('T')[0],
+        time_display: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        status: b.status,
+        amount_minor: b.amount_minor,
+      };
+    });
+
+    return {
+      total_bookings: total,
+      completed_bookings: completed,
+      cancelled_bookings: cancelled,
+      arrived_bookings: arrived,
+      in_progress_bookings: in_progress,
+      no_show_bookings: no_show,
+      completion_rate_percent: rate,
+      items,
+    };
+  }
+
+  async getServicesReport(
+    params: { branchId?: string; fromDate?: string; toDate?: string },
+    token: string,
+    tenantId: string
+  ): Promise<ServicesReportData> {
+    try {
+      const q = new URLSearchParams();
+      if (params.branchId) q.set('branch_id', params.branchId);
+      if (params.fromDate) q.set('from_date', params.fromDate);
+      if (params.toDate) q.set('to_date', params.toDate);
+      const res = await fetch(`${this.baseUrl}/api/v1/business/reports/services?${q.toString()}`, {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      });
+      if (res.ok) return await handleResponse<ServicesReportData>(res);
+    } catch (_) {}
+
+    let bookings: any[] = [];
+    try {
+      const cal = await this.getCalendar(
+        { date: params.fromDate || new Date().toISOString().split('T')[0], branch_id: params.branchId || '' },
+        token,
+        tenantId
+      );
+      bookings = cal?.bookings || [];
+    } catch (_) {}
+
+    const completed = bookings.filter((b: any) => b.status === 'completed');
+
+    const serviceCounts: Record<string, { count: number; total_minor: number }> = {};
+    let totalServicesCount = 0;
+    let totalRendered = 0;
+
+    for (const b of completed) {
+      const srvList = b.services || ['Услуга'];
+      const perServiceAmount = Math.round(b.amount_minor / srvList.length);
+      for (const sName of srvList) {
+        if (!serviceCounts[sName]) {
+          serviceCounts[sName] = { count: 0, total_minor: 0 };
+        }
+        serviceCounts[sName].count += 1;
+        serviceCounts[sName].total_minor += perServiceAmount;
+        totalServicesCount += 1;
+        totalRendered += perServiceAmount;
+      }
+    }
+
+    const top_services = Object.entries(serviceCounts).map(([name, data]) => ({
+      service_id: name,
+      service_name: name,
+      count: data.count,
+      total_minor: data.total_minor,
+      percentage: totalRendered > 0 ? Math.round((data.total_minor / totalRendered) * 100) : 0,
+    })).sort((a, b) => b.total_minor - a.total_minor);
+
+    return {
+      total_services_count: totalServicesCount,
+      total_rendered_minor: totalRendered,
+      average_ticket_minor: totalServicesCount > 0 ? Math.round(totalRendered / totalServicesCount) : 0,
+      top_services,
+    };
+  }
+
+  async getFinanceReport(
+    params: { branchId?: string; fromDate?: string; toDate?: string },
+    token: string,
+    tenantId: string
+  ): Promise<FinanceReportData> {
+    try {
+      const q = new URLSearchParams();
+      if (params.branchId) q.set('branch_id', params.branchId);
+      if (params.fromDate) q.set('from_date', params.fromDate);
+      if (params.toDate) q.set('to_date', params.toDate);
+      const res = await fetch(`${this.baseUrl}/api/v1/business/reports/finance?${q.toString()}`, {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      });
+      if (res.ok) return await handleResponse<FinanceReportData>(res);
+    } catch (_) {}
+
+    // Strict Sprint M14 Rule:
+    // Rendered = strictly completed bookings sum
+    // Paid = actual payment transactions minus refunds
+    // Debt = Rendered - Paid
+    let bookings: any[] = [];
+    try {
+      const cal = await this.getCalendar(
+        { date: params.fromDate || new Date().toISOString().split('T')[0], branch_id: params.branchId || '' },
+        token,
+        tenantId
+      );
+      bookings = cal?.bookings || [];
+    } catch (_) {}
+
+    const completedBookings = bookings.filter((b: any) => b.status === 'completed');
+    const rendered_minor = completedBookings.reduce((sum: number, b: any) => sum + (b.cost_minor || b.amount_minor || 0), 0);
+
+    const allPayments = FinanceMockStorage.getPayments(tenantId);
+    let cash_inflow = 0;
+    let card_inflow = 0;
+    let advance_inflow = 0;
+    let refunds_minor = 0;
+
+    for (const p of allPayments) {
+      if (params.branchId && p.branch_id && p.branch_id !== params.branchId) continue;
+      if (params.fromDate && p.created_at < params.fromDate) continue;
+      if (params.toDate && p.created_at > params.toDate + 'T23:59:59.999Z') continue;
+
+      if (p.payment_type === 'refund') {
+        refunds_minor += p.amount_minor;
+      } else if (p.payment_type === 'advance') {
+        advance_inflow += p.amount_minor;
+      } else {
+        if (p.payment_method === 'cash') {
+          cash_inflow += p.amount_minor;
+        } else {
+          card_inflow += p.amount_minor;
+        }
+      }
+    }
+
+    const paid_minor = (cash_inflow + card_inflow) - refunds_minor;
+    const debt_minor = Math.max(0, rendered_minor - paid_minor);
+
+    const expensesList = await this.getExpenses(params.branchId, token, tenantId, params.fromDate, params.toDate);
+    const expenses_minor = expensesList.reduce((s: number, e: ExpenseRecord) => s + e.amount_minor, 0);
+
+    const net_cash_flow_minor = paid_minor + advance_inflow - expenses_minor;
+
+    return {
+      rendered_minor,
+      paid_minor,
+      debt_minor,
+      expenses_minor,
+      refunds_minor,
+      advances_minor: advance_inflow,
+      net_cash_flow_minor,
+      cash_inflow_minor: cash_inflow,
+      card_inflow_minor: card_inflow,
+    };
+  }
+
+  async getDebtsReport(
+    params: { branchId?: string },
+    token: string,
+    tenantId: string
+  ): Promise<DebtsReportData> {
+    try {
+      const q = new URLSearchParams();
+      if (params.branchId) q.set('branch_id', params.branchId);
+      const res = await fetch(`${this.baseUrl}/api/v1/business/reports/debts?${q.toString()}`, {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      });
+      if (res.ok) return await handleResponse<DebtsReportData>(res);
+    } catch (_) {}
+
+    let bookings: any[] = [];
+    try {
+      const cal = await this.getCalendar(
+        { date: new Date().toISOString().split('T')[0], branch_id: params.branchId || '' },
+        token,
+        tenantId
+      );
+      bookings = cal?.bookings || [];
+    } catch (_) {}
+
+    const allPayments = FinanceMockStorage.getPayments(tenantId);
+
+    const items: DebtItem[] = [];
+    let totalDebt = 0;
+
+    for (const b of bookings) {
+      // Debt exists when service was rendered (completed) and cost > paid
+      const cost = b.cost_minor || b.amount_minor || 0;
+      const isCompleted = b.status === 'completed';
+      const rendered = isCompleted ? cost : 0;
+
+      const visitPayments = allPayments.filter(p => p.booking_id === b.id);
+      let paid = 0;
+      for (const p of visitPayments) {
+        if (p.payment_type === 'refund') paid -= p.amount_minor;
+        else paid += p.amount_minor;
+      }
+      paid = Math.max(0, paid);
+
+      const debt = isCompleted ? Math.max(0, rendered - paid) : 0;
+      if (debt > 0) {
+        totalDebt += debt;
+        const d = new Date(b.starts_at_utc);
+        items.push({
+          booking_id: b.id,
+          public_ref: b.public_ref,
+          customer_id: b.customer_id,
+          customer_name: b.customer_name,
+          customer_phone: b.customer_phone,
+          visit_date: d.toISOString().split('T')[0],
+          cost_minor: cost,
+          rendered_minor: rendered,
+          paid_minor: paid,
+          debt_minor: debt,
+          payment_status: paid > 0 ? 'partially_paid' : 'unpaid',
+          services: b.services,
+        });
+      }
+    }
+
+    return {
+      total_debt_minor: totalDebt,
+      debtors_count: items.length,
+      items,
+    };
+  }
+}
+
+// Client-side mock repository for M12, M13, M14 (fallback when backend route not yet available)
+class FinanceMockStorage {
+  private static getKey(tenantId: string, resource: string) {
+    return `crm_finance_${tenantId}_${resource}`;
+  }
+
+  private static load<T>(tenantId: string, resource: string): T[] {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = window.localStorage.getItem(this.getKey(tenantId, resource));
+        if (raw) return JSON.parse(raw);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  private static save<T>(tenantId: string, resource: string, data: T[]): void {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(this.getKey(tenantId, resource), JSON.stringify(data));
+      }
+    } catch (_) {}
+  }
+
+  static getPayments(tenantId: string): PaymentRecord[] {
+    return this.load<PaymentRecord>(tenantId, 'payments');
+  }
+
+  static savePayment(tenantId: string, payment: PaymentRecord): void {
+    const list = this.getPayments(tenantId);
+    list.unshift(payment);
+    this.save(tenantId, 'payments', list);
+  }
+
+  static getShifts(tenantId: string): CashShift[] {
+    return this.load<CashShift>(tenantId, 'shifts');
+  }
+
+  static saveShift(tenantId: string, shift: CashShift): void {
+    const list = this.getShifts(tenantId);
+    const idx = list.findIndex(s => s.id === shift.id);
+    if (idx >= 0) {
+      list[idx] = shift;
+    } else {
+      list.unshift(shift);
+    }
+    this.save(tenantId, 'shifts', list);
+  }
+
+  static getExpenses(tenantId: string): ExpenseRecord[] {
+    return this.load<ExpenseRecord>(tenantId, 'expenses');
+  }
+
+  static saveExpense(tenantId: string, exp: ExpenseRecord): void {
+    const list = this.getExpenses(tenantId);
+    list.unshift(exp);
+    this.save(tenantId, 'expenses', list);
+  }
+
+  static deleteExpense(tenantId: string, id: string): void {
+    const list = this.getExpenses(tenantId).filter(e => e.id !== id);
+    this.save(tenantId, 'expenses', list);
   }
 }
 

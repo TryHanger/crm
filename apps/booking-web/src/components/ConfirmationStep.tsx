@@ -1,6 +1,14 @@
 import React from 'react';
 import { BranchResponse, ServiceItemResponse, StaffPublicResponse, SlotResponse } from '@crm/api-client';
 
+export interface BookingErrorDetail {
+  title: string;
+  message: string;
+  code?: string;
+  alternativeSlots?: SlotResponse[];
+  priceChange?: { oldPriceMinor: number; newPriceMinor: number };
+}
+
 interface ConfirmationStepProps {
   branch: BranchResponse | null;
   selectedServices: ServiceItemResponse[];
@@ -16,7 +24,10 @@ interface ConfirmationStepProps {
   onChangeNote: (val: string) => void;
   onSubmit: () => void;
   isSubmitting: boolean;
-  error: { title: string; message: string } | null;
+  error: BookingErrorDetail | null;
+  onSelectAlternativeSlot?: (slot: SlotResponse) => void;
+  onAcceptPriceChange?: () => void;
+  onGoBackToSlots?: () => void;
   accentColor?: string;
 }
 
@@ -36,6 +47,9 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
   onSubmit,
   isSubmitting,
   error,
+  onSelectAlternativeSlot,
+  onAcceptPriceChange,
+  onGoBackToSlots,
   accentColor = 'var(--accent, #242424)',
 }) => {
   const staffName =
@@ -51,10 +65,28 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
     return `${dateFormatted} в ${timeFormatted}`;
   };
 
+  const formatShortTime = (isoString?: string) => {
+    if (!isoString) return '';
+    const d = new Date(isoString);
+    return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Almaty' });
+  };
+
   const totalAmountMinor = selectedSlot?.price_minor || selectedServices.reduce((sum, s) => sum + s.base_price_minor, 0);
   const totalDuration = selectedSlot?.duration_minutes || selectedServices.reduce((sum, s) => sum + s.base_duration_minutes, 0);
 
   const isValid = clientName.trim().length >= 2 && clientPhone.replace(/\D/g, '').length >= 10;
+
+  const isSlotConflict =
+    error?.code === 'SLOT_TAKEN' ||
+    error?.code === 'SLOT_CONFLICT' ||
+    error?.code === 'TIME_SLOT_UNAVAILABLE' ||
+    Boolean(error?.alternativeSlots && error.alternativeSlots.length > 0) ||
+    Boolean(error?.title?.includes('уже занят'));
+
+  const isPriceChange =
+    error?.code === 'QUOTE_CHANGED' ||
+    error?.code === 'QUOTE_MISMATCH' ||
+    Boolean(error?.priceChange);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -67,7 +99,177 @@ export const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
         </p>
       </div>
 
-      {error && (
+      {/* SPRINT M07: Concurrency Slot Conflict State */}
+      {error && isSlotConflict && (
+        <div
+          role="alert"
+          data-testid="slot-conflict-alert"
+          style={{
+            padding: '20px',
+            borderRadius: '16px',
+            background: '#FEF2F2',
+            border: '2px solid #F87171',
+            color: '#991B1B',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+            boxShadow: '0 4px 12px rgba(239, 68, 68, 0.12)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <span style={{ fontSize: '24px', lineHeight: '1' }}>⚠️</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '17px', color: '#B91C1C' }}>
+                {error.title || 'Выбранный слот только что занят'}
+              </div>
+              <div style={{ fontSize: '14px', lineHeight: 1.45, color: '#7F1D1D', marginTop: '4px' }}>
+                {error.message || 'К сожалению, пока вы заполняли форму, этот слот уже успел занять другой клиент. Ваши контактные данные сохранены — выберите другое свободное время:'}
+              </div>
+            </div>
+          </div>
+
+          {/* Alternative Slots Selector */}
+          {error.alternativeSlots && error.alternativeSlots.length > 0 && (
+            <div style={{ background: '#FFFFFF', padding: '14px', borderRadius: '12px', border: '1px solid #FECACA' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#991B1B', marginBottom: '8px' }}>
+                Ближайшие свободные слоты у мастера ({staffName}):
+              </div>
+              <div
+                data-testid="alternative-slots-list"
+                style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}
+              >
+                {error.alternativeSlots.map((altSlot) => (
+                  <button
+                    key={altSlot.starts_at_utc}
+                    type="button"
+                    data-testid="alt-slot-item"
+                    onClick={() => onSelectAlternativeSlot && onSelectAlternativeSlot(altSlot)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #EF4444',
+                      background: '#FFF1F2',
+                      color: '#B91C1C',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#EF4444';
+                      e.currentTarget.style.color = '#FFFFFF';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#FFF1F2';
+                      e.currentTarget.style.color = '#B91C1C';
+                    }}
+                  >
+                    🕒 {formatShortTime(altSlot.starts_at_utc)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {onGoBackToSlots && (
+              <button
+                type="button"
+                data-testid="go-back-slots-btn"
+                onClick={onGoBackToSlots}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: '10px',
+                  border: '1px solid #DC2626',
+                  background: '#FFFFFF',
+                  color: '#B91C1C',
+                  fontSize: '13.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                ← Выбрать другое время в календаре
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SPRINT M07: Quote Changed / Price Update State */}
+      {error && isPriceChange && !isSlotConflict && (
+        <div
+          role="alert"
+          data-testid="quote-changed-alert"
+          style={{
+            padding: '18px 20px',
+            borderRadius: '16px',
+            background: '#FFFBEB',
+            border: '2px solid #FCD34D',
+            color: '#92400E',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <span style={{ fontSize: '24px', lineHeight: '1' }}>💡</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '17px', color: '#B45309' }}>
+                {error.title || 'Условия или стоимость изменились'}
+              </div>
+              <div style={{ fontSize: '14px', lineHeight: 1.45, color: '#78350F', marginTop: '4px' }}>
+                {error.message || 'Срок действия предварительного тарифа обновился. Пожалуйста, подтвердите новую стоимость перед записью.'}
+              </div>
+            </div>
+          </div>
+
+          {error.priceChange && (
+            <div style={{ background: '#FFFFFF', padding: '12px 16px', borderRadius: '10px', border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '14px' }}>
+              <div>
+                <span style={{ color: '#6B7280' }}>Было: </span>
+                <span style={{ textDecoration: 'line-through', color: '#9CA3AF', fontWeight: 600 }}>
+                  {(error.priceChange.oldPriceMinor / 100).toLocaleString('ru-RU')} ₸
+                </span>
+              </div>
+              <span style={{ fontSize: '18px', color: '#D97706' }}>→</span>
+              <div>
+                <span style={{ color: '#6B7280' }}>Стало: </span>
+                <span style={{ fontWeight: 800, color: '#059669', fontSize: '16px' }}>
+                  {(error.priceChange.newPriceMinor / 100).toLocaleString('ru-RU')} ₸
+                </span>
+              </div>
+            </div>
+          )}
+
+          {onAcceptPriceChange && (
+            <div>
+              <button
+                type="button"
+                data-testid="accept-price-btn"
+                onClick={onAcceptPriceChange}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#D97706',
+                  color: '#FFFFFF',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                ✓ Принять новые условия и подтвердить
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Generic Error */}
+      {error && !isSlotConflict && !isPriceChange && (
         <div
           role="alert"
           style={{

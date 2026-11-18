@@ -51,6 +51,7 @@ export type CrmNavigationSection =
   | 'staff'
   | 'services'
   | 'online-booking'
+  | 'cash'
   | 'reports'
   | 'settings'
   | 'onboarding';
