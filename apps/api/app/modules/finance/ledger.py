@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.infrastructure.db.models import LedgerEntry, Order, OrderItem
 from apps.api.app.modules.finance import money
 
-KINDS = ("service_rendered", "payment", "refund", "advance", "advance_applied", "adjustment")
+KINDS = ("service_rendered", "payment", "refund", "advance", "advance_applied", "adjustment", "expense")
 
 
 class FinanceError(Exception):
@@ -41,7 +41,7 @@ class Posted:
 
 def _fingerprint(e) -> tuple:
     return (e.kind, int(e.amount_minor), e.currency, e.order_id, e.branch_id, e.reverses_entry_id,
-            e.cash_account_id, e.customer_id)
+            e.cash_account_id, e.customer_id, e.expense_category_id)
 
 
 async def _insert_once(db: AsyncSession, values: dict) -> Posted:
@@ -62,7 +62,7 @@ async def _insert_once(db: AsyncSession, values: dict) -> Posted:
 
     incoming = (values["kind"], int(values["amount_minor"]), values["currency"], values.get("order_id"),
                 values["branch_id"], values.get("reverses_entry_id"), values.get("cash_account_id"),
-                values.get("customer_id"))
+                values.get("customer_id"), values.get("expense_category_id"))
     if _fingerprint(existing) != incoming:
         raise FinanceError("IDEMPOTENCY_KEY_REUSED",
                            "Ключ операции уже использован для другой операции", 409)
@@ -88,10 +88,10 @@ async def post_entry(
     currency: str, idempotency_key: str, order_id: Optional[uuid.UUID] = None, reason: Optional[str] = None,
     created_by_user_id: Optional[uuid.UUID] = None, occurred_at: Optional[dt.datetime] = None,
     cash_account_id: Optional[uuid.UUID] = None, customer_id: Optional[uuid.UUID] = None,
-    cash_shift_id: Optional[uuid.UUID] = None,
+    cash_shift_id: Optional[uuid.UUID] = None, expense_category_id: Optional[uuid.UUID] = None,
 ) -> Posted:
     """Проводит операцию один раз. Не коммитит."""
-    if kind in ("payment", "refund") and cash_account_id is None:
+    if kind in ("payment", "refund", "expense") and cash_account_id is None:
         raise FinanceError("CASH_ACCOUNT_REQUIRED", "Укажите кассу, через которую прошли деньги")
     if kind not in KINDS:
         raise FinanceError("LEDGER_KIND_INVALID", f"Неизвестный тип операции: {kind}")
@@ -104,6 +104,8 @@ async def post_entry(
             raise FinanceError(e.code, e.message)
     elif not (reason or "").strip():
         raise FinanceError("REASON_REQUIRED", "Для корректировки нужна причина")
+    if kind == "expense" and expense_category_id is None:
+        raise FinanceError("EXPENSE_CATEGORY_REQUIRED", "Укажите статью расхода")
     try:
         currency = money.normalize_currency(currency)
     except money.MoneyError as e:
@@ -120,6 +122,7 @@ async def post_entry(
         amount_minor=amount_minor, currency=currency, idempotency_key=_check_key(idempotency_key),
         reverses_entry_id=None, reason=(reason or None), created_by_user_id=created_by_user_id,
         cash_account_id=cash_account_id, customer_id=customer_id, cash_shift_id=cash_shift_id,
+        expense_category_id=expense_category_id,
     )
     if occurred_at is not None:
         values["occurred_at"] = occurred_at
@@ -145,6 +148,7 @@ async def reverse_entry(
         idempotency_key=_check_key(idempotency_key), reverses_entry_id=original.id,
         reason=reason.strip(), created_by_user_id=created_by_user_id,
         cash_account_id=original.cash_account_id, customer_id=original.customer_id,
+        expense_category_id=original.expense_category_id,
         cash_shift_id=cash_shift_id,  # corrections go into the CURRENT open shift, never into a closed one
     ))
 

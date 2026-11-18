@@ -9,8 +9,9 @@ from apps.api.app.modules.catalog import ownership
 from apps.api.app.infrastructure.security import branch_scope
 from apps.api.app.modules.bookings import lifecycle
 from apps.api.app.modules.finance import accrual, cash as finance_cash, ledger as finance_ledger, shifts as finance_shifts
+from apps.api.app.modules.finance import expenses as finance_expenses, reports as finance_reports
 from apps.api.app.modules.finance.ledger import FinanceError
-from apps.api.app.infrastructure.db.models import CashAccount, CashShift, LedgerEntry
+from apps.api.app.infrastructure.db.models import CashAccount, CashShift, ExpenseCategory, LedgerEntry, Order
 from apps.api.app.infrastructure.db.session import set_tenant_context
 from apps.api.app.modules.customers import identity as customer_identity
 from sqlalchemy.exc import IntegrityError, DBAPIError
@@ -661,6 +662,140 @@ async def get_cash_shift(
         raise HTTPException(status_code=404, detail={"code": "SHIFT_NOT_FOUND", "message": "Смена не найдена"})
     await branch_scope.require_branch(db, crm_user, s.branch_id)
     return await _shift_report(db, s)
+
+
+# =========================================================================
+# EXPENSES AND FINANCE REPORT (M14): figures come from the money ledger only
+# =========================================================================
+
+class ExpenseCategoryCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+
+
+class ExpenseCreateRequest(BaseModel):
+    branch_id: uuid.UUID
+    cash_account_id: uuid.UUID
+    category_id: uuid.UUID
+    amount_minor: int = Field(gt=0)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+def _category_out(c: ExpenseCategory) -> dict:
+    return {"id": str(c.id), "name": c.name, "archived": c.archived_at is not None}
+
+
+@router.get("/expense-categories")
+async def list_expense_categories(
+    include_archived: bool = False,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    cats = await finance_expenses.list_categories(db, crm_user.tenant_id, include_archived)
+    out = [_category_out(c) for c in cats]
+    await db.commit()
+    return out
+
+
+@router.post("/expense-categories", status_code=status.HTTP_201_CREATED)
+async def create_expense_category(
+    req: ExpenseCategoryCreateRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    try:
+        cat = await finance_expenses.create_category(db, crm_user.tenant_id, req.name)
+        out = _category_out(cat)
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return out
+
+
+@router.post("/expense-categories/{category_id}/archive")
+async def archive_expense_category(
+    category_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    try:
+        out = _category_out(await finance_expenses.archive_category(db, crm_user.tenant_id, category_id))
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return out
+
+
+@router.post("/expenses", status_code=status.HTTP_201_CREATED)
+async def create_expense(
+    req: ExpenseCreateRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Money out of a branch till by expense category (M14). Cash: only within an open shift, never below zero."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    await branch_scope.require_branch(db, crm_user, req.branch_id)
+    return await _money_call(db, lambda: finance_expenses.record_expense(
+        db, tenant_id=crm_user.tenant_id, branch_id=req.branch_id, cash_account_id=req.cash_account_id,
+        category_id=req.category_id, amount_minor=req.amount_minor, reason=req.reason,
+        idempotency_key=idempotency_key or "", actor_id=crm_user.user.id))
+
+
+@router.get("/expenses")
+async def list_expenses(
+    branch_id: uuid.UUID,
+    from_date: datetime.date,
+    to_date: datetime.date,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    branch = await branch_scope.require_branch(db, crm_user, branch_id)
+    try:
+        finance_reports.validate_period(from_date, to_date)
+    except FinanceError as e:
+        raise _finance_error(e)
+    start, end = finance_reports.local_bounds(from_date, to_date, branch.timezone_iana)
+    rows = (await db.execute(select(LedgerEntry, ExpenseCategory.name, CashAccount.name)
+                             .join(ExpenseCategory, ExpenseCategory.id == LedgerEntry.expense_category_id)
+                             .join(CashAccount, CashAccount.id == LedgerEntry.cash_account_id)
+                             .where(LedgerEntry.tenant_id == crm_user.tenant_id, LedgerEntry.branch_id == branch_id,
+                                    LedgerEntry.kind == "expense", LedgerEntry.occurred_at >= start,
+                                    LedgerEntry.occurred_at < end)
+                             .order_by(LedgerEntry.occurred_at, LedgerEntry.created_at))).all()
+    return [{"id": str(e.id), "occurred_at": e.occurred_at, "amount_minor": e.amount_minor, "category": cat,
+             "cash_account": acc, "reason": e.reason, "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None,
+             "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None}
+            for e, cat, acc in rows]
+
+
+async def _report_branches(db: AsyncSession, crm_user: AuthenticatedTenantUser, branch_id: Optional[uuid.UUID]):
+    if branch_id is not None:
+        await branch_scope.require_branch(db, crm_user, branch_id)
+        return {branch_id}
+    return await branch_scope.allowed_branch_ids(db, crm_user)
+
+
+@router.get("/reports/finance")
+async def get_finance_report(
+    from_date: datetime.date,
+    to_date: datetime.date,
+    branch_id: Optional[uuid.UUID] = None,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Rendered, received, advances, expenses, receivables and advance liability for a period (M14).
+
+    Branch-local day boundaries; the company total is the sum of branches. Masters: 403;
+    an admin with branch grants sees only those branches."""
+    branches = await _report_branches(db, crm_user, branch_id)
+    try:
+        return await finance_reports.finance_report(db, crm_user.tenant_id, from_date, to_date, branches)
+    except FinanceError as e:
+        raise _finance_error(e)
 
 
 @router.get("/bookings/{booking_id}")
@@ -1442,14 +1577,19 @@ async def get_reports_overview(
     tenant_id = crm_user.tenant_id
     from_utc = datetime.datetime.combine(from_date, datetime.time.min, tzinfo=datetime.timezone.utc)
     to_utc = datetime.datetime.combine(to_date, datetime.time.max, tzinfo=datetime.timezone.utc)
+    report_branches = await _report_branches(db, crm_user, branch_id)
+    try:
+        money_report = await finance_reports.finance_report(db, tenant_id, from_date, to_date, report_branches)
+    except FinanceError as e:
+        raise _finance_error(e)
 
     stmt = select(Booking).where(
         Booking.tenant_id == tenant_id,
         Booking.starts_at_utc >= from_utc,
         Booking.starts_at_utc <= to_utc
     )
-    if branch_id:
-        stmt = stmt.where(Booking.branch_id == branch_id)
+    if report_branches is not None:
+        stmt = stmt.where(Booking.branch_id.in_(report_branches))
 
     res = await db.execute(stmt)
     bookings = res.scalars().all()
@@ -1462,11 +1602,19 @@ async def get_reports_overview(
 
     # Planned revenue
     planned_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status != "cancelled")
-    # Completed visits value (service delivered, not confirmed payment)
-    completed_revenue_minor = sum(b.amount_minor_snapshot for b in bookings if b.status == "completed")
-    # Confirmed cash/ledger payments
-    paid_revenue_minor = 0
+    # M14: money comes from the ledger only, never from the booking status
+    completed_revenue_minor = money_report["total"]["rendered_minor"]     # оказано (начислено)
+    paid_revenue_minor = money_report["total"]["received_minor"]          # получено деньгами
     actual_revenue_minor = completed_revenue_minor
+    rendered_by_booking = {}
+    if bookings:
+        rows = (await db.execute(select(Order.booking_id, func.sum(LedgerEntry.amount_minor))
+                                 .join(LedgerEntry, LedgerEntry.order_id == Order.id)
+                                 .where(Order.tenant_id == tenant_id, LedgerEntry.tenant_id == tenant_id,
+                                        Order.booking_id.in_([b.id for b in bookings]),
+                                        LedgerEntry.kind.in_(("service_rendered", "adjustment")))
+                                 .group_by(Order.booking_id))).all()
+        rendered_by_booking = {bid: int(v) for bid, v in rows}
 
     # Occupied minutes from staff_occupancies
     stmt_occ = select(StaffOccupancy).where(
@@ -1487,7 +1635,7 @@ async def get_reports_overview(
     staff_stats = []
     for s in all_staff:
         st_bookings = [b for b in bookings if b.staff_id == s.id and b.status != "cancelled"]
-        st_rev = sum(b.amount_minor_snapshot for b in bookings if b.staff_id == s.id and b.status == "completed")
+        st_rev = sum(rendered_by_booking.get(b.id, 0) for b in bookings if b.staff_id == s.id)
         st_booked_mins = sum((b.service_ends_at_utc - b.starts_at_utc).total_seconds() / 60 for b in st_bookings)
 
         # Calculate scheduled shift minutes in the period
@@ -1543,11 +1691,13 @@ async def get_reports_overview(
         "completed_revenue_minor": completed_revenue_minor,
         "completed_revenue_formatted": f"{completed_revenue_minor / 100:,.0f} ₸".replace(",", " "),
         "paid_revenue_minor": paid_revenue_minor,
-        "paid_revenue_formatted": "0 ₸",
+        "paid_revenue_formatted": f"{paid_revenue_minor / 100:,.0f} ₸".replace(",", " "),
+        "debt_minor": money_report["total"]["receivables_end_minor"],
+        "expenses_minor": money_report["total"]["expenses_minor"],
         "actual_revenue_minor": actual_revenue_minor,
         "actual_revenue_formatted": f"{actual_revenue_minor / 100:,.0f} ₸".replace(",", " "),
-        "payment_collection_enabled": False,
-        "revenue_semantics_note": "completed_revenue_minor отражает стоимость фактически оказанных услуг (завершенные визиты), а не подтвержденные кассовые поступления. Денежный эквайринг/ledger отключен.",
+        "payment_collection_enabled": True,
+        "revenue_semantics_note": "Деньги — из журнала: completed_revenue_minor = оказано (начислено по завершённым визитам, за вычетом возвратов), paid_revenue_minor = получено деньгами (оплаты − возвраты), debt_minor = долг клиентов на конец периода. Авансы не выручка. Подробно: /reports/finance.",
         "new_customers_count": new_customers_count,
         "occupied_minutes": int(occupied_minutes),
         "staff_stats": staff_stats

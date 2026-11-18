@@ -902,6 +902,7 @@ class LedgerEntry(Base):
     cash_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)  # M12
     customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)  # M13 advances
     cash_shift_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)  # M13
+    expense_category_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)  # M14
     kind: Mapped[str] = mapped_column(String(24), nullable=False)
     amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
@@ -917,7 +918,7 @@ class LedgerEntry(Base):
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_ledger_idempotency"),
         UniqueConstraint("tenant_id", "reverses_entry_id", name="uq_ledger_single_reversal"),
         CheckConstraint(
-            "kind IN ('service_rendered', 'payment', 'refund', 'advance', 'advance_applied', 'adjustment')",
+            "kind IN ('service_rendered', 'payment', 'refund', 'advance', 'advance_applied', 'adjustment', 'expense')",
             name="ck_ledger_kind"),
         CheckConstraint("amount_minor <> 0", name="ck_ledger_nonzero"),
         CheckConstraint(
@@ -935,6 +936,11 @@ class LedgerEntry(Base):
         CheckConstraint("kind NOT IN ('payment', 'refund') OR cash_account_id IS NOT NULL", name="ck_ledger_money_has_account"),
         ForeignKeyConstraint(["tenant_id", "cash_shift_id"], ["cash_shifts.tenant_id", "cash_shifts.id"], name="fk_ledger_cash_shift_same_tenant"),
         CheckConstraint("kind NOT IN ('advance', 'advance_applied') OR customer_id IS NOT NULL", name="ck_ledger_advance_has_customer"),
+        CheckConstraint("kind <> 'expense' OR (cash_account_id IS NOT NULL AND expense_category_id IS NOT NULL AND (amount_minor > 0 OR reverses_entry_id IS NOT NULL))",
+                        name="ck_ledger_expense_complete"),
+        ForeignKeyConstraint(["tenant_id", "expense_category_id"], ["expense_categories.tenant_id", "expense_categories.id"],
+                             name="fk_ledger_expense_category_same_tenant"),
+        Index("ix_ledger_tenant_kind_occurred", "tenant_id", "kind", "occurred_at"),
         Index("ix_ledger_tenant_branch_occurred", "tenant_id", "branch_id", "occurred_at"),
     )
 
@@ -990,4 +996,20 @@ class CashShift(Base):
         ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"], name="fk_cash_shift_branch_same_tenant"),
         ForeignKeyConstraint(["tenant_id", "cash_account_id"], ["cash_accounts.tenant_id", "cash_accounts.id"], name="fk_cash_shift_account_same_tenant"),
         Index("uq_cash_shift_one_open", "tenant_id", "cash_account_id", unique=True, postgresql_where=text("status = 'open'")),
+    )
+
+
+class ExpenseCategory(Base):
+    """Expense article (M14): rent, materials, salaries paid out of the till, ..."""
+    __tablename__ = "expense_categories"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_expense_category_tenant_id"),
+        UniqueConstraint("tenant_id", "name", name="uq_expense_category_name"),
     )

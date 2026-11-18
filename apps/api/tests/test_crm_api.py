@@ -575,8 +575,11 @@ async def test_crm_revenue_semantics_and_multi_branch_pricing_isolation():
         assert "planned_revenue_minor" in data
         assert "completed_revenue_minor" in data
         assert "paid_revenue_minor" in data
-        assert data["paid_revenue_minor"] == 0, "Cash/ledger payment collection is not enabled on MVP"
-        assert data["payment_collection_enabled"] is False
+        # M14: money figures come from the ledger, not from booking status
+        assert data["payment_collection_enabled"] is True
+        fin = (await client.get("/api/v1/business/reports/finance?from_date=2026-10-01&to_date=2026-11-30", headers=mc_headers)).json()
+        assert data["paid_revenue_minor"] == fin["total"]["received_minor"]
+        assert data["completed_revenue_minor"] == fin["total"]["rendered_minor"]
         assert "revenue_semantics_note" in data
         assert "completed_revenue_minor" in data["revenue_semantics_note"]
 

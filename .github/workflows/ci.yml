@@ -218,6 +218,8 @@ jobs:
           python scripts/smoke_cash.py
           # M13 smoke: partial payment, refund 1000 and advance 2000 reconciled by the cash shift
           python scripts/smoke_shift.py
+          # M14 smoke: finance report from the ledger, expense reconciled by the shift
+          python scripts/smoke_reports.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots
