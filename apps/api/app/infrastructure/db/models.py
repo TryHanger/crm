@@ -901,6 +901,7 @@ class LedgerEntry(Base):
     order_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
     cash_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)  # M12
     customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)  # M13 advances
+    cash_shift_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)  # M13
     kind: Mapped[str] = mapped_column(String(24), nullable=False)
     amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
@@ -932,6 +933,8 @@ class LedgerEntry(Base):
         ForeignKeyConstraint(["tenant_id", "cash_account_id"], ["cash_accounts.tenant_id", "cash_accounts.id"], name="fk_ledger_cash_account_same_tenant"),
         ForeignKeyConstraint(["tenant_id", "customer_id"], ["customers.tenant_id", "customers.id"], name="fk_ledger_customer_same_tenant"),
         CheckConstraint("kind NOT IN ('payment', 'refund') OR cash_account_id IS NOT NULL", name="ck_ledger_money_has_account"),
+        ForeignKeyConstraint(["tenant_id", "cash_shift_id"], ["cash_shifts.tenant_id", "cash_shifts.id"], name="fk_ledger_cash_shift_same_tenant"),
+        CheckConstraint("kind NOT IN ('advance', 'advance_applied') OR customer_id IS NOT NULL", name="ck_ledger_advance_has_customer"),
         Index("ix_ledger_tenant_branch_occurred", "tenant_id", "branch_id", "occurred_at"),
     )
 
@@ -953,4 +956,38 @@ class CashAccount(Base):
         UniqueConstraint("tenant_id", "branch_id", "name", name="uq_cash_account_name"),
         CheckConstraint("kind IN ('cash', 'card', 'bank_transfer', 'kaspi')", name="ck_cash_account_kind"),
         ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"], name="fk_cash_account_branch_same_tenant"),
+    )
+
+
+class CashShift(Base):
+    """Cash drawer shift (M13): money movements of a cash account between opening and closing.
+
+    Closed shifts are immutable and nothing can be posted into them (DB triggers, migration 009).
+    """
+    __tablename__ = "cash_shifts"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    branch_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    cash_account_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(8), default="open", nullable=False)  # open, closed
+    opening_float_minor: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    opened_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    expected_minor: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    counted_minor: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    difference_minor: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    close_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_cash_shift_tenant_id"),
+        CheckConstraint("status IN ('open', 'closed')", name="ck_cash_shift_status"),
+        CheckConstraint("opening_float_minor >= 0", name="ck_cash_shift_float"),
+        CheckConstraint("status = 'open' OR (closed_at IS NOT NULL AND counted_minor IS NOT NULL AND expected_minor IS NOT NULL "
+                        "AND difference_minor = counted_minor - expected_minor)", name="ck_cash_shift_closed_complete"),
+        ForeignKeyConstraint(["tenant_id", "branch_id"], ["branches.tenant_id", "branches.id"], name="fk_cash_shift_branch_same_tenant"),
+        ForeignKeyConstraint(["tenant_id", "cash_account_id"], ["cash_accounts.tenant_id", "cash_accounts.id"], name="fk_cash_shift_account_same_tenant"),
+        Index("uq_cash_shift_one_open", "tenant_id", "cash_account_id", unique=True, postgresql_where=text("status = 'open'")),
     )

@@ -216,6 +216,8 @@ jobs:
           python scripts/smoke_accrual.py
           # M12 smoke: 3000 of 8000 paid -> debt 5000, cash account reconciles, replay does not double
           python scripts/smoke_cash.py
+          # M13 smoke: partial payment, refund 1000 and advance 2000 reconciled by the cash shift
+          python scripts/smoke_shift.py
           npx playwright test || (for f in test-results/**/error-context.md; do [ -f "$f" ] && cat "$f"; done; exit 1)
 
       - name: Upload Playwright Test Results & Screenshots

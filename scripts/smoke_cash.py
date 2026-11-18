@@ -18,6 +18,8 @@ def run(console, crm, booking):
     _, accounts = call("GET", f"{crm}/api/v1/business/cash-accounts?branch_id={branch}", token=t)
     cash = next(a for a in accounts if a["kind"] == "cash")
     check(len(accounts) == 2, f"кассы филиала: {[a['name'] for a in accounts]}")
+    code, _ = call("POST", f"{crm}/api/v1/business/cash-shifts/open", token=t, body={"cash_account_id": cash["id"]})
+    check(code == 201, "кассовая смена открыта")
     key = f"smoke-pay-{uuid.uuid4()}"
     code, res = call("POST", f"{crm}/api/v1/business/bookings/{b['booking_id']}/payments", token=t,
                      headers={"Idempotency-Key": key}, body={"amount_minor": 300000, "cash_account_id": cash["id"]})

@@ -8,9 +8,10 @@ from pydantic import BaseModel, Field, ValidationError
 from apps.api.app.modules.catalog import ownership
 from apps.api.app.infrastructure.security import branch_scope
 from apps.api.app.modules.bookings import lifecycle
-from apps.api.app.modules.finance import accrual, cash as finance_cash, ledger as finance_ledger
+from apps.api.app.modules.finance import accrual, cash as finance_cash, ledger as finance_ledger, shifts as finance_shifts
 from apps.api.app.modules.finance.ledger import FinanceError
-from apps.api.app.infrastructure.db.models import CashAccount, LedgerEntry
+from apps.api.app.infrastructure.db.models import CashAccount, CashShift, LedgerEntry
+from apps.api.app.infrastructure.db.session import set_tenant_context
 from apps.api.app.modules.customers import identity as customer_identity
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy import select, and_, or_, func, text
@@ -453,6 +454,213 @@ async def list_visit_payments(
              "reverses_entry_id": str(e.reverses_entry_id) if e.reverses_entry_id else None, "reason": e.reason,
              "created_by_user_id": str(e.created_by_user_id) if e.created_by_user_id else None,
              "created_at": e.created_at} for e, name in rows]
+
+
+class RefundCreateRequest(BaseModel):
+    amount_minor: int = Field(gt=0)
+    cash_account_id: uuid.UUID
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class AdvanceCreateRequest(BaseModel):
+    branch_id: uuid.UUID
+    amount_minor: int = Field(gt=0)
+    cash_account_id: uuid.UUID
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+class ApplyAdvanceRequest(BaseModel):
+    amount_minor: int = Field(gt=0)
+
+
+class ShiftOpenRequest(BaseModel):
+    cash_account_id: uuid.UUID
+    opening_float_minor: int = Field(default=0, ge=0)
+
+
+class ShiftCloseRequest(BaseModel):
+    counted_minor: int = Field(ge=0)
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class ReverseRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+async def _visit_order(db: AsyncSession, crm_user: AuthenticatedTenantUser, booking_id: uuid.UUID):
+    b = (await db.execute(select(Booking).where(
+        Booking.id == booking_id, Booking.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail={"code": "BOOKING_NOT_FOUND", "message": "Запись не найдена"})
+    await branch_scope.require_booking_access(db, crm_user, b.branch_id, b.staff_id)
+    order = await accrual.booking_order(db, b)
+    if order is None:
+        raise HTTPException(status_code=409, detail={"code": "NOTHING_TO_PAY", "message": "Визит ещё не завершён"})
+    return b, order
+
+
+def _position(p):
+    return None if p is None else {"rendered_minor": p.rendered_minor, "received_minor": p.received_minor,
+                                   "advance_applied_minor": p.advance_applied_minor, "debt_minor": p.debt_minor}
+
+
+async def _money_call(db: AsyncSession, fn):
+    try:
+        res = await fn()
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return {"entry_id": str(res.entry.id), "kind": res.entry.kind, "amount_minor": res.entry.amount_minor,
+            "replayed": not res.created, "finance": _position(res.position)}
+
+
+@router.post("/bookings/{booking_id}/refunds", status_code=status.HTTP_201_CREATED)
+async def create_visit_refund(
+    booking_id: uuid.UUID, req: RefundCreateRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Money back for the service (M13): refund + matching reduction of rendered; the original payment stays."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    _, order = await _visit_order(db, crm_user, booking_id)
+    return await _money_call(db, lambda: finance_cash.refund(
+        db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
+        cash_account_id=req.cash_account_id, reason=req.reason, idempotency_key=idempotency_key or "",
+        actor_id=crm_user.user.id))
+
+
+@router.post("/bookings/{booking_id}/apply-advance", status_code=status.HTTP_201_CREATED)
+async def apply_customer_advance(
+    booking_id: uuid.UUID, req: ApplyAdvanceRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    _, order = await _visit_order(db, crm_user, booking_id)
+    return await _money_call(db, lambda: finance_cash.apply_advance(
+        db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
+        idempotency_key=idempotency_key or "", actor_id=crm_user.user.id))
+
+
+@router.post("/customers/{customer_id}/advances", status_code=status.HTTP_201_CREATED)
+async def receive_customer_advance(
+    customer_id: uuid.UUID, req: AdvanceCreateRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Money received before the service: a liability to the client, not revenue (M13)."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    await branch_scope.require_branch(db, crm_user, req.branch_id)
+    out = await _money_call(db, lambda: finance_cash.receive_advance(
+        db, tenant_id=crm_user.tenant_id, customer_id=customer_id, branch_id=req.branch_id,
+        amount_minor=req.amount_minor, cash_account_id=req.cash_account_id, idempotency_key=idempotency_key or "",
+        actor_id=crm_user.user.id, note=req.note))
+    await set_tenant_context(db, crm_user.tenant_id)
+    out["advance_balance_minor"] = await finance_cash.advance_balance(db, crm_user.tenant_id, customer_id)
+    return out
+
+
+@router.get("/customers/{customer_id}/advance")
+async def get_customer_advance(
+    customer_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    c = (await db.execute(select(Customer).where(Customer.id == customer_id, Customer.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if c is None:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Клиент не найден"})
+    return {"customer_id": str(c.id), "advance_balance_minor": await finance_cash.advance_balance(db, crm_user.tenant_id, c.id)}
+
+
+@router.post("/ledger-entries/{entry_id}/reverse", status_code=status.HTTP_201_CREATED)
+async def reverse_ledger_entry(
+    entry_id: uuid.UUID, req: ReverseRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Storno of a cashier mistake: an opposite entry in the current shift; nothing is deleted (M13)."""
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    e = (await db.execute(select(LedgerEntry).where(
+        LedgerEntry.id == entry_id, LedgerEntry.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if e is None:
+        raise HTTPException(status_code=404, detail={"code": "ENTRY_NOT_FOUND", "message": "Операция не найдена"})
+    await branch_scope.require_branch(db, crm_user, e.branch_id)
+    return await _money_call(db, lambda: finance_cash.reverse(
+        db, tenant_id=crm_user.tenant_id, entry_id=entry_id, reason=req.reason,
+        idempotency_key=idempotency_key or "", actor_id=crm_user.user.id))
+
+
+async def _shift_report(db: AsyncSession, shift) -> dict:
+    moves = await finance_shifts.shift_movements(db, shift)
+    expected = finance_shifts.expected_cash(shift, moves)
+    return {"id": str(shift.id), "status": shift.status, "cash_account_id": str(shift.cash_account_id),
+            "branch_id": str(shift.branch_id), "opened_at": shift.opened_at, "closed_at": shift.closed_at,
+            "opening_float_minor": shift.opening_float_minor, "movements": moves,
+            "expected_minor": shift.expected_minor if shift.status == "closed" else expected,
+            "counted_minor": shift.counted_minor, "difference_minor": shift.difference_minor, "close_note": shift.close_note}
+
+
+@router.post("/cash-shifts/open", status_code=status.HTTP_201_CREATED)
+async def open_cash_shift(
+    req: ShiftOpenRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    acc = (await db.execute(select(CashAccount).where(
+        CashAccount.id == req.cash_account_id, CashAccount.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if acc is None:
+        raise HTTPException(status_code=404, detail={"code": "CASH_ACCOUNT_NOT_FOUND", "message": "Касса не найдена"})
+    await branch_scope.require_branch(db, crm_user, acc.branch_id)
+    try:
+        shift = await finance_shifts.open_shift(db, tenant_id=crm_user.tenant_id, account=acc,
+                                                opening_float_minor=req.opening_float_minor, actor_id=crm_user.user.id)
+        out = await _shift_report(db, shift)
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return out
+
+
+@router.post("/cash-shifts/{shift_id}/close")
+async def close_cash_shift(
+    shift_id: uuid.UUID, req: ShiftCloseRequest,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    await check_crm_write_permitted(crm_user.tenant_id, db)
+    s = (await db.execute(select(CashShift).where(CashShift.id == shift_id, CashShift.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if s is None:
+        raise HTTPException(status_code=404, detail={"code": "SHIFT_NOT_FOUND", "message": "Смена не найдена"})
+    await branch_scope.require_branch(db, crm_user, s.branch_id)
+    try:
+        shift = await finance_shifts.close_shift(db, tenant_id=crm_user.tenant_id, shift_id=shift_id,
+                                                 counted_minor=req.counted_minor, note=req.note, actor_id=crm_user.user.id)
+        out = await _shift_report(db, shift)
+    except FinanceError as e:
+        await db.rollback()
+        raise _finance_error(e)
+    await db.commit()
+    return out
+
+
+@router.get("/cash-shifts/{shift_id}")
+async def get_cash_shift(
+    shift_id: uuid.UUID,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    s = (await db.execute(select(CashShift).where(CashShift.id == shift_id, CashShift.tenant_id == crm_user.tenant_id))).scalar_one_or_none()
+    if s is None:
+        raise HTTPException(status_code=404, detail={"code": "SHIFT_NOT_FOUND", "message": "Смена не найдена"})
+    await branch_scope.require_branch(db, crm_user, s.branch_id)
+    return await _shift_report(db, s)
 
 
 @router.get("/bookings/{booking_id}")

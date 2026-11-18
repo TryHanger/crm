@@ -88,6 +88,7 @@ async def post_entry(
     currency: str, idempotency_key: str, order_id: Optional[uuid.UUID] = None, reason: Optional[str] = None,
     created_by_user_id: Optional[uuid.UUID] = None, occurred_at: Optional[dt.datetime] = None,
     cash_account_id: Optional[uuid.UUID] = None, customer_id: Optional[uuid.UUID] = None,
+    cash_shift_id: Optional[uuid.UUID] = None,
 ) -> Posted:
     """Проводит операцию один раз. Не коммитит."""
     if kind in ("payment", "refund") and cash_account_id is None:
@@ -118,7 +119,7 @@ async def post_entry(
         id=uuid.uuid4(), tenant_id=tenant_id, branch_id=branch_id, order_id=order_id, kind=kind,
         amount_minor=amount_minor, currency=currency, idempotency_key=_check_key(idempotency_key),
         reverses_entry_id=None, reason=(reason or None), created_by_user_id=created_by_user_id,
-        cash_account_id=cash_account_id, customer_id=customer_id,
+        cash_account_id=cash_account_id, customer_id=customer_id, cash_shift_id=cash_shift_id,
     )
     if occurred_at is not None:
         values["occurred_at"] = occurred_at
@@ -127,7 +128,7 @@ async def post_entry(
 
 async def reverse_entry(
     db: AsyncSession, *, tenant_id: uuid.UUID, entry_id: uuid.UUID, idempotency_key: str, reason: str,
-    created_by_user_id: Optional[uuid.UUID] = None,
+    created_by_user_id: Optional[uuid.UUID] = None, cash_shift_id: Optional[uuid.UUID] = None,
 ) -> Posted:
     """Сторно: запись того же вида с противоположной суммой и ссылкой на исходную. Не коммитит."""
     if not (reason or "").strip():
@@ -144,6 +145,7 @@ async def reverse_entry(
         idempotency_key=_check_key(idempotency_key), reverses_entry_id=original.id,
         reason=reason.strip(), created_by_user_id=created_by_user_id,
         cash_account_id=original.cash_account_id, customer_id=original.customer_id,
+        cash_shift_id=cash_shift_id,  # corrections go into the CURRENT open shift, never into a closed one
     ))
 
 

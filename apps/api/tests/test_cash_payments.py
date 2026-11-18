@@ -44,7 +44,11 @@ async def completed_visit(c, price=8000_00, co=None, hour=10):
 async def accounts(co):
     r = await co.c.get(f"/api/v1/business/cash-accounts?branch_id={co.branch_id}", headers=co.h)
     assert r.status_code == 200, r.text
-    return {a["kind"]: a for a in r.json()}
+    accs = {a["kind"]: a for a in r.json()}
+    # M13: cash is accepted only within an open cash shift
+    o = await co.c.post("/api/v1/business/cash-shifts/open", headers=co.h, json={"cash_account_id": accs["cash"]["id"]})
+    assert o.status_code in (201, 409), o.text
+    return accs
 
 
 async def pay(co, bid, amount, account, key=None, h=None):

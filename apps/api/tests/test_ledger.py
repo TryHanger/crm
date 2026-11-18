@@ -108,7 +108,8 @@ def test_finance_tables_are_tenant_isolated_and_constrained():
     assert rls == {"orders": True, "order_items": True, "ledger_entries": True}
     triggers = {r[0] for r in admin("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal "
                                      "AND tgrelid::regclass::text IN ('orders','order_items','ledger_entries')")}
-    assert triggers == {"ledger_entries_append_only", "order_items_immutable", "orders_no_delete"}
+    assert triggers == {"ledger_entries_append_only", "order_items_immutable", "orders_no_delete",
+                        "ledger_entries_open_shift_only"}   # M13: nothing is posted into a closed cash shift
 
 
 # ---------------------------------------------------------------- order snapshot
@@ -182,8 +183,8 @@ async def test_same_key_in_two_companies_is_independent():
     ta, ba = tenant("barberhouse")
     tb, bb = tenant("moderncut")
     k = key()
-    a = await post(ta, ba, kind="advance", amount_minor=2000_00, currency="KZT", idempotency_key=k)
-    b = await post(tb, bb, kind="advance", amount_minor=2000_00, currency="KZT", idempotency_key=k)
+    a = await post(ta, ba, kind="service_rendered", amount_minor=2000_00, currency="KZT", idempotency_key=k)
+    b = await post(tb, bb, kind="service_rendered", amount_minor=2000_00, currency="KZT", idempotency_key=k)
     assert a.created and b.created and a.entry.id != b.entry.id
 
 
@@ -245,7 +246,7 @@ async def test_runtime_role_cannot_write_into_another_company():
         with pytest.raises(DBAPIError, match="row-level security"):
             await s.execute(text(
                 "INSERT INTO ledger_entries (id, tenant_id, branch_id, kind, amount_minor, currency, idempotency_key) "
-                "VALUES (gen_random_uuid(), :t, :b, 'advance', 100, 'KZT', :k)"), {"t": str(tb), "b": str(bb), "k": key()})
+                "VALUES (gen_random_uuid(), :t, :b, 'service_rendered', 100, 'KZT', :k)"), {"t": str(tb), "b": str(bb), "k": key()})
         await s.rollback()
     async with app_session(tb) as s:
         seen = (await s.execute(text("SELECT count(*) FROM ledger_entries WHERE tenant_id = :t"), {"t": str(t)})).scalar()
