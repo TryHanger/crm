@@ -1,30 +1,19 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CRM Календарь</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Business CRM</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <style>
-      :root {
-        color-scheme: light;
-        box-sizing: border-box;
-      }
-      *, *::before, *::after {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        padding: 0;
-        background: #F8FAFC;
-        color: #0F172A;
-        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-        font-size: 14px;
-        line-height: 1.4;
-      }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      // тема до первого рендера, чтобы не мигало: сохранённая или светлая (как в макете)
+      try {
+        var t = localStorage.getItem('crm_theme');
+        if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

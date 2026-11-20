@@ -77,39 +77,16 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
   };
 
   return (
-    <div
-      data-testid="accept-invite-page"
-      style={{
-        minHeight: '100vh',
-        background: '#0F172A',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-        fontFamily: 'Inter, system-ui, sans-serif',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '440px',
-          background: '#FFFFFF',
-          borderRadius: '20px',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
-          padding: '36px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '24px',
-        }}
-      >
+    <div data-testid="accept-invite-page" className="auth">
+      <div className="card" style={{ maxWidth: 440, display: 'flex', flexDirection: 'column', gap: 24 }}>
         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div
             style={{
               width: '48px',
               height: '48px',
-              borderRadius: '12px',
-              background: '#2563EB',
-              color: '#FFFFFF',
+              borderRadius: '18px',
+              background: 'var(--brand)',
+              color: 'var(--brand-fg)',
               margin: '0 auto 8px',
               display: 'flex',
               alignItems: 'center',
@@ -120,10 +97,10 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
           >
             ✓
           </div>
-          <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: '#0F172A' }}>
+          <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: 'var(--fg)' }}>
             Активация доступа в CRM
           </h1>
-          <p style={{ margin: 0, fontSize: '14px', color: '#64748B' }}>
+          <p style={{ margin: 0, fontSize: '14px', color: 'var(--muted)' }}>
             {requiresCurrentPassword
               ? 'Подтвердите текущий пароль для связывания организации'
               : 'Задайте пароль для входа в панель управления компанией'}
@@ -135,12 +112,12 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
             role="alert"
             data-testid="accept-invite-error"
             style={{
-              background: '#FEE2E2',
-              color: '#991B1B',
+              background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))',
+              color: 'var(--neg)',
               padding: '12px 16px',
-              borderRadius: '10px',
+              borderRadius: '14px',
               fontSize: '14px',
-              border: '1px solid #FCA5A5',
+              border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))',
               display: 'flex',
               flexDirection: 'column',
               gap: '8px',
@@ -155,9 +132,9 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
                 style={{
                   alignSelf: 'flex-start',
                   padding: '6px 12px',
-                  borderRadius: '6px',
-                  background: '#991B1B',
-                  color: '#FFFFFF',
+                  borderRadius: '10px',
+                  background: 'var(--neg)',
+                  color: 'var(--brand-fg)',
                   border: 'none',
                   fontSize: '12px',
                   fontWeight: 600,
@@ -174,10 +151,10 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
           <div
             data-testid="accept-invite-success"
             style={{
-              background: '#ECFDF5',
-              color: '#065F46',
+              background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))',
+              color: 'var(--pos)',
               padding: '16px',
-              borderRadius: '10px',
+              borderRadius: '14px',
               fontSize: '15px',
               textAlign: 'center',
               fontWeight: 600,
@@ -190,7 +167,7 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
             {!requiresCurrentPassword ? (
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 500, color: 'var(--fg)' }}>
                     Ваше имя
                   </label>
                   <input
@@ -202,8 +179,8 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
                     style={{
                       height: '44px',
                       padding: '0 14px',
-                      borderRadius: '10px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
                       fontSize: '15px',
                       outline: 'none',
                     }}
@@ -211,7 +188,7 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 500, color: 'var(--fg)' }}>
                     Новый пароль *
                   </label>
                   <input
@@ -224,8 +201,8 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
                     style={{
                       height: '44px',
                       padding: '0 14px',
-                      borderRadius: '10px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
                       fontSize: '15px',
                       outline: 'none',
                     }}
@@ -233,7 +210,7 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 500, color: 'var(--fg)' }}>
                     Подтверждение пароля *
                   </label>
                   <input
@@ -246,8 +223,8 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
                     style={{
                       height: '44px',
                       padding: '0 14px',
-                      borderRadius: '10px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
                       fontSize: '15px',
                       outline: 'none',
                     }}
@@ -256,7 +233,7 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
               </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
+                <label style={{ fontSize: '14px', fontWeight: 500, color: 'var(--fg)' }}>
                   Текущий пароль учетной записи *
                 </label>
                 <input
@@ -269,8 +246,8 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
                   style={{
                     height: '44px',
                     padding: '0 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '14px',
+                    border: '1px solid var(--line)',
                     fontSize: '15px',
                     outline: 'none',
                   }}
@@ -285,9 +262,9 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
               style={{
                 height: '46px',
                 marginTop: '8px',
-                borderRadius: '10px',
-                background: '#2563EB',
-                color: '#FFFFFF',
+                borderRadius: '14px',
+                background: 'var(--brand)',
+                color: 'var(--brand-fg)',
                 border: 'none',
                 fontSize: '15px',
                 fontWeight: 600,

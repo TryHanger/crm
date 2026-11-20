@@ -46,6 +46,7 @@ export interface CalendarBlockItem {
 }
 
 export type CrmNavigationSection =
+  | 'overview'
   | 'calendar'
   | 'customers'
   | 'staff'

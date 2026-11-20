@@ -256,7 +256,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '24px',
-        fontFamily: 'Inter, system-ui, sans-serif',
+        fontFamily: 'inherit',
       }}
     >
       {/* Standalone Preview Banner */}
@@ -264,16 +264,16 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
         <div
           data-testid="onboarding-preview-badge"
           style={{
-            background: '#FEF3C7',
-            color: '#92400E',
+            background: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))',
+            color: 'var(--s-arrived)',
             padding: '10px 16px',
-            borderRadius: '10px',
+            borderRadius: '14px',
             fontSize: '13px',
             fontWeight: 500,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            border: '1px solid #FCD34D',
+            border: '1px solid color-mix(in srgb, var(--s-arrived) 45%, var(--panel))',
           }}
         >
           <span>
@@ -286,10 +286,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
       {/* Hero Welcome Card */}
       <div
         style={{
-          background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-          borderRadius: '20px',
+          background: 'linear-gradient(135deg, var(--fg) 0%, var(--fg) 100%)',
+          borderRadius: '22px',
           padding: '32px',
-          color: '#FFFFFF',
+          color: 'var(--brand-fg)',
           boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.2)',
           display: 'flex',
           flexDirection: 'column',
@@ -304,7 +304,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 alignItems: 'center',
                 gap: '6px',
                 background: 'rgba(59, 130, 246, 0.2)',
-                color: '#93C5FD',
+                color: 'color-mix(in srgb, var(--brand) 40%, var(--panel))',
                 padding: '4px 10px',
                 borderRadius: '999px',
                 fontSize: '12px',
@@ -323,7 +323,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
             >
               Добро пожаловать в {activeTenantName}!
             </h1>
-            <p style={{ margin: '6px 0 0', color: '#94A3B8', fontSize: '15px' }}>
+            <p style={{ margin: '6px 0 0', color: 'var(--muted2)', fontSize: '15px' }}>
               Подготовьте систему к работе за несколько минут. Начните с создания вашего первого филиала.
             </p>
           </div>
@@ -331,17 +331,17 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
           <div
             style={{
               background: 'rgba(255, 255, 255, 0.08)',
-              borderRadius: '12px',
+              borderRadius: '18px',
               padding: '12px 16px',
               textAlign: 'right',
               border: '1px solid rgba(255, 255, 255, 0.12)',
             }}
           >
-            <div style={{ fontSize: '12px', color: '#94A3B8' }}>Готовность бизнеса</div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: '#38BDF8' }}>
+            <div style={{ fontSize: '12px', color: 'var(--muted2)' }}>Готовность бизнеса</div>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--brand) ' }}>
               {progressPercent}%
             </div>
-            <div style={{ fontSize: '11px', color: '#CBD5E1' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted2)' }}>
               {completedStepsCount} из 4 шагов завершено
             </div>
           </div>
@@ -361,7 +361,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
             style={{
               height: '100%',
               width: `${Math.max(progressPercent, 5)}%`,
-              background: 'linear-gradient(90deg, #38BDF8 0%, #2563EB 100%)',
+              background: 'linear-gradient(90deg, var(--brand)  0%, var(--brand) 100%)',
               transition: 'width 0.4s ease',
             }}
           />
@@ -375,9 +375,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
         <div
           data-testid="onboarding-step-branch"
           style={{
-            background: '#FFFFFF',
-            borderRadius: '16px',
-            border: isStep1Done ? '1px solid #BBF7D0' : '2px solid #3B82F6',
+            background: 'var(--panel)',
+            borderRadius: '22px',
+            border: isStep1Done ? '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))' : '2px solid var(--brand)',
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.04)',
             padding: '24px',
             display: 'flex',
@@ -391,9 +391,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 style={{
                   width: '36px',
                   height: '36px',
-                  borderRadius: '10px',
-                  background: isStep1Done ? '#DCFCE7' : '#EFF6FF',
-                  color: isStep1Done ? '#16A34A' : '#2563EB',
+                  borderRadius: '14px',
+                  background: isStep1Done ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'color-mix(in srgb, var(--brand) 10%, var(--panel))',
+                  color: isStep1Done ? 'var(--pos)' : 'var(--brand)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -404,10 +404,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 {isStep1Done ? '✓' : '1'}
               </div>
               <div>
-                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 600, color: '#0F172A' }}>
+                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 600, color: 'var(--fg)' }}>
                   Шаг 1: Создание первого филиала
                 </h2>
-                <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
                   Точка обслуживания, расписание и привязка мастеров к локации
                 </p>
               </div>
@@ -417,8 +417,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
               <span
                 data-testid="step-branch-completed-badge"
                 style={{
-                  background: '#DCFCE7',
-                  color: '#16A34A',
+                  background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))',
+                  color: 'var(--pos)',
                   fontSize: '13px',
                   fontWeight: 600,
                   padding: '4px 12px',
@@ -430,8 +430,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
             ) : (
               <span
                 style={{
-                  background: '#FEF3C7',
-                  color: '#B45309',
+                  background: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))',
+                  color: 'var(--s-arrived)',
                   fontSize: '13px',
                   fontWeight: 600,
                   padding: '4px 12px',
@@ -447,20 +447,20 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
           {isStep1Done ? (
             <div
               style={{
-                background: '#F8FAFC',
-                borderRadius: '12px',
+                background: 'var(--canvas)',
+                borderRadius: '18px',
                 padding: '16px',
-                border: '1px solid #E2E8F0',
+                border: '1px solid var(--line)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
               }}
             >
               <div>
-                <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F172A' }}>
+                <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--fg)' }}>
                   📍 {branches[0]?.name || 'Основной филиал'}
                 </div>
-                <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '2px' }}>
                   {branches[0]?.city ? `${branches[0].city}, ` : ''}{branches[0]?.address || 'Адрес не указан'}
                   {branches[0]?.phone ? ` · ${branches[0].phone}` : ''}
                 </div>
@@ -470,10 +470,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 onClick={() => onNavigate('settings')}
                 style={{
                   padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#334155',
+                  borderRadius: '12px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--panel)',
+                  color: 'var(--fg)',
                   fontSize: '13px',
                   fontWeight: 500,
                   cursor: 'pointer',
@@ -490,12 +490,12 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                   role="alert"
                   data-testid="onboarding-branch-error"
                   style={{
-                    background: '#FEE2E2',
-                    color: '#991B1B',
+                    background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))',
+                    color: 'var(--neg)',
                     padding: '10px 14px',
-                    borderRadius: '8px',
+                    borderRadius: '12px',
                     fontSize: '13px',
-                    border: '1px solid #FCA5A5',
+                    border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))',
                   }}
                 >
                   {branchError}
@@ -504,7 +504,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--fg)' }}>
                     Название филиала *
                   </label>
                   <input
@@ -517,8 +517,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                     style={{
                       height: '40px',
                       padding: '0 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '12px',
+                      border: '1px solid var(--line)',
                       fontSize: '14px',
                       outline: 'none',
                     }}
@@ -526,7 +526,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--fg)' }}>
                     Город
                   </label>
                   <input
@@ -538,8 +538,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                     style={{
                       height: '40px',
                       padding: '0 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '12px',
+                      border: '1px solid var(--line)',
                       fontSize: '14px',
                       outline: 'none',
                     }}
@@ -549,7 +549,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
 
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '14px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--fg)' }}>
                     Адрес филиала *
                   </label>
                   <input
@@ -562,8 +562,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                     style={{
                       height: '40px',
                       padding: '0 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '12px',
+                      border: '1px solid var(--line)',
                       fontSize: '14px',
                       outline: 'none',
                     }}
@@ -571,7 +571,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--fg)' }}>
                     Контактный телефон
                   </label>
                   <input
@@ -583,8 +583,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                     style={{
                       height: '40px',
                       padding: '0 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '12px',
+                      border: '1px solid var(--line)',
                       fontSize: '14px',
                       outline: 'none',
                     }}
@@ -593,7 +593,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--fg)' }}>
                   Часовой пояс
                 </label>
                 <select
@@ -602,11 +602,11 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                   style={{
                     height: '40px',
                     padding: '0 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
                     fontSize: '14px',
                     outline: 'none',
-                    background: '#FFFFFF',
+                    background: 'var(--panel)',
                   }}
                 >
                   <option value="Asia/Almaty">Asia/Almaty (UTC+5)</option>
@@ -623,9 +623,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                   data-testid="onboarding-create-branch-btn"
                   style={{
                     padding: '10px 20px',
-                    borderRadius: '10px',
-                    background: '#2563EB',
-                    color: '#FFFFFF',
+                    borderRadius: '14px',
+                    background: 'var(--brand)',
+                    color: 'var(--brand-fg)',
                     border: 'none',
                     fontSize: '14px',
                     fontWeight: 600,
@@ -647,9 +647,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
         <div
           data-testid="onboarding-step-services"
           style={{
-            background: '#FFFFFF',
-            borderRadius: '16px',
-            border: isStep2Done ? '1px solid #BBF7D0' : '1px solid #E2E8F0',
+            background: 'var(--panel)',
+            borderRadius: '22px',
+            border: isStep2Done ? '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))' : '1px solid var(--line)',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
             padding: '20px 24px',
             display: 'flex',
@@ -663,9 +663,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 style={{
                   width: '36px',
                   height: '36px',
-                  borderRadius: '10px',
-                  background: isStep2Done ? '#DCFCE7' : '#F1F5F9',
-                  color: isStep2Done ? '#16A34A' : '#64748B',
+                  borderRadius: '14px',
+                  background: isStep2Done ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'var(--chip)',
+                  color: isStep2Done ? 'var(--pos)' : 'var(--muted)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -676,10 +676,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 {isStep2Done ? '✓' : '2'}
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--fg)' }}>
                   Шаг 2: Услуги и прайс-лист
                 </h3>
-                <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
                   Добавьте хотя бы одну базовую услугу с ценой и длительностью
                 </p>
               </div>
@@ -689,8 +689,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
               {isStep2Done ? (
                 <span
                   style={{
-                    background: '#DCFCE7',
-                    color: '#16A34A',
+                    background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))',
+                    color: 'var(--pos)',
                     fontSize: '12px',
                     fontWeight: 600,
                     padding: '3px 10px',
@@ -706,10 +706,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                   onClick={() => setShowQuickService(!showQuickService)}
                   style={{
                     padding: '6px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    background: '#FFFFFF',
-                    color: '#2563EB',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
+                    background: 'var(--panel)',
+                    color: 'var(--brand)',
                     fontSize: '13px',
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -723,10 +723,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 onClick={() => onNavigate('services')}
                 style={{
                   padding: '6px 12px',
-                  borderRadius: '8px',
+                  borderRadius: '12px',
                   border: 'none',
-                  background: '#F1F5F9',
-                  color: '#475569',
+                  background: 'var(--chip)',
+                  color: 'var(--muted)',
                   fontSize: '13px',
                   cursor: 'pointer',
                 }}
@@ -737,37 +737,37 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
           </div>
 
           {showQuickService && !isStep2Done && (
-            <form onSubmit={handleCreateQuickService} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', background: '#F8FAFC', padding: '16px', borderRadius: '12px' }}>
+            <form onSubmit={handleCreateQuickService} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', background: 'var(--canvas)', padding: '16px', borderRadius: '18px' }}>
               <div style={{ flex: 2, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#475569' }}>Название услуги</label>
+                <label style={{ fontSize: '12px', color: 'var(--muted)' }}>Название услуги</label>
                 <input
                   type="text"
                   value={serviceName}
                   onChange={e => setServiceName(e.target.value)}
                   placeholder="Стрижка"
                   data-testid="onboarding-service-name-input"
-                  style={{ height: '36px', padding: '0 10px', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                  style={{ height: '36px', padding: '0 10px', borderRadius: '10px', border: '1px solid var(--line)' }}
                 />
               </div>
               <div style={{ flex: 1, minWidth: '100px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#475569' }}>Цена (₸)</label>
+                <label style={{ fontSize: '12px', color: 'var(--muted)' }}>Цена (₸)</label>
                 <input
                   type="number"
                   value={servicePrice}
                   onChange={e => setServicePrice(e.target.value)}
                   placeholder="8000"
                   data-testid="onboarding-service-price-input"
-                  style={{ height: '36px', padding: '0 10px', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                  style={{ height: '36px', padding: '0 10px', borderRadius: '10px', border: '1px solid var(--line)' }}
                 />
               </div>
               <div style={{ flex: 1, minWidth: '90px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#475569' }}>Минут</label>
+                <label style={{ fontSize: '12px', color: 'var(--muted)' }}>Минут</label>
                 <input
                   type="number"
                   value={serviceDuration}
                   onChange={e => setServiceDuration(e.target.value)}
                   placeholder="60"
-                  style={{ height: '36px', padding: '0 10px', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                  style={{ height: '36px', padding: '0 10px', borderRadius: '10px', border: '1px solid var(--line)' }}
                 />
               </div>
               <button
@@ -777,9 +777,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 style={{
                   height: '36px',
                   padding: '0 16px',
-                  borderRadius: '6px',
-                  background: '#2563EB',
-                  color: '#FFFFFF',
+                  borderRadius: '10px',
+                  background: 'var(--brand)',
+                  color: 'var(--brand-fg)',
                   border: 'none',
                   fontSize: '13px',
                   fontWeight: 600,
@@ -796,9 +796,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
         <div
           data-testid="onboarding-step-staff"
           style={{
-            background: '#FFFFFF',
-            borderRadius: '16px',
-            border: isStep3Done ? '1px solid #BBF7D0' : '1px solid #E2E8F0',
+            background: 'var(--panel)',
+            borderRadius: '22px',
+            border: isStep3Done ? '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))' : '1px solid var(--line)',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
             padding: '20px 24px',
             display: 'flex',
@@ -812,9 +812,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 style={{
                   width: '36px',
                   height: '36px',
-                  borderRadius: '10px',
-                  background: isStep3Done ? '#DCFCE7' : '#F1F5F9',
-                  color: isStep3Done ? '#16A34A' : '#64748B',
+                  borderRadius: '14px',
+                  background: isStep3Done ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'var(--chip)',
+                  color: isStep3Done ? 'var(--pos)' : 'var(--muted)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -825,10 +825,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 {isStep3Done ? '✓' : '3'}
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--fg)' }}>
                   Шаг 3: Мастера и специалисты
                 </h3>
-                <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
                   Добавьте мастера для ведения расписания в календаре
                 </p>
               </div>
@@ -838,8 +838,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
               {isStep3Done ? (
                 <span
                   style={{
-                    background: '#DCFCE7',
-                    color: '#16A34A',
+                    background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))',
+                    color: 'var(--pos)',
                     fontSize: '12px',
                     fontWeight: 600,
                     padding: '3px 10px',
@@ -855,10 +855,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                   onClick={() => setShowQuickStaff(!showQuickStaff)}
                   style={{
                     padding: '6px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    background: '#FFFFFF',
-                    color: '#2563EB',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
+                    background: 'var(--panel)',
+                    color: 'var(--brand)',
                     fontSize: '13px',
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -872,10 +872,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 onClick={() => onNavigate('staff')}
                 style={{
                   padding: '6px 12px',
-                  borderRadius: '8px',
+                  borderRadius: '12px',
                   border: 'none',
-                  background: '#F1F5F9',
-                  color: '#475569',
+                  background: 'var(--chip)',
+                  color: 'var(--muted)',
                   fontSize: '13px',
                   cursor: 'pointer',
                 }}
@@ -886,26 +886,26 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
           </div>
 
           {showQuickStaff && !isStep3Done && (
-            <form onSubmit={handleCreateQuickStaff} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', background: '#F8FAFC', padding: '16px', borderRadius: '12px' }}>
+            <form onSubmit={handleCreateQuickStaff} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', background: 'var(--canvas)', padding: '16px', borderRadius: '18px' }}>
               <div style={{ flex: 2, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#475569' }}>Имя специалиста</label>
+                <label style={{ fontSize: '12px', color: 'var(--muted)' }}>Имя специалиста</label>
                 <input
                   type="text"
                   value={staffName}
                   onChange={e => setStaffName(e.target.value)}
                   placeholder="Руслан Ибрагимов"
                   data-testid="onboarding-staff-name-input"
-                  style={{ height: '36px', padding: '0 10px', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                  style={{ height: '36px', padding: '0 10px', borderRadius: '10px', border: '1px solid var(--line)' }}
                 />
               </div>
               <div style={{ flex: 1, minWidth: '140px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#475569' }}>Должность</label>
+                <label style={{ fontSize: '12px', color: 'var(--muted)' }}>Должность</label>
                 <input
                   type="text"
                   value={staffRole}
                   onChange={e => setStaffRole(e.target.value)}
                   placeholder="Старший мастер"
-                  style={{ height: '36px', padding: '0 10px', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                  style={{ height: '36px', padding: '0 10px', borderRadius: '10px', border: '1px solid var(--line)' }}
                 />
               </div>
               <button
@@ -915,9 +915,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 style={{
                   height: '36px',
                   padding: '0 16px',
-                  borderRadius: '6px',
-                  background: '#2563EB',
-                  color: '#FFFFFF',
+                  borderRadius: '10px',
+                  background: 'var(--brand)',
+                  color: 'var(--brand-fg)',
                   border: 'none',
                   fontSize: '13px',
                   fontWeight: 600,
@@ -934,9 +934,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
         <div
           data-testid="onboarding-step-booking"
           style={{
-            background: '#FFFFFF',
-            borderRadius: '16px',
-            border: isStep4Done ? '1px solid #BBF7D0' : '1px solid #E2E8F0',
+            background: 'var(--panel)',
+            borderRadius: '22px',
+            border: isStep4Done ? '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))' : '1px solid var(--line)',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
             padding: '20px 24px',
             display: 'flex',
@@ -950,9 +950,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 style={{
                   width: '36px',
                   height: '36px',
-                  borderRadius: '10px',
-                  background: isStep4Done ? '#DCFCE7' : '#F1F5F9',
-                  color: isStep4Done ? '#16A34A' : '#64748B',
+                  borderRadius: '14px',
+                  background: isStep4Done ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'var(--chip)',
+                  color: isStep4Done ? 'var(--pos)' : 'var(--muted)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -963,10 +963,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 {isStep4Done ? '✓' : '4'}
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--fg)' }}>
                   Шаг 4: Онлайн-запись и витрина салона
                 </h3>
-                <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
                   Публичный адрес страницы записи ваших клиентов
                 </p>
               </div>
@@ -974,8 +974,8 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
 
             <span
               style={{
-                background: isBookingPublished ? '#DCFCE7' : '#FEF3C7',
-                color: isBookingPublished ? '#16A34A' : '#B45309',
+                background: isBookingPublished ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))',
+                color: isBookingPublished ? 'var(--pos)' : 'var(--s-arrived)',
                 fontSize: '12px',
                 fontWeight: 600,
                 padding: '3px 10px',
@@ -988,10 +988,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
 
           <div
             style={{
-              background: '#F8FAFC',
-              borderRadius: '12px',
+              background: 'var(--canvas)',
+              borderRadius: '18px',
               padding: '14px 16px',
-              border: '1px solid #E2E8F0',
+              border: '1px solid var(--line)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -1000,7 +1000,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
             }}
           >
             <div>
-              <div style={{ fontSize: '12px', color: '#64748B' }}>Публичный адрес для клиентов:</div>
+              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Публичный адрес для клиентов:</div>
               <a
                 href={bookingUrl}
                 target="_blank"
@@ -1008,7 +1008,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 style={{
                   fontSize: '14px',
                   fontWeight: 600,
-                  color: '#2563EB',
+                  color: 'var(--brand)',
                   textDecoration: 'none',
                 }}
               >
@@ -1025,10 +1025,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 }}
                 style={{
                   padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#334155',
+                  borderRadius: '12px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--panel)',
+                  color: 'var(--fg)',
                   fontSize: '13px',
                   cursor: 'pointer',
                 }}
@@ -1040,10 +1040,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
                 onClick={() => onNavigate('online-booking')}
                 style={{
                   padding: '6px 12px',
-                  borderRadius: '8px',
+                  borderRadius: '12px',
                   border: 'none',
-                  background: '#F1F5F9',
-                  color: '#475569',
+                  background: 'var(--chip)',
+                  color: 'var(--muted)',
                   fontSize: '13px',
                   cursor: 'pointer',
                 }}
@@ -1060,9 +1060,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
         style={{
           marginTop: '8px',
           padding: '20px',
-          background: '#FFFFFF',
-          borderRadius: '16px',
-          border: '1px solid #E2E8F0',
+          background: 'var(--panel)',
+          borderRadius: '22px',
+          border: '1px solid var(--line)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -1071,10 +1071,10 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
         }}
       >
         <div>
-          <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F172A' }}>
+          <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--fg)' }}>
             {hasBranch ? 'Первый филиал готов к приему клиентов' : 'Сделайте шаг 1: создайте филиал'}
           </div>
-          <div style={{ fontSize: '13px', color: '#64748B' }}>
+          <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
             Вы всегда можете вернуться к чеклисту из шапки системы.
           </div>
         </div>
@@ -1087,9 +1087,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
             disabled={!hasBranch}
             style={{
               padding: '12px 24px',
-              borderRadius: '10px',
-              background: hasBranch ? '#2563EB' : '#94A3B8',
-              color: '#FFFFFF',
+              borderRadius: '14px',
+              background: hasBranch ? 'var(--brand)' : 'var(--muted2)',
+              color: 'var(--brand-fg)',
               border: 'none',
               fontSize: '14px',
               fontWeight: 600,

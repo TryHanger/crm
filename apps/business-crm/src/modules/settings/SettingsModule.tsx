@@ -318,20 +318,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px', boxSizing: 'border-box' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', boxSizing: 'border-box' }}>
       {/* Header & Tabs */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>
+          <h2 className="sect" style={{ margin: 0 }}>
             Настройки бизнеса
           </h2>
-          <p style={{ fontSize: '13px', color: '#64748B', margin: '4px 0 0' }}>
-            Управление филиалами, командой с разграничением ролей и тарифной подпиской
-          </p>
         </div>
 
         {/* Tab Switcher */}
-        <div style={{ display: 'flex', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '3px', gap: '4px' }}>
+        <div style={{ display: 'flex', background: 'var(--chip)', border: '1px solid var(--line)', borderRadius: '14px', padding: '3px', gap: '4px' }}>
           <button
             type="button"
             onClick={() => handleTabSwitch('branches')}
@@ -342,10 +339,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: currentTab === 'branches' ? 600 : 500,
-              borderRadius: '8px',
+              borderRadius: '12px',
               border: 'none',
-              background: currentTab === 'branches' ? '#FFFFFF' : 'transparent',
-              color: currentTab === 'branches' ? '#2563EB' : '#64748B',
+              background: currentTab === 'branches' ? 'var(--panel)' : 'transparent',
+              color: currentTab === 'branches' ? 'var(--brand)' : 'var(--muted)',
               boxShadow: currentTab === 'branches' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               cursor: 'pointer',
             }}
@@ -363,10 +360,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: currentTab === 'users' ? 600 : 500,
-              borderRadius: '8px',
+              borderRadius: '12px',
               border: 'none',
-              background: currentTab === 'users' ? '#FFFFFF' : 'transparent',
-              color: currentTab === 'users' ? '#2563EB' : '#64748B',
+              background: currentTab === 'users' ? 'var(--panel)' : 'transparent',
+              color: currentTab === 'users' ? 'var(--brand)' : 'var(--muted)',
               boxShadow: currentTab === 'users' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               cursor: 'pointer',
             }}
@@ -384,10 +381,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: currentTab === 'company' ? 600 : 500,
-              borderRadius: '8px',
+              borderRadius: '12px',
               border: 'none',
-              background: currentTab === 'company' ? '#FFFFFF' : 'transparent',
-              color: currentTab === 'company' ? '#2563EB' : '#64748B',
+              background: currentTab === 'company' ? 'var(--panel)' : 'transparent',
+              color: currentTab === 'company' ? 'var(--brand)' : 'var(--muted)',
               boxShadow: currentTab === 'company' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               cursor: 'pointer',
             }}
@@ -406,10 +403,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: currentTab === 'security' ? 600 : 500,
-              borderRadius: '8px',
+              borderRadius: '12px',
               border: 'none',
-              background: currentTab === 'security' ? '#FFFFFF' : 'transparent',
-              color: currentTab === 'security' ? '#2563EB' : '#64748B',
+              background: currentTab === 'security' ? 'var(--panel)' : 'transparent',
+              color: currentTab === 'security' ? 'var(--brand)' : 'var(--muted)',
               boxShadow: currentTab === 'security' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               cursor: 'pointer',
             }}
@@ -417,7 +414,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             <ShieldCheck style={{ width: '15px', height: '15px' }} />
             <span>Доступ поддержки</span>
             {userRole === 'owner' && supportRequests.length > 0 && (
-              <span style={{ background: '#EF4444', color: '#FFFFFF', borderRadius: '10px', padding: '1px 6px', fontSize: '11px', fontWeight: 700 }}>
+              <span style={{ background: 'var(--neg)', color: 'var(--brand-fg)', borderRadius: '14px', padding: '1px 6px', fontSize: '11px', fontWeight: 700 }}>
                 {supportRequests.length}
               </span>
             )}
@@ -433,10 +430,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: currentTab === 'notifications' ? 600 : 500,
-              borderRadius: '8px',
+              borderRadius: '12px',
               border: 'none',
-              background: currentTab === 'notifications' ? '#FFFFFF' : 'transparent',
-              color: currentTab === 'notifications' ? '#2563EB' : '#64748B',
+              background: currentTab === 'notifications' ? 'var(--panel)' : 'transparent',
+              color: currentTab === 'notifications' ? 'var(--brand)' : 'var(--muted)',
               boxShadow: currentTab === 'notifications' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               cursor: 'pointer',
             }}
@@ -448,7 +445,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
       </div>
 
       {error && (
-        <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '12px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px', color: '#DC2626', fontSize: '14px' }}>
+        <div style={{ background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))', border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))', borderRadius: '18px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--neg)', fontSize: '14px' }}>
           <AlertCircle style={{ width: '18px', height: '18px', flexShrink: 0 }} />
           <span>{error}</span>
         </div>
@@ -458,7 +455,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
       {currentTab === 'branches' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
               Филиалы сети ({branches.length})
             </h2>
             {userRole === 'owner' && (
@@ -471,9 +468,9 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   alignItems: 'center',
                   gap: '6px',
                   padding: '9px 16px',
-                  background: '#2563EB',
-                  color: '#FFFFFF',
-                  borderRadius: '10px',
+                  background: 'var(--brand)',
+                  color: 'var(--brand-fg)',
+                  borderRadius: '14px',
                   border: 'none',
                   fontSize: '13px',
                   fontWeight: 600,
@@ -493,9 +490,9 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 key={b.id}
                 data-testid={`branch-card-${b.id}`}
                 style={{
-                  background: '#FFFFFF',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '16px',
+                  background: 'var(--panel)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '22px',
                   padding: '20px',
                   display: 'flex',
                   flexDirection: 'column',
@@ -505,17 +502,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '14px', background: 'color-mix(in srgb, var(--brand) 10%, var(--panel))', color: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Building2 style={{ width: '20px', height: '20px' }} />
                     </div>
                     <div>
-                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>{b.name}</h3>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--fg)' }}>{b.name}</h3>
                       <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', background: '#ECFDF5', color: '#059669', fontSize: '11px', fontWeight: 600 }}>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '8px', background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))', color: 'var(--pos)', fontSize: '11px', fontWeight: 600 }}>
                           Активен
                         </span>
                         {b.city && (
-                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', background: '#F1F5F9', color: '#475569', fontSize: '11px', fontWeight: 600 }}>
+                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '8px', background: 'var(--chip)', color: 'var(--muted)', fontSize: '11px', fontWeight: 600 }}>
                             г. {b.city}
                           </span>
                         )}
@@ -529,10 +526,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                       onClick={() => openBranchEdit(b)}
                       style={{
                         padding: '6px 12px',
-                        background: '#F8FAFC',
-                        border: '1px solid #CBD5E1',
-                        borderRadius: '8px',
-                        color: '#475569',
+                        background: 'var(--canvas)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '12px',
+                        color: 'var(--muted)',
                         fontSize: '12px',
                         fontWeight: 500,
                         cursor: 'pointer',
@@ -547,17 +544,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   )}
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', color: '#475569', borderTop: '1px solid #F1F5F9', paddingTop: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', color: 'var(--muted)', borderTop: '1px solid var(--chip)', paddingTop: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <MapPin style={{ width: '15px', height: '15px', color: '#94A3B8', flexShrink: 0 }} />
+                    <MapPin style={{ width: '15px', height: '15px', color: 'var(--muted2)', flexShrink: 0 }} />
                     <span>{b.address || 'Адрес не указан'}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Phone style={{ width: '15px', height: '15px', color: '#94A3B8', flexShrink: 0 }} />
+                    <Phone style={{ width: '15px', height: '15px', color: 'var(--muted2)', flexShrink: 0 }} />
                     <span>{b.phone || (b as any).phone_number || 'Телефон не указан'}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Clock style={{ width: '15px', height: '15px', color: '#94A3B8', flexShrink: 0 }} />
+                    <Clock style={{ width: '15px', height: '15px', color: 'var(--muted2)', flexShrink: 0 }} />
                     <span>
                       {b.timezone_iana || (b as any).timezone || 'Asia/Almaty'}
                       {b.weekly_hours && typeof b.weekly_hours === 'object' && (b.weekly_hours as any).mon?.open ? (
@@ -579,10 +576,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
                 Пользователи и права доступа ({users.length})
               </h2>
-              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>
                 Разграничение доступа для владельцев, управляющих и специалистов
               </div>
             </div>
@@ -602,9 +599,9 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   alignItems: 'center',
                   gap: '6px',
                   padding: '9px 16px',
-                  background: '#2563EB',
-                  color: '#FFFFFF',
-                  borderRadius: '10px',
+                  background: 'var(--brand)',
+                  color: 'var(--brand-fg)',
+                  borderRadius: '14px',
                   border: 'none',
                   fontSize: '13px',
                   fontWeight: 600,
@@ -618,11 +615,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             )}
           </div>
 
-          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '22px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
             <div style={{ overflowX: 'auto', width: '100%' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                 <thead>
-                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', color: '#64748B', fontWeight: 600 }}>
+                  <tr style={{ background: 'var(--canvas)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', fontWeight: 600 }}>
                     <th style={{ padding: '12px 20px' }}>Сотрудник</th>
                     <th style={{ padding: '12px 16px' }}>Email</th>
                     <th style={{ padding: '12px 16px' }}>Роль в компании</th>
@@ -635,34 +632,34 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     const isOwner = u.role === 'owner';
                     const isAdmin = u.role === 'admin';
                     const roleLabel = isOwner ? 'Владелец' : isAdmin ? 'Управляющий' : 'Мастер';
-                    const roleBg = isOwner ? '#FEF3C7' : isAdmin ? '#EFF6FF' : '#F1F5F9';
-                    const roleColor = isOwner ? '#92400E' : isAdmin ? '#1D4ED8' : '#334155';
+                    const roleBg = isOwner ? 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))' : isAdmin ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--chip)';
+                    const roleColor = isOwner ? 'var(--s-arrived)' : isAdmin ? 'var(--brand)' : 'var(--fg)';
 
                     return (
-                      <tr key={u.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <tr key={u.id} style={{ borderBottom: '1px solid var(--chip)' }}>
                         <td style={{ padding: '12px 20px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: isOwner ? '#F59E0B' : '#2563EB', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '12px' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '12px', background: isOwner ? '#F59E0B' : 'var(--brand)', color: 'var(--brand-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '12px' }}>
                               {(u.display_name || u.email || 'СП').slice(0, 2).toUpperCase()}
                             </div>
-                            <span style={{ fontWeight: 600, color: '#0F172A' }}>{u.display_name || 'Без имени'}</span>
+                            <span style={{ fontWeight: 600, color: 'var(--fg)' }}>{u.display_name || 'Без имени'}</span>
                           </div>
                         </td>
-                        <td style={{ padding: '12px 16px', color: '#475569' }}>
+                        <td style={{ padding: '12px 16px', color: 'var(--muted)' }}>
                           {u.email}
                         </td>
                         <td style={{ padding: '12px 16px' }}>
-                          <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '6px', background: roleBg, color: roleColor, fontWeight: 600, fontSize: '11px' }}>
+                          <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '10px', background: roleBg, color: roleColor, fontWeight: 600, fontSize: '11px' }}>
                             {roleLabel}
                           </span>
                         </td>
                         <td style={{ padding: '12px 16px' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: u.status === 'active' ? '#059669' : '#D97706', fontWeight: 500, fontSize: '12px' }}>
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: u.status === 'active' ? '#059669' : '#D97706' }} />
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: u.status === 'active' ? 'var(--pos)' : 'var(--s-arrived)', fontWeight: 500, fontSize: '12px' }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: u.status === 'active' ? 'var(--pos)' : 'var(--s-arrived)' }} />
                             {u.status === 'active' ? 'Активен' : 'Ожидает'}
                           </span>
                         </td>
-                        <td style={{ padding: '12px 20px', textAlign: 'right', color: '#94A3B8', fontSize: '12px' }}>
+                        <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--muted2)', fontSize: '12px' }}>
                           {u.created_at ? new Date(u.created_at).toLocaleDateString('ru-RU') : '—'}
                         </td>
                       </tr>
@@ -679,33 +676,33 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
       {currentTab === 'company' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
           {/* Company Profile Card */}
-          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #F1F5F9', paddingBottom: '16px' }}>
-              <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#0F172A', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '16px' }}>
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '22px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--chip)', paddingBottom: '16px' }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '18px', background: 'var(--brand2)', color: 'var(--brand-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '16px' }}>
                 {tenantSlug ? tenantSlug.slice(0, 2).toUpperCase() : 'BH'}
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Профиль компании</h3>
-                <div style={{ fontSize: '13px', color: '#64748B' }}>Идентификация бизнеса в экосистеме</div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--fg)' }}>Профиль компании</h3>
+                <div style={{ fontSize: '13px', color: 'var(--muted)' }}>Идентификация бизнеса в экосистеме</div>
               </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                <span style={{ color: '#64748B' }}>Субдомен онлайн-записи:</span>
-                <span style={{ fontWeight: 600, color: '#0F172A' }}>{tenantSlug}.localhost:3000</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--canvas)' }}>
+                <span style={{ color: 'var(--muted)' }}>Субдомен онлайн-записи:</span>
+                <span style={{ fontWeight: 600, color: 'var(--fg)' }}>{tenantSlug}.localhost:3000</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                <span style={{ color: '#64748B' }}>Идентификатор тенанта (ID):</span>
-                <span style={{ fontWeight: 500, color: '#475569', fontFamily: 'monospace', fontSize: '12px' }}>{tenantId}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--canvas)' }}>
+                <span style={{ color: 'var(--muted)' }}>Идентификатор тенанта (ID):</span>
+                <span style={{ fontWeight: 500, color: 'var(--muted)', fontFamily: 'monospace', fontSize: '12px' }}>{tenantId}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                <span style={{ color: '#64748B' }}>Основная валюта расчётов:</span>
-                <span style={{ fontWeight: 600, color: '#0F172A' }}>KZT (₸)</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--canvas)' }}>
+                <span style={{ color: 'var(--muted)' }}>Основная валюта расчётов:</span>
+                <span style={{ fontWeight: 600, color: 'var(--fg)' }}>KZT (₸)</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                <span style={{ color: '#64748B' }}>Статус аккаунта:</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#059669', fontWeight: 600 }}>
+                <span style={{ color: 'var(--muted)' }}>Статус аккаунта:</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--pos)', fontWeight: 600 }}>
                   <CheckCircle style={{ width: '15px', height: '15px' }} />
                   Верифицирован
                 </span>
@@ -714,33 +711,33 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           </div>
 
           {/* Subscription & Plan Card */}
-          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #F1F5F9', paddingBottom: '16px' }}>
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '22px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--chip)', paddingBottom: '16px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Тариф Pro</h3>
-                <div style={{ fontSize: '13px', color: '#64748B' }}>План подписки и лимиты ресурсов</div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--fg)' }}>Тариф Pro</h3>
+                <div style={{ fontSize: '13px', color: 'var(--muted)' }}>План подписки и лимиты ресурсов</div>
               </div>
-              <span style={{ padding: '4px 12px', borderRadius: '8px', background: '#FEF3C7', color: '#92400E', fontWeight: 700, fontSize: '12px' }}>
+              <span style={{ padding: '4px 12px', borderRadius: '12px', background: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))', color: 'var(--s-arrived)', fontWeight: 700, fontSize: '12px' }}>
                 Активен
               </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                <span style={{ color: '#64748B' }}>Лимит филиалов:</span>
-                <span style={{ fontWeight: 600, color: '#0F172A' }}>До 3 филиалов (использовано: {branches.length})</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--canvas)' }}>
+                <span style={{ color: 'var(--muted)' }}>Лимит филиалов:</span>
+                <span style={{ fontWeight: 600, color: 'var(--fg)' }}>До 3 филиалов (использовано: {branches.length})</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                <span style={{ color: '#64748B' }}>Лимит сотрудников:</span>
-                <span style={{ fontWeight: 600, color: '#0F172A' }}>До 10 мастеров</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--canvas)' }}>
+                <span style={{ color: 'var(--muted)' }}>Лимит сотрудников:</span>
+                <span style={{ fontWeight: 600, color: 'var(--fg)' }}>До 10 мастеров</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                <span style={{ color: '#64748B' }}>Онлайн-запись и виджет:</span>
-                <span style={{ fontWeight: 600, color: '#059669' }}>Включено без ограничений</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--canvas)' }}>
+                <span style={{ color: 'var(--muted)' }}>Онлайн-запись и виджет:</span>
+                <span style={{ fontWeight: 600, color: 'var(--pos)' }}>Включено без ограничений</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                <span style={{ color: '#64748B' }}>Период действия:</span>
-                <span style={{ fontWeight: 600, color: '#0F172A' }}>Бессрочный dev-доступ</span>
+                <span style={{ color: 'var(--muted)' }}>Период действия:</span>
+                <span style={{ fontWeight: 600, color: 'var(--fg)' }}>Бессрочный dev-доступ</span>
               </div>
             </div>
           </div>
@@ -754,11 +751,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             <div
               data-testid="security-owner-only-note"
               style={{
-                background: '#FFFBEB',
-                border: '1px solid #FDE68A',
-                borderRadius: '12px',
+                background: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))',
+                border: '1px solid color-mix(in srgb, var(--s-arrived) 45%, var(--panel))',
+                borderRadius: '18px',
                 padding: '24px',
-                color: '#92400E',
+                color: 'var(--s-arrived)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
@@ -778,16 +775,16 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               <div
                 data-testid="active-support-sessions-section"
                 style={{
-                  background: '#FFFFFF',
-                  borderRadius: '16px',
+                  background: 'var(--panel)',
+                  borderRadius: '22px',
                   padding: '24px',
-                  border: '1px solid #E2E8F0',
+                  border: '1px solid var(--line)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ShieldCheck style={{ width: '18px', height: '18px', color: '#16A34A' }} />
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--fg)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldCheck style={{ width: '18px', height: '18px', color: 'var(--pos)' }} />
                     Активные сеансы диагностики поддержки
                   </h3>
                   <button
@@ -796,11 +793,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     disabled={supportLoading}
                     style={{
                       background: 'transparent',
-                      border: '1px solid #CBD5E1',
-                      borderRadius: '8px',
+                      border: '1px solid var(--line)',
+                      borderRadius: '12px',
                       padding: '6px 12px',
                       fontSize: '12px',
-                      color: '#475569',
+                      color: 'var(--muted)',
                       cursor: 'pointer',
                     }}
                   >
@@ -809,7 +806,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 </div>
 
                 {activeSupportSessions.length === 0 ? (
-                  <div data-testid="no-active-support-sessions" style={{ padding: '16px', background: '#F8FAFC', borderRadius: '10px', color: '#64748B', fontSize: '13px', textAlign: 'center' }}>
+                  <div data-testid="no-active-support-sessions" style={{ padding: '16px', background: 'var(--canvas)', borderRadius: '14px', color: 'var(--muted)', fontSize: '13px', textAlign: 'center' }}>
                     Активных сеансов поддержки нет. Платформенные операторы не имеют доступа к вашей CRM.
                   </div>
                 ) : (
@@ -822,25 +819,25 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           padding: '14px 16px',
-                          borderRadius: '10px',
-                          background: '#F0FDF4',
-                          border: '1px solid #BBF7D0',
+                          borderRadius: '14px',
+                          background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))',
+                          border: '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))',
                           flexWrap: 'wrap',
                           gap: '12px',
                         }}
                       >
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span data-testid="active-session-badge" style={{ background: '#16A34A', color: '#FFFFFF', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600 }}>
+                            <span data-testid="active-session-badge" style={{ background: 'var(--pos)', color: 'var(--brand-fg)', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600 }}>
                               Сеанс активен
                             </span>
-                            <span data-testid="active-session-staff" style={{ fontWeight: 600, color: '#0F172A', fontSize: '14px' }}>
+                            <span data-testid="active-session-staff" style={{ fontWeight: 600, color: 'var(--fg)', fontSize: '14px' }}>
                               {sess.staff_name} ({sess.staff_email})
                             </span>
                           </div>
-                          <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
+                          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>
                             Действует до {new Date(sess.expires_at).toLocaleTimeString('ru-RU')} ·{' '}
-                            <span data-testid="active-session-time-left" style={{ fontWeight: 600, color: '#15803D' }}>
+                            <span data-testid="active-session-time-left" style={{ fontWeight: 600, color: 'var(--pos)' }}>
                               {sess.minutes_left} мин. осталось
                             </span>
                           </div>
@@ -852,10 +849,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                           onClick={() => handleRevokeSession(sess.id)}
                           style={{
                             padding: '8px 16px',
-                            background: '#DC2626',
-                            color: '#FFFFFF',
+                            background: 'var(--neg)',
+                            color: 'var(--brand-fg)',
                             border: 'none',
-                            borderRadius: '8px',
+                            borderRadius: '12px',
                             fontSize: '13px',
                             fontWeight: 600,
                             cursor: 'pointer',
@@ -872,22 +869,22 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               {/* Pending Support Requests Section */}
               <div
                 style={{
-                  background: '#FFFFFF',
-                  borderRadius: '16px',
+                  background: 'var(--panel)',
+                  borderRadius: '22px',
                   padding: '24px',
-                  border: '1px solid #E2E8F0',
+                  border: '1px solid var(--line)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                 }}
               >
-                <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600, color: 'var(--fg)' }}>
                   Ожидающие запросы на разовый доступ (30 минут)
                 </h3>
-                <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748B' }}>
+                <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: 'var(--muted)' }}>
                   Инженер поддержки платформы сможет просмотреть диагностическую информацию только после вашего явного подтверждения.
                 </p>
 
                 {supportRequests.length === 0 ? (
-                  <div data-testid="no-support-requests" style={{ padding: '24px', background: '#F8FAFC', borderRadius: '10px', color: '#64748B', fontSize: '13px', textAlign: 'center' }}>
+                  <div data-testid="no-support-requests" style={{ padding: '24px', background: 'var(--canvas)', borderRadius: '14px', color: 'var(--muted)', fontSize: '13px', textAlign: 'center' }}>
                     Нет активных запросов поддержки
                   </div>
                 ) : (
@@ -896,10 +893,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                       <div
                         key={req.id}
                         style={{
-                          border: '1px solid #CBD5E1',
-                          borderRadius: '12px',
+                          border: '1px solid var(--line)',
+                          borderRadius: '18px',
                           padding: '16px 20px',
-                          background: '#F8FAFC',
+                          background: 'var(--canvas)',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '12px',
@@ -907,13 +904,13 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
                           <div>
-                            <div style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A' }}>
+                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--fg)' }}>
                               Запрос от: <span data-testid="request-email">{req.requester_email}</span> ({req.requester_name})
                             </div>
-                            <div style={{ fontSize: '13px', color: '#334155', marginTop: '4px' }}>
+                            <div style={{ fontSize: '13px', color: 'var(--fg)', marginTop: '4px' }}>
                               <b>Причина обращения:</b> <span data-testid="request-reason">{req.reason}</span>
                             </div>
-                            <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>
                               Область доступа: <span data-testid="request-scope">{req.requested_scope}</span> · Длительность: <b>30 минут</b> · Запрошен: {new Date(req.created_at).toLocaleString('ru-RU')}
                             </div>
                           </div>
@@ -926,10 +923,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                               onClick={() => handleDenySupport(req.id)}
                               style={{
                                 padding: '8px 16px',
-                                background: '#FFFFFF',
-                                border: '1px solid #CBD5E1',
-                                color: '#475569',
-                                borderRadius: '8px',
+                                background: 'var(--panel)',
+                                border: '1px solid var(--line)',
+                                color: 'var(--muted)',
+                                borderRadius: '12px',
                                 fontSize: '13px',
                                 fontWeight: 600,
                                 cursor: 'pointer',
@@ -944,10 +941,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                               onClick={() => handleApproveSupport(req.id)}
                               style={{
                                 padding: '8px 18px',
-                                background: '#16A34A',
+                                background: 'var(--pos)',
                                 border: 'none',
-                                color: '#FFFFFF',
-                                borderRadius: '8px',
+                                color: 'var(--brand-fg)',
+                                borderRadius: '12px',
                                 fontSize: '13px',
                                 fontWeight: 600,
                                 cursor: 'pointer',
@@ -975,10 +972,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
                 Шаблоны уведомлений и транзакционный шлюз
               </h2>
-              <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>
+              <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '2px' }}>
                 Клиентские email-уведомления со ссылкой прямого управления бронированием (перенос и отмена)
               </div>
             </div>
@@ -996,9 +993,9 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 alignItems: 'center',
                 gap: '8px',
                 padding: '9px 16px',
-                background: testEmailSent ? '#16A34A' : '#2563EB',
-                color: '#FFFFFF',
-                borderRadius: '10px',
+                background: testEmailSent ? 'var(--pos)' : 'var(--brand)',
+                color: 'var(--brand-fg)',
+                borderRadius: '14px',
                 border: 'none',
                 fontSize: '13px',
                 fontWeight: 600,
@@ -1015,9 +1012,9 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           <div
             data-testid="notification-gateway-status"
             style={{
-              background: '#F0FDF4',
-              border: '1px solid #BBF7D0',
-              borderRadius: '14px',
+              background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))',
+              border: '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))',
+              borderRadius: '18px',
               padding: '16px 20px',
               display: 'flex',
               flexDirection: 'column',
@@ -1026,13 +1023,13 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: notifSettings?.email_enabled === false ? '#94A3B8' : '#16A34A' }}></span>
-                <span style={{ fontSize: '14px', fontWeight: 700, color: '#166534' }}>
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: notifSettings?.email_enabled === false ? 'var(--muted2)' : 'var(--pos)' }}></span>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pos)' }}>
                   Транзакционный Email Шлюз: {notifSettings?.email_enabled === false ? 'Приостановлен' : 'Активен (Transactional Outbox)'}
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '12px', background: '#DCFCE7', color: '#15803D', padding: '3px 10px', borderRadius: '6px', fontWeight: 600 }}>
+                <span style={{ fontSize: '12px', background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))', color: 'var(--pos)', padding: '3px 10px', borderRadius: '10px', fontWeight: 600 }}>
                   Лимит: {notifSettings?.daily_limit ?? 200}/день · Отправок: {notifDeliveries.length}
                 </span>
                 {userRole === 'owner' && (
@@ -1043,10 +1040,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     onClick={() => handleToggleEmailNotifications(notifSettings?.email_enabled === false)}
                     style={{
                       padding: '4px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid #86EFAC',
-                      background: '#FFFFFF',
-                      color: '#166534',
+                      borderRadius: '10px',
+                      border: '1px solid color-mix(in srgb, var(--pos) 45%, var(--panel))',
+                      background: 'var(--panel)',
+                      color: 'var(--pos)',
                       fontSize: '12px',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -1059,16 +1056,16 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginTop: '4px' }}>
-              <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '10px', border: '1px solid #DCFCE7', fontSize: '12px', color: '#334155' }}>
-                <div style={{ fontWeight: 600, color: '#166534', marginBottom: '2px' }}>Защита от дубликатов</div>
+              <div style={{ background: 'var(--panel)', padding: '10px 14px', borderRadius: '14px', border: '1px solid color-mix(in srgb, var(--pos) 12%, var(--panel))', fontSize: '12px', color: 'var(--fg)' }}>
+                <div style={{ fontWeight: 600, color: 'var(--pos)', marginBottom: '2px' }}>Защита от дубликатов</div>
                 Идемпотентный ключ <code>booking_id:event</code> блокирует повторную отправку при сетевых ретраях.
               </div>
-              <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '10px', border: '1px solid #DCFCE7', fontSize: '12px', color: '#334155' }}>
-                <div style={{ fontWeight: 600, color: '#166534', marginBottom: '2px' }}>Авто-повтор со сдвигом</div>
+              <div style={{ background: 'var(--panel)', padding: '10px 14px', borderRadius: '14px', border: '1px solid color-mix(in srgb, var(--pos) 12%, var(--panel))', fontSize: '12px', color: 'var(--fg)' }}>
+                <div style={{ fontWeight: 600, color: 'var(--pos)', marginBottom: '2px' }}>Авто-повтор со сдвигом</div>
                 Exponential backoff: 1м → 5м → 15м при сбоях почтового релея, затем очередь DLQ.
               </div>
-              <div style={{ background: '#FFFFFF', padding: '10px 14px', borderRadius: '10px', border: '1px solid #DCFCE7', fontSize: '12px', color: '#334155' }}>
-                <div style={{ fontWeight: 600, color: '#166534', marginBottom: '2px' }}>Ссылка самообслуживания</div>
+              <div style={{ background: 'var(--panel)', padding: '10px 14px', borderRadius: '14px', border: '1px solid color-mix(in srgb, var(--pos) 12%, var(--panel))', fontSize: '12px', color: 'var(--fg)' }}>
+                <div style={{ fontWeight: 600, color: 'var(--pos)', marginBottom: '2px' }}>Ссылка самообслуживания</div>
                 Переменная <code>{'{manage_url}'}</code> генерирует защищённую ссылку без необходимости логина.
               </div>
             </div>
@@ -1077,8 +1074,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           {/* Interactive Template Viewer */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) 1fr', gap: '20px', alignItems: 'flex-start' }}>
             {/* Template Selector & Settings */}
-            <div style={{ background: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+            <div style={{ background: 'var(--panel)', borderRadius: '22px', border: '1px solid var(--line)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
                 События жизненного цикла
               </h3>
 
@@ -1093,17 +1090,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     alignItems: 'flex-start',
                     gap: '4px',
                     padding: '12px 14px',
-                    borderRadius: '10px',
-                    border: `1px solid ${notificationTemplate === 'confirmation' ? '#2563EB' : '#E2E8F0'}`,
-                    background: notificationTemplate === 'confirmation' ? '#EFF6FF' : '#FFFFFF',
+                    borderRadius: '14px',
+                    border: `1px solid ${notificationTemplate === 'confirmation' ? 'var(--brand)' : 'var(--line)'}`,
+                    background: notificationTemplate === 'confirmation' ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--panel)',
                     cursor: 'pointer',
                     textAlign: 'left',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'confirmation' ? '#1D4ED8' : '#0F172A' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'confirmation' ? 'var(--brand)' : 'var(--fg)' }}>
                     ✓ 1. Подтверждение записи
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748B' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                     Сразу после создания брони; содержит ссылку самообслуживания
                   </div>
                 </button>
@@ -1118,17 +1115,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     alignItems: 'flex-start',
                     gap: '4px',
                     padding: '12px 14px',
-                    borderRadius: '10px',
-                    border: `1px solid ${notificationTemplate === 'reminder' ? '#2563EB' : '#E2E8F0'}`,
-                    background: notificationTemplate === 'reminder' ? '#EFF6FF' : '#FFFFFF',
+                    borderRadius: '14px',
+                    border: `1px solid ${notificationTemplate === 'reminder' ? 'var(--brand)' : 'var(--line)'}`,
+                    background: notificationTemplate === 'reminder' ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--panel)',
                     cursor: 'pointer',
                     textAlign: 'left',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'reminder' ? '#1D4ED8' : '#0F172A' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'reminder' ? 'var(--brand)' : 'var(--fg)' }}>
                     ⏰ 2. Напоминание о визите
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748B' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                     За 2 часа до начала визита с точным адресом и мастером
                   </div>
                 </button>
@@ -1143,31 +1140,31 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     alignItems: 'flex-start',
                     gap: '4px',
                     padding: '12px 14px',
-                    borderRadius: '10px',
-                    border: `1px solid ${notificationTemplate === 'cancellation' ? '#2563EB' : '#E2E8F0'}`,
-                    background: notificationTemplate === 'cancellation' ? '#EFF6FF' : '#FFFFFF',
+                    borderRadius: '14px',
+                    border: `1px solid ${notificationTemplate === 'cancellation' ? 'var(--brand)' : 'var(--line)'}`,
+                    background: notificationTemplate === 'cancellation' ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--panel)',
                     cursor: 'pointer',
                     textAlign: 'left',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'cancellation' ? '#1D4ED8' : '#0F172A' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: notificationTemplate === 'cancellation' ? 'var(--brand)' : 'var(--fg)' }}>
                     ✕ 3. Отмена записи
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748B' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                     При отмене клиентом или салоном; слот сразу освобождается
                   </div>
                 </button>
               </div>
 
-              <hr style={{ border: 0, borderTop: '1px solid #E2E8F0', margin: '4px 0' }} />
+              <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0' }} />
 
               <div>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', display: 'block', marginBottom: '6px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>
                   Доступные переменные шаблона:
                 </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {['{client_name}', '{salon_name}', '{service_name}', '{date_time}', '{staff_name}', '{manage_url}'].map(tag => (
-                    <span key={tag} style={{ fontSize: '11px', background: '#F1F5F9', color: '#334155', padding: '3px 7px', borderRadius: '6px', fontFamily: 'monospace' }}>
+                    <span key={tag} style={{ fontSize: '11px', background: 'var(--chip)', color: 'var(--fg)', padding: '3px 7px', borderRadius: '10px', fontFamily: 'monospace' }}>
                       {tag}
                     </span>
                   ))}
@@ -1176,25 +1173,25 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             </div>
 
             {/* Email Canvas Preview */}
-            <div style={{ background: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ background: 'var(--panel)', borderRadius: '22px', border: '1px solid var(--line)', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
               {/* Preview Bar */}
-              <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ background: 'var(--canvas)', borderBottom: '1px solid var(--line)', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Mail style={{ width: '16px', height: '16px', color: '#64748B' }} />
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  <Mail style={{ width: '16px', height: '16px', color: 'var(--muted)' }} />
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                     Предпросмотр транзакционного письма
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', background: '#E2E8F0', borderRadius: '8px', padding: '2px', gap: '2px' }}>
+                <div style={{ display: 'flex', background: 'var(--line)', borderRadius: '12px', padding: '2px', gap: '2px' }}>
                   <button
                     type="button"
                     onClick={() => setPreviewDevice('mobile')}
                     style={{
                       border: 'none',
-                      background: previewDevice === 'mobile' ? '#FFFFFF' : 'transparent',
-                      color: previewDevice === 'mobile' ? '#0F172A' : '#64748B',
-                      borderRadius: '6px',
+                      background: previewDevice === 'mobile' ? 'var(--panel)' : 'transparent',
+                      color: previewDevice === 'mobile' ? 'var(--fg)' : 'var(--muted)',
+                      borderRadius: '10px',
                       padding: '4px 8px',
                       cursor: 'pointer',
                       display: 'flex',
@@ -1212,9 +1209,9 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     onClick={() => setPreviewDevice('desktop')}
                     style={{
                       border: 'none',
-                      background: previewDevice === 'desktop' ? '#FFFFFF' : 'transparent',
-                      color: previewDevice === 'desktop' ? '#0F172A' : '#64748B',
-                      borderRadius: '6px',
+                      background: previewDevice === 'desktop' ? 'var(--panel)' : 'transparent',
+                      color: previewDevice === 'desktop' ? 'var(--fg)' : 'var(--muted)',
+                      borderRadius: '10px',
                       padding: '4px 8px',
                       cursor: 'pointer',
                       display: 'flex',
@@ -1231,12 +1228,12 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </div>
 
               {/* Email Envelope details */}
-              <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', fontSize: '12px', color: '#64748B', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--chip)', fontSize: '12px', color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div><b>Отправитель:</b> BarberHouse &lt;noreply@barberhouse.kz&gt;</div>
                 <div><b>Кому:</b> Тимур (клиент) &lt;timur@example.kz&gt;</div>
                 <div>
                   <b>Тема:</b>{' '}
-                  <span style={{ color: '#0F172A', fontWeight: 600 }}>
+                  <span style={{ color: 'var(--fg)', fontWeight: 600 }}>
                     {notificationTemplate === 'confirmation' && '✓ Ваша запись в салон BarberHouse подтверждена (#BH-7821)'}
                     {notificationTemplate === 'reminder' && '⏰ Напоминание: ваш визит в BarberHouse сегодня в 16:00'}
                     {notificationTemplate === 'cancellation' && '✕ Ваша запись в салон BarberHouse отменена'}
@@ -1245,58 +1242,58 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </div>
 
               {/* Rendered Email Body */}
-              <div style={{ padding: '24px', background: '#F1F5F9', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ padding: '24px', background: 'var(--chip)', display: 'flex', justifyContent: 'center' }}>
                 <div
                   style={{
                     width: previewDevice === 'mobile' ? '360px' : '100%',
                     maxWidth: '520px',
-                    background: '#FFFFFF',
-                    borderRadius: '12px',
+                    background: 'var(--panel)',
+                    borderRadius: '18px',
                     boxShadow: '0 4px 6px -1px rgba(0,0,0,0.06)',
                     padding: '24px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '16px',
-                    fontFamily: 'Inter, system-ui, sans-serif',
+                    fontFamily: 'inherit',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid #F1F5F9', paddingBottom: '14px' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#0F172A', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--chip)', paddingBottom: '14px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '12px', background: 'var(--brand2)', color: 'var(--brand-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '14px' }}>
                       BH
                     </div>
                     <div>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>BarberHouse</div>
-                      <div style={{ fontSize: '11px', color: '#64748B' }}>ул. Достык, 5 · Астана</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--fg)' }}>BarberHouse</div>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)' }}>ул. Достык, 5 · Астана</div>
                     </div>
                   </div>
 
                   {notificationTemplate === 'confirmation' && (
                     <>
                       <div>
-                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: 'var(--fg)' }}>
                           Здравствуйте, Тимур!
                         </h4>
-                        <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)', lineHeight: 1.5 }}>
                           Ваша запись в салон успешно подтверждена. Ждем вас в назначенное время!
                         </p>
                       </div>
 
-                      <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
+                      <div style={{ background: 'var(--canvas)', borderRadius: '14px', padding: '14px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#64748B' }}>Услуга:</span>
-                          <span style={{ fontWeight: 600, color: '#0F172A' }}>Мужская стрижка (45 мин)</span>
+                          <span style={{ color: 'var(--muted)' }}>Услуга:</span>
+                          <span style={{ fontWeight: 600, color: 'var(--fg)' }}>Мужская стрижка (45 мин)</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#64748B' }}>Мастер:</span>
-                          <span style={{ fontWeight: 600, color: '#0F172A' }}>Дамир Сериков</span>
+                          <span style={{ color: 'var(--muted)' }}>Мастер:</span>
+                          <span style={{ fontWeight: 600, color: 'var(--fg)' }}>Дамир Сериков</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#64748B' }}>Дата и время:</span>
-                          <span style={{ fontWeight: 700, color: '#2563EB' }}>Завтра, 16:00</span>
+                          <span style={{ color: 'var(--muted)' }}>Дата и время:</span>
+                          <span style={{ fontWeight: 700, color: 'var(--brand)' }}>Завтра, 16:00</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#64748B' }}>Стоимость:</span>
-                          <span style={{ fontWeight: 700, color: '#0F172A' }}>8 000 ₸</span>
+                          <span style={{ color: 'var(--muted)' }}>Стоимость:</span>
+                          <span style={{ fontWeight: 700, color: 'var(--fg)' }}>8 000 ₸</span>
                         </div>
                       </div>
 
@@ -1310,10 +1307,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                             display: 'block',
                             width: '100%',
                             textAlign: 'center',
-                            background: '#2563EB',
-                            color: '#FFFFFF',
+                            background: 'var(--brand)',
+                            color: 'var(--brand-fg)',
                             padding: '12px 16px',
-                            borderRadius: '10px',
+                            borderRadius: '14px',
                             textDecoration: 'none',
                             fontSize: '14px',
                             fontWeight: 600,
@@ -1322,7 +1319,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                         >
                           Управлять визитом (Перенести / Отменить)
                         </a>
-                        <div style={{ fontSize: '11px', color: '#94A3B8', textAlign: 'center' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--muted2)', textAlign: 'center' }}>
                           Вы можете изменить время визита без звонка администратору
                         </div>
                       </div>
@@ -1332,17 +1329,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   {notificationTemplate === 'reminder' && (
                     <>
                       <div>
-                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: 'var(--fg)' }}>
                           Напоминаем о визите через 2 часа!
                         </h4>
-                        <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)', lineHeight: 1.5 }}>
                           Мастер Дамир Сериков ожидает вас сегодня в 16:00 в филиале на Достык.
                         </p>
                       </div>
 
-                      <div style={{ background: '#FEF3C7', borderRadius: '10px', padding: '14px', border: '1px solid #FDE68A', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
-                        <div style={{ fontWeight: 700, color: '#92400E' }}>Адрес филиала:</div>
-                        <div style={{ color: '#78350F' }}>г. Астана, ул. Достык, 5 (вход с торца)</div>
+                      <div style={{ background: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))', borderRadius: '14px', padding: '14px', border: '1px solid color-mix(in srgb, var(--s-arrived) 45%, var(--panel))', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--s-arrived)' }}>Адрес филиала:</div>
+                        <div style={{ color: 'var(--s-arrived)' }}>г. Астана, ул. Достык, 5 (вход с торца)</div>
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
@@ -1355,10 +1352,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                             display: 'block',
                             width: '100%',
                             textAlign: 'center',
-                            background: '#0F172A',
-                            color: '#FFFFFF',
+                            background: 'var(--brand2)',
+                            color: 'var(--brand-fg)',
                             padding: '12px 16px',
-                            borderRadius: '10px',
+                            borderRadius: '14px',
                             textDecoration: 'none',
                             fontSize: '14px',
                             fontWeight: 600,
@@ -1374,15 +1371,15 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   {notificationTemplate === 'cancellation' && (
                     <>
                       <div>
-                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#991B1B' }}>
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: 'var(--neg)' }}>
                           Запись отменена
                         </h4>
-                        <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)', lineHeight: 1.5 }}>
                           Ваша бронь на Мужская стрижка была отменена. Слот освобожден для других клиентов.
                         </p>
                       </div>
 
-                      <div style={{ background: '#FEF2F2', borderRadius: '10px', padding: '14px', border: '1px solid #FCA5A5', fontSize: '12px', color: '#991B1B' }}>
+                      <div style={{ background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))', borderRadius: '14px', padding: '14px', border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))', fontSize: '12px', color: 'var(--neg)' }}>
                         Причина: Отмена по инициативе клиента через ссылку самообслуживания.
                       </div>
 
@@ -1396,10 +1393,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                             display: 'block',
                             width: '100%',
                             textAlign: 'center',
-                            background: '#2563EB',
-                            color: '#FFFFFF',
+                            background: 'var(--brand)',
+                            color: 'var(--brand-fg)',
                             padding: '12px 16px',
-                            borderRadius: '10px',
+                            borderRadius: '14px',
                             textDecoration: 'none',
                             fontSize: '14px',
                             fontWeight: 600,
@@ -1412,7 +1409,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     </>
                   )}
 
-                  <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '12px', fontSize: '11px', color: '#94A3B8', textAlign: 'center' }}>
+                  <div style={{ borderTop: '1px solid var(--chip)', paddingTop: '12px', fontSize: '11px', color: 'var(--muted2)', textAlign: 'center' }}>
                     Письмо отправлено автоматически сервисом онлайн-записи CRM BarberHouse
                   </div>
                 </div>
@@ -1442,8 +1439,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         >
           <div
             style={{
-              background: '#FFFFFF',
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '28px',
               width: '460px',
               maxWidth: '100%',
@@ -1454,13 +1451,13 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--fg)' }}>
                 Пригласить сотрудника
               </h3>
               <button
                 type="button"
                 onClick={() => setShowInviteModal(false)}
-                style={{ border: 'none', background: 'transparent', fontSize: '18px', color: '#94A3B8', cursor: 'pointer' }}
+                style={{ border: 'none', background: 'transparent', fontSize: '18px', color: 'var(--muted2)', cursor: 'pointer' }}
               >
                 ✕
               </button>
@@ -1469,7 +1466,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             {!inviteResult ? (
               <form onSubmit={handleCreateInvite} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                     Email сотрудника
                   </label>
                   <input
@@ -1482,8 +1479,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     style={{
                       height: '42px',
                       padding: '0 14px',
-                      borderRadius: '10px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
                       fontSize: '14px',
                       outline: 'none',
                     }}
@@ -1491,7 +1488,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                     Назначаемая роль
                   </label>
                   <select
@@ -1501,11 +1498,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     style={{
                       height: '42px',
                       padding: '0 12px',
-                      borderRadius: '10px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
                       fontSize: '14px',
                       outline: 'none',
-                      background: '#FFFFFF',
+                      background: 'var(--panel)',
                     }}
                   >
                     <option value="master">Мастер (доступ только к графику и клиентам, касса скрыта)</option>
@@ -1515,7 +1512,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
                 {inviteRole === 'master' && staffProfiles.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                       Привязать к профилю мастера (для доступа к своему графику)
                     </label>
                     <select
@@ -1525,10 +1522,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                       style={{
                         height: '40px',
                         padding: '0 12px',
-                        borderRadius: '10px',
-                        border: '1px solid #CBD5E1',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
                         fontSize: '13px',
-                        background: '#FFFFFF',
+                        background: 'var(--panel)',
                       }}
                     >
                       <option value="">— Привязать позже —</option>
@@ -1541,12 +1538,12 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
                 {inviteRole === 'admin' && branches.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                       Доступные филиалы управляющего
                     </label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--canvas)', padding: '10px 12px', borderRadius: '14px', border: '1px solid var(--line)' }}>
                       {branches.map(b => (
-                        <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#334155', cursor: 'pointer' }}>
+                        <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--fg)', cursor: 'pointer' }}>
                           <input
                             type="checkbox"
                             checked={inviteBranchIds.includes(b.id)}
@@ -1571,10 +1568,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     onClick={() => setShowInviteModal(false)}
                     style={{
                       padding: '10px 18px',
-                      borderRadius: '10px',
-                      border: '1px solid #CBD5E1',
-                      background: '#FFFFFF',
-                      color: '#475569',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
+                      background: 'var(--panel)',
+                      color: 'var(--muted)',
                       fontWeight: 600,
                       fontSize: '13px',
                       cursor: 'pointer',
@@ -1588,10 +1585,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     disabled={inviteLoading}
                     style={{
                       padding: '10px 20px',
-                      borderRadius: '10px',
+                      borderRadius: '14px',
                       border: 'none',
-                      background: '#2563EB',
-                      color: '#FFFFFF',
+                      background: 'var(--brand)',
+                      color: 'var(--brand-fg)',
                       fontWeight: 600,
                       fontSize: '13px',
                       cursor: 'pointer',
@@ -1603,13 +1600,13 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </form>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: '12px', padding: '14px', display: 'flex', alignItems: 'center', gap: '10px', color: '#065F46', fontSize: '13px' }}>
+                <div style={{ background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))', border: '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))', borderRadius: '18px', padding: '14px', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--pos)', fontSize: '13px' }}>
                   <CheckCircle style={{ width: '18px', height: '18px', flexShrink: 0 }} />
                   <span>Ссылка создана с безопасным SHA-256 хешированием.</span>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                     Ссылка для активации
                   </label>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -1622,11 +1619,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                         flex: 1,
                         height: '42px',
                         padding: '0 12px',
-                        borderRadius: '10px',
-                        border: '1px solid #CBD5E1',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
                         fontSize: '13px',
-                        background: '#F8FAFC',
-                        color: '#0F172A',
+                        background: 'var(--canvas)',
+                        color: 'var(--fg)',
                       }}
                     />
                     <button
@@ -1635,10 +1632,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                       onClick={() => copyToClipboard(inviteResult.invite_url || '')}
                       style={{
                         padding: '0 16px',
-                        borderRadius: '10px',
-                        border: '1px solid #CBD5E1',
-                        background: '#FFFFFF',
-                        color: '#0F172A',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                        background: 'var(--panel)',
+                        color: 'var(--fg)',
                         fontWeight: 600,
                         fontSize: '13px',
                         cursor: 'pointer',
@@ -1647,7 +1644,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                         gap: '6px',
                       }}
                     >
-                      {inviteCopied ? <Check style={{ width: '16px', height: '16px', color: '#059669' }} /> : <Copy style={{ width: '16px', height: '16px' }} />}
+                      {inviteCopied ? <Check style={{ width: '16px', height: '16px', color: 'var(--pos)' }} /> : <Copy style={{ width: '16px', height: '16px' }} />}
                       <span>{inviteCopied ? 'Скопировано' : 'Копировать'}</span>
                     </button>
                   </div>
@@ -1658,10 +1655,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   onClick={() => setShowInviteModal(false)}
                   style={{
                     height: '42px',
-                    borderRadius: '10px',
+                    borderRadius: '14px',
                     border: 'none',
-                    background: '#2563EB',
-                    color: '#FFFFFF',
+                    background: 'var(--brand)',
+                    color: 'var(--brand-fg)',
                     fontWeight: 600,
                     fontSize: '14px',
                     cursor: 'pointer',
@@ -1696,8 +1693,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         >
           <div
             style={{
-              background: '#FFFFFF',
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '28px',
               width: '480px',
               maxWidth: '100%',
@@ -1708,13 +1705,13 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--fg)' }}>
                 {editingBranch ? 'Редактировать филиал' : 'Новый филиал сети'}
               </h3>
               <button
                 type="button"
                 onClick={() => setShowBranchModal(false)}
-                style={{ border: 'none', background: 'transparent', fontSize: '18px', color: '#94A3B8', cursor: 'pointer' }}
+                style={{ border: 'none', background: 'transparent', fontSize: '18px', color: 'var(--muted2)', cursor: 'pointer' }}
               >
                 ✕
               </button>
@@ -1722,8 +1719,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
             <form onSubmit={handleSaveBranch} data-testid="branch-form" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                  Название филиала <span style={{ color: '#EF4444' }}>*</span>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
+                  Название филиала <span style={{ color: 'var(--neg)' }}>*</span>
                 </label>
                 <input
                   type="text"
@@ -1735,8 +1732,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   style={{
                     height: '42px',
                     padding: '0 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '14px',
+                    border: '1px solid var(--line)',
                     fontSize: '14px',
                     outline: 'none',
                   }}
@@ -1745,8 +1742,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                    Город <span style={{ color: '#EF4444' }}>*</span>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
+                    Город <span style={{ color: 'var(--neg)' }}>*</span>
                   </label>
                   <input
                     type="text"
@@ -1759,8 +1756,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     style={{
                       height: '42px',
                       padding: '0 14px',
-                      borderRadius: '10px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
                       fontSize: '14px',
                       outline: 'none',
                     }}
@@ -1777,7 +1774,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                     Режим работы
                   </label>
                   <input
@@ -1789,8 +1786,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     style={{
                       height: '42px',
                       padding: '0 14px',
-                      borderRadius: '10px',
-                      border: '1px solid #CBD5E1',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
                       fontSize: '14px',
                       outline: 'none',
                     }}
@@ -1799,8 +1796,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                  Фактический адрес <span style={{ color: '#EF4444' }}>*</span>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
+                  Фактический адрес <span style={{ color: 'var(--neg)' }}>*</span>
                 </label>
                 <input
                   type="text"
@@ -1812,8 +1809,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   style={{
                     height: '42px',
                     padding: '0 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '14px',
+                    border: '1px solid var(--line)',
                     fontSize: '14px',
                     outline: 'none',
                   }}
@@ -1821,7 +1818,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                   Контактный телефон
                 </label>
                 <input
@@ -1833,8 +1830,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   style={{
                     height: '42px',
                     padding: '0 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '14px',
+                    border: '1px solid var(--line)',
                     fontSize: '14px',
                     outline: 'none',
                   }}
@@ -1842,7 +1839,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                   Часовой пояс филиала (IANA)
                 </label>
                 <select
@@ -1852,11 +1849,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   style={{
                     height: '42px',
                     padding: '0 12px',
-                    borderRadius: '10px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '14px',
+                    border: '1px solid var(--line)',
                     fontSize: '14px',
                     outline: 'none',
-                    background: '#FFFFFF',
+                    background: 'var(--panel)',
                   }}
                 >
                   <option value="Asia/Almaty">Asia/Almaty (UTC+5, Казахстан)</option>
@@ -1872,10 +1869,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   onClick={() => setShowBranchModal(false)}
                   style={{
                     padding: '10px 18px',
-                    borderRadius: '10px',
-                    border: '1px solid #CBD5E1',
-                    background: '#FFFFFF',
-                    color: '#475569',
+                    borderRadius: '14px',
+                    border: '1px solid var(--line)',
+                    background: 'var(--panel)',
+                    color: 'var(--muted)',
                     fontWeight: 600,
                     fontSize: '13px',
                     cursor: 'pointer',
@@ -1889,10 +1886,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   disabled={branchSaving}
                   style={{
                     padding: '10px 20px',
-                    borderRadius: '10px',
+                    borderRadius: '14px',
                     border: 'none',
-                    background: '#2563EB',
-                    color: '#FFFFFF',
+                    background: 'var(--brand)',
+                    color: 'var(--brand-fg)',
                     fontWeight: 600,
                     fontSize: '13px',
                     cursor: 'pointer',

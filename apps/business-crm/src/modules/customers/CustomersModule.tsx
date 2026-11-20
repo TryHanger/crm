@@ -225,8 +225,8 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 width: '100%',
                 height: '40px',
                 padding: '0 14px',
-                borderRadius: '10px',
-                border: '1px solid #CBD5E1',
+                borderRadius: '14px',
+                border: '1px solid var(--line)',
                 fontSize: '14px',
                 outline: 'none',
                 boxSizing: 'border-box',
@@ -241,11 +241,11 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
             style={{
               height: '40px',
               padding: '0 12px',
-              borderRadius: '10px',
-              border: '1px solid #CBD5E1',
+              borderRadius: '14px',
+              border: '1px solid var(--line)',
               fontSize: '13px',
-              background: '#FFFFFF',
-              color: '#334155',
+              background: 'var(--panel)',
+              color: 'var(--fg)',
             }}
           >
             <option value="all">Все клиенты</option>
@@ -265,11 +265,11 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
             style={{
               height: '40px',
               padding: '0 12px',
-              borderRadius: '10px',
-              border: '1px solid #CBD5E1',
+              borderRadius: '14px',
+              border: '1px solid var(--line)',
               fontSize: '13px',
-              background: '#FFFFFF',
-              color: '#334155',
+              background: 'var(--panel)',
+              color: 'var(--fg)',
             }}
           >
             <option value="created_at:desc">Сначала новые (по дате)</option>
@@ -288,10 +288,10 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
             style={{
               height: '40px',
               padding: '0 16px',
-              borderRadius: '10px',
+              borderRadius: '14px',
               border: 'none',
-              background: '#2563EB',
-              color: '#FFFFFF',
+              background: 'var(--brand)',
+              color: 'var(--brand-fg)',
               fontSize: '14px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -306,16 +306,16 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
       </div>
 
       {duplicateWarning && (
-        <div style={{ padding: '12px 16px', background: '#FEF3C7', color: '#92400E', borderRadius: '10px', fontSize: '14px', border: '1px solid #FCD34D' }}>
+        <div style={{ padding: '12px 16px', background: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))', color: 'var(--s-arrived)', borderRadius: '14px', fontSize: '14px', border: '1px solid color-mix(in srgb, var(--s-arrived) 45%, var(--panel))' }}>
           ⚠️ {duplicateWarning}
         </div>
       )}
 
       {/* Customers Table */}
-      <div style={{ background: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--panel)', borderRadius: '22px', border: '1px solid var(--line)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', color: '#64748B' }}>
+            <tr style={{ borderBottom: '1px solid var(--line)', background: 'var(--canvas)', color: 'var(--muted)' }}>
               <th style={{ padding: '12px 16px' }}>Клиент</th>
               <th style={{ padding: '12px 16px' }}>Телефон</th>
               <th style={{ padding: '12px 16px' }}>Email</th>
@@ -326,13 +326,13 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: '#64748B' }}>
+                <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--muted)' }}>
                   Загрузка списка клиентов…
                 </td>
               </tr>
             ) : customers.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: '#64748B' }}>
+                <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--muted)' }}>
                   Клиенты не найдены
                 </td>
               </tr>
@@ -340,23 +340,23 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
               customers.map(c => {
                 const visits = (c as any).completed_visits ?? c.total_bookings ?? 0;
                 const tag = visits >= 3 ? 'Постоянный' : visits === 0 ? 'Новый' : 'Клиент';
-                const tagBg = tag === 'Постоянный' ? '#EFF6FF' : tag === 'Новый' ? '#DCFCE7' : '#F1F5F9';
-                const tagColor = tag === 'Постоянный' ? '#1D4ED8' : tag === 'Новый' ? '#15803D' : '#475569';
+                const tagBg = tag === 'Постоянный' ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : tag === 'Новый' ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'var(--chip)';
+                const tagColor = tag === 'Постоянный' ? 'var(--brand)' : tag === 'Новый' ? 'var(--pos)' : 'var(--muted)';
 
                 return (
                   <tr
                     key={c.id}
                     onClick={() => handleOpenDetail(c.id)}
-                    style={{ borderBottom: '1px solid #F1F5F9', cursor: 'pointer', transition: 'background 0.1s ease' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#F8FAFC')}
+                    style={{ borderBottom: '1px solid var(--chip)', cursor: 'pointer', transition: 'background 0.1s ease' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--canvas)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
                     <td style={{ padding: '12px 16px', fontWeight: 600 }}>{c.full_name}</td>
-                    <td style={{ padding: '12px 16px', color: '#334155' }}>{(c as any).phone || c.phone_e164}</td>
-                    <td style={{ padding: '12px 16px', color: '#64748B' }}>{c.email || '—'}</td>
+                    <td style={{ padding: '12px 16px', color: 'var(--fg)' }}>{(c as any).phone || c.phone_e164}</td>
+                    <td style={{ padding: '12px 16px', color: 'var(--muted)' }}>{c.email || '—'}</td>
                     <td style={{ padding: '12px 16px' }}>{visits} шт.</td>
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, background: tagBg, color: tagColor, padding: '2px 8px', borderRadius: '4px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, background: tagBg, color: tagColor, padding: '2px 8px', borderRadius: '8px' }}>
                         {tag}
                       </span>
                     </td>
@@ -386,8 +386,8 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '640px',
-              background: '#FFFFFF',
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
@@ -408,7 +408,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
             </div>
 
             {isLoadingDetail || !customerDetail ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: '#64748B' }}>Загрузка…</div>
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>Загрузка…</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -416,7 +416,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                     <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 700 }}>
                       {customerDetail.full_name}
                     </h3>
-                    <div style={{ fontSize: '14px', color: '#64748B' }}>
+                    <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
                       {customerDetail.phone || customerDetail.phone_e164} · {customerDetail.email || 'без email'}
                     </div>
                   </div>
@@ -426,9 +426,9 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                       onClick={handleOpenEdit}
                       style={{
                         padding: '6px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #CBD5E1',
-                        background: '#FFFFFF',
+                        borderRadius: '12px',
+                        border: '1px solid var(--line)',
+                        background: 'var(--panel)',
                         fontSize: '13px',
                         fontWeight: 500,
                         cursor: 'pointer',
@@ -442,27 +442,27 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 {/* Statistics Summary Bar */}
                 {customerDetail.stats && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-                    <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', textAlign: 'center', border: '1px solid #E2E8F0' }}>
-                      <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>Всего записей</div>
-                      <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>
+                    <div style={{ background: 'var(--canvas)', padding: '10px 12px', borderRadius: '14px', textAlign: 'center', border: '1px solid var(--line)' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600 }}>Всего записей</div>
+                      <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--fg)', marginTop: '2px' }}>
                         {customerDetail.stats.total_bookings ?? 0}
                       </div>
                     </div>
-                    <div style={{ background: '#ECFDF5', padding: '10px 12px', borderRadius: '10px', textAlign: 'center', border: '1px solid #A7F3D0' }}>
-                      <div style={{ fontSize: '11px', color: '#047857', fontWeight: 600 }}>Завершено</div>
-                      <div style={{ fontSize: '18px', fontWeight: 800, color: '#065F46', marginTop: '2px' }}>
+                    <div style={{ background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))', padding: '10px 12px', borderRadius: '14px', textAlign: 'center', border: '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--pos)', fontWeight: 600 }}>Завершено</div>
+                      <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--pos)', marginTop: '2px' }}>
                         {customerDetail.stats.completed_visits ?? 0}
                       </div>
                     </div>
-                    <div style={{ background: '#EFF6FF', padding: '10px 12px', borderRadius: '10px', textAlign: 'center', border: '1px solid #BFDBFE' }}>
-                      <div style={{ fontSize: '11px', color: '#1D4ED8', fontWeight: 600 }}>Отменено</div>
-                      <div style={{ fontSize: '18px', fontWeight: 800, color: '#1E40AF', marginTop: '2px' }}>
+                    <div style={{ background: 'color-mix(in srgb, var(--brand) 10%, var(--panel))', padding: '10px 12px', borderRadius: '14px', textAlign: 'center', border: '1px solid color-mix(in srgb, var(--brand) 30%, var(--panel))' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--brand)', fontWeight: 600 }}>Отменено</div>
+                      <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--brand)', marginTop: '2px' }}>
                         {customerDetail.stats.cancelled_visits ?? 0}
                       </div>
                     </div>
-                    <div style={{ background: '#FEF2F2', padding: '10px 12px', borderRadius: '10px', textAlign: 'center', border: '1px solid #FECACA' }}>
-                      <div style={{ fontSize: '11px', color: '#B91C1C', fontWeight: 600 }}>Неявки</div>
-                      <div style={{ fontSize: '18px', fontWeight: 800, color: '#991B1B', marginTop: '2px' }}>
+                    <div style={{ background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))', padding: '10px 12px', borderRadius: '14px', textAlign: 'center', border: '1px solid color-mix(in srgb, var(--neg) 30%, var(--panel))' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--neg)', fontWeight: 600 }}>Неявки</div>
+                      <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--neg)', marginTop: '2px' }}>
                         {customerDetail.stats.no_show_visits ?? 0}
                       </div>
                     </div>
@@ -470,7 +470,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 )}
 
                 {customerDetail.notes_private && (
-                  <div style={{ padding: '12px', background: '#F8FAFC', borderRadius: '10px', fontSize: '13px', color: '#334155' }}>
+                  <div style={{ padding: '12px', background: 'var(--canvas)', borderRadius: '14px', fontSize: '13px', color: 'var(--fg)' }}>
                     <b>Заметка администратора:</b> {customerDetail.notes_private}
                   </div>
                 )}
@@ -480,15 +480,15 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                   <div style={{ fontSize: '14px', fontWeight: 600 }}>Заметки и пожелания</div>
                   {customerDetail.notes && customerDetail.notes.length > 0 ? (
                     customerDetail.notes.map((n: any) => (
-                      <div key={n.id} style={{ padding: '8px 12px', background: '#F1F5F9', borderRadius: '8px', fontSize: '13px' }}>
+                      <div key={n.id} style={{ padding: '8px 12px', background: 'var(--chip)', borderRadius: '12px', fontSize: '13px' }}>
                         <div>{n.note}</div>
-                        <div style={{ fontSize: '11px', color: '#64748B', marginTop: '4px' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
                           {new Date(n.created_at).toLocaleDateString('ru-RU')}
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div style={{ fontSize: '13px', color: '#94A3B8' }}>Пока нет заметок</div>
+                    <div style={{ fontSize: '13px', color: 'var(--muted2)' }}>Пока нет заметок</div>
                   )}
 
                   {/* Add note input */}
@@ -498,12 +498,12 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                       value={newNoteText}
                       onChange={e => setNewNoteText(e.target.value)}
                       placeholder="Добавить заметку о предпочтениях…"
-                      style={{ flex: 1, height: '36px', padding: '0 10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                      style={{ flex: 1, height: '36px', padding: '0 10px', borderRadius: '12px', border: '1px solid var(--line)', fontSize: '13px' }}
                     />
                     <button
                       type="submit"
                       disabled={isAddingNote}
-                      style={{ padding: '0 12px', borderRadius: '8px', border: 'none', background: '#0F172A', color: '#FFFFFF', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                      style={{ padding: '0 12px', borderRadius: '12px', border: 'none', background: 'var(--brand2)', color: 'var(--brand-fg)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                     >
                       Сохранить
                     </button>
@@ -511,7 +511,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 </div>
 
                 {/* History of Bookings */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--line)', paddingTop: '16px' }}>
                   <div style={{ fontSize: '14px', fontWeight: 600 }}>
                     История бронирований ({customerDetail.history?.length || 0})
                   </div>
@@ -521,8 +521,8 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                         key={h.id}
                         style={{
                           padding: '10px 12px',
-                          border: '1px solid #E2E8F0',
-                          borderRadius: '8px',
+                          border: '1px solid var(--line)',
+                          borderRadius: '12px',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
@@ -534,7 +534,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                             <b>{new Date(h.starts_at_utc).toLocaleDateString('ru-RU')}</b> — {h.services.join(', ')}
                           </div>
                           {(h.branch_name || h.staff_name) && (
-                            <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
                               {h.branch_name && <span>{h.branch_name}</span>}
                               {h.branch_name && h.staff_name && <span> · </span>}
                               {h.staff_name && <span>Мастер: {h.staff_name}</span>}
@@ -543,11 +543,11 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span>{(h.amount_minor / 100).toLocaleString('ru-RU')} ₸</span>
-                          <span style={{ fontSize: '11px', background: '#EFF6FF', color: '#1D4ED8', padding: '1px 6px', borderRadius: '4px' }}>
+                          <span style={{ fontSize: '11px', background: 'color-mix(in srgb, var(--brand) 10%, var(--panel))', color: 'var(--brand)', padding: '1px 6px', borderRadius: '8px' }}>
                             {h.status}
                           </span>
                           {h.debt_minor > 0 && h.status === 'completed' && (
-                            <span style={{ fontSize: '10px', background: '#FEE2E2', color: '#991B1B', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                            <span style={{ fontSize: '10px', background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))', color: 'var(--neg)', padding: '1px 6px', borderRadius: '8px', fontWeight: 600 }}>
                               Долг: {(h.debt_minor / 100).toLocaleString('ru-RU')} ₸
                             </span>
                           )}
@@ -555,7 +555,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                       </div>
                     ))
                   ) : (
-                    <div style={{ fontSize: '13px', color: '#94A3B8' }}>История визитов пуста</div>
+                    <div style={{ fontSize: '13px', color: 'var(--muted2)' }}>История визитов пуста</div>
                   )}
                 </div>
               </div>
@@ -582,8 +582,8 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '440px',
-              background: '#FFFFFF',
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
@@ -593,11 +593,11 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Новый клиент</h3>
 
             {sharedPhonePrompt ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: '#FEF3C7', padding: '16px', borderRadius: '12px', border: '1px solid #FCD34D' }}>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#92400E' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))', padding: '16px', borderRadius: '18px', border: '1px solid color-mix(in srgb, var(--s-arrived) 45%, var(--panel))' }}>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--s-arrived)' }}>
                   ⚠️ Номер {sharedPhonePrompt.phone} уже зарегистрирован!
                 </div>
-                <div style={{ fontSize: '13px', color: '#78350F', lineHeight: 1.4 }}>
+                <div style={{ fontSize: '13px', color: 'var(--s-arrived)', lineHeight: 1.4 }}>
                   В базе уже есть клиент <b>«{sharedPhonePrompt.existing_name}»</b> с таким номером телефона.
                   <br /><br />
                   Если это родственник или общий телефон (семья / коллеги), подтвердите создание <b>отдельного профиля</b>. Двух разных людей нельзя объединять в одну карточку.
@@ -606,7 +606,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                   <button
                     type="button"
                     onClick={() => handleCreateCustomer(undefined, true)}
-                    style={{ padding: '10px 14px', borderRadius: '8px', border: 'none', background: '#D97706', color: '#FFFFFF', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}
+                    style={{ padding: '10px 14px', borderRadius: '12px', border: 'none', background: 'var(--s-arrived)', color: 'var(--brand-fg)', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}
                   >
                     ✓ Создать отдельный профиль «{newCustName}»
                   </button>
@@ -619,7 +619,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                         setSharedPhonePrompt(null);
                         handleOpenDetail(exId);
                       }}
-                      style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#1E293B', fontWeight: 500, fontSize: '13px', cursor: 'pointer' }}
+                      style={{ padding: '8px 14px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--fg)', fontWeight: 500, fontSize: '13px', cursor: 'pointer' }}
                     >
                       👤 Открыть профиль «{sharedPhonePrompt.existing_name}»
                     </button>
@@ -627,7 +627,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                   <button
                     type="button"
                     onClick={() => setSharedPhonePrompt(null)}
-                    style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: 'transparent', color: '#64748B', fontSize: '12px', cursor: 'pointer' }}
+                    style={{ padding: '6px 12px', borderRadius: '12px', border: 'none', background: 'transparent', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer' }}
                   >
                     Вернуться к редактированию
                   </button>
@@ -646,7 +646,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                     onChange={e => setNewCustName(e.target.value)}
                     placeholder="Иван Петров"
                     required
-                    style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                    style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -657,7 +657,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                     onChange={e => setNewCustPhone(e.target.value)}
                     placeholder="+7 (701) 000-00-00"
                     required
-                    style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                    style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -667,7 +667,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                     value={newCustEmail}
                     onChange={e => setNewCustEmail(e.target.value)}
                     placeholder="client@example.kz"
-                    style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                    style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -677,20 +677,20 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                     onChange={e => setNewCustNotes(e.target.value)}
                     placeholder="Предпочтения, особенности стрижки…"
                     rows={3}
-                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                    style={{ padding: '8px 12px', borderRadius: '12px', border: '1px solid var(--line)', fontSize: '13px' }}
                   />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
                   <button
                     type="button"
                     onClick={() => setShowCreateModal(false)}
-                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                    style={{ padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)' }}
                   >
                     Отмена
                   </button>
                   <button
                     type="submit"
-                    style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontWeight: 600 }}
+                    style={{ padding: '8px 16px', borderRadius: '12px', border: 'none', background: 'var(--brand)', color: 'var(--brand-fg)', fontWeight: 600 }}
                   >
                     Сохранить
                   </button>
@@ -720,8 +720,8 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '420px',
-              background: '#FFFFFF',
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
@@ -736,7 +736,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
                 required
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -746,7 +746,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 value={editPhone}
                 onChange={e => setEditPhone(e.target.value)}
                 required
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -755,7 +755,7 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 type="email"
                 value={editEmail}
                 onChange={e => setEditEmail(e.target.value)}
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -764,20 +764,20 @@ export const CustomersModule: React.FC<CustomersModuleProps> = ({
                 value={editNotes}
                 onChange={e => setEditNotes(e.target.value)}
                 rows={3}
-                style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                style={{ padding: '8px 12px', borderRadius: '12px', border: '1px solid var(--line)', fontSize: '13px' }}
               />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
               <button
                 type="button"
                 onClick={() => setShowEditModal(false)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)' }}
               >
                 Отмена
               </button>
               <button
                 type="submit"
-                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontWeight: 600 }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: 'none', background: 'var(--brand)', color: 'var(--brand-fg)', fontWeight: 600 }}
               >
                 Сохранить
               </button>

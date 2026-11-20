@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CrmMembership, CrmNavigationSection } from '../types';
+import { Icon, IconName } from '../ui/Icon';
 
 interface CrmLayoutProps {
   membership: CrmMembership;
@@ -15,8 +16,28 @@ interface CrmLayoutProps {
   title: string;
   subtitle?: string;
   topActions?: React.ReactNode;
+  /** записей на сегодня — счётчик у «Календаря» */
+  todayCount?: number;
+  /** false — страница рисует свою шапку (например, «Обзор») */
+  showHeader?: boolean;
   children: React.ReactNode;
 }
+
+type NavItem = { id: CrmNavigationSection; label: string; icon: IconName };
+
+const ROLE_LABEL: Record<string, string> = { owner: 'Владелец', admin: 'Администратор', master: 'Мастер' };
+
+export const initials = (s?: string) =>
+  (s || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || '—';
+
+const readTheme = (): 'light' | 'dark' =>
+  document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
 
 export const CrmLayout: React.FC<CrmLayoutProps> = ({
   membership,
@@ -32,449 +53,305 @@ export const CrmLayout: React.FC<CrmLayoutProps> = ({
   title,
   subtitle,
   topActions,
+  todayCount,
+  showHeader = true,
   children,
 }) => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
-  const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
+  const [tenantOpen, setTenantOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(readTheme);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem('crm_theme', theme);
+    } catch {
+      /* private mode: тема просто не запомнится */
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setBranchOpen(false);
+        setTenantOpen(false);
+        setMoreOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const isMaster = membership.role === 'master';
 
-  const navItems: { id: CrmNavigationSection; label: string; icon: string; count?: number }[] = [
-    { id: 'calendar', label: 'Календарь', icon: '📅' },
-    { id: 'customers', label: 'Клиенты', icon: '👥' },
-    ...(!isMaster
-      ? [
-          { id: 'staff' as CrmNavigationSection, label: 'Сотрудники', icon: '✂️' },
-          { id: 'services' as CrmNavigationSection, label: 'Услуги', icon: '🏷️' },
-          { id: 'online-booking' as CrmNavigationSection, label: 'Онлайн-запись', icon: '🌐' },
-          { id: 'cash' as CrmNavigationSection, label: 'Касса и смены', icon: '💵' },
-          { id: 'reports' as CrmNavigationSection, label: 'Отчёты', icon: '📊' },
-          { id: 'settings' as CrmNavigationSection, label: 'Настройки', icon: '⚙️' },
-          { id: 'onboarding' as CrmNavigationSection, label: 'Онбординг', icon: '🚀' },
-        ]
-      : []),
+  const work: NavItem[] = [
+    ...(!isMaster ? [{ id: 'overview' as CrmNavigationSection, label: 'Обзор', icon: 'home' as IconName }] : []),
+    { id: 'calendar', label: 'Календарь', icon: 'cal' },
+    { id: 'customers', label: 'Клиенты', icon: 'users' },
   ];
+  const business: NavItem[] = isMaster
+    ? []
+    : [
+        { id: 'staff', label: 'Сотрудники', icon: 'team' },
+        { id: 'services', label: 'Услуги', icon: 'tag' },
+        { id: 'online-booking', label: 'Онлайн-запись', icon: 'globe' },
+        { id: 'cash', label: 'Касса и смены', icon: 'wallet' },
+        { id: 'reports', label: 'Отчёты', icon: 'chart' },
+      ];
+  const system: NavItem[] = isMaster
+    ? []
+    : [
+        { id: 'settings', label: 'Настройки', icon: 'cog' },
+        { id: 'onboarding', label: 'Онбординг', icon: 'check' },
+      ];
+  const groups: [string, NavItem[]][] = [
+    ['Работа', work],
+    ['Бизнес', business],
+    ['Система', system],
+  ];
+  const all = [...work, ...business, ...system];
 
   const currentBranch = branches.find(b => b.id === selectedBranchId) || branches[0];
-  const brandInitials = membership.tenant_name
-    .split(' ')
-    .map(w => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+  const branchLabel = currentBranch
+    ? [currentBranch.city, currentBranch.address || currentBranch.name].filter(Boolean).join(' · ')
+    : 'Филиал не создан';
+  const userName = currentUser?.display_name || 'Сотрудник';
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        minHeight: '100vh',
-        background: '#F8FAFC',
-        fontFamily: 'Inter, system-ui, sans-serif',
-        color: '#0F172A',
-      }}
-    >
-      {/* Desktop Sidebar (216px as in design) */}
-      <aside
-        style={{
-          width: '216px',
-          background: '#FFFFFF',
-          borderRight: '1px solid #E2E8F0',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: '16px 12px',
-          gap: '4px',
-          flexShrink: 0,
-        }}
-        className="crm-desktop-sidebar"
-      >
-        {/* Brand / Logo */}
-        <div
-          className="crm-brand-header"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '4px 8px 12px',
-            position: 'relative',
+  const go = (id: CrmNavigationSection) => {
+    setMoreOpen(false);
+    onNavigate(id);
+    window.scrollTo(0, 0);
+  };
+
+  const tabs: NavItem[] = [
+    isMaster ? { id: 'calendar', label: 'Календарь', icon: 'cal' } : { id: 'overview', label: 'Обзор', icon: 'home' },
+    ...(isMaster ? [] : [{ id: 'calendar' as CrmNavigationSection, label: 'Календарь', icon: 'cal' as IconName }]),
+    { id: 'customers', label: 'Клиенты', icon: 'users' },
+  ];
+  const moreItems = all.filter(i => !tabs.some(t => t.id === i.id));
+  const moreActive = moreItems.some(i => i.id === currentSection);
+
+  const branchMenu = branchOpen && branches.length > 0 && (
+    <div className="menu" role="menu">
+      <div className="menu-h">Филиалы</div>
+      {branches.map(b => (
+        <button
+          key={b.id}
+          type="button"
+          role="menuitem"
+          className={b.id === selectedBranchId ? 'on' : ''}
+          onClick={() => {
+            onSelectBranch(b.id);
+            setBranchOpen(false);
           }}
         >
+          <span className="ellip">{b.name}</span>
+          {b.city && <small>{b.city}</small>}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="app">
+      <aside className="side crm-desktop-sidebar">
+        <div style={{ position: 'relative' }}>
           <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: '#0F172A',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '13px',
-              fontWeight: 700,
-              flexShrink: 0,
-            }}
+            className="brand"
+            onClick={() => memberships.length > 1 && setTenantOpen(!tenantOpen)}
+            title={memberships.length > 1 ? 'Сменить компанию' : membership.tenant_name}
           >
-            {brandInitials}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: '15px',
-                fontWeight: 700,
-                letterSpacing: '0.02em',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {membership.tenant_name}
+            <div className="logo">{initials(membership.tenant_name)}</div>
+            <div style={{ minWidth: 0 }}>
+              <small>Компания</small>
+              <b className="ellip">{membership.tenant_name}</b>
             </div>
             {memberships.length > 1 && (
-              <button
-                type="button"
-                onClick={() => setTenantDropdownOpen(!tenantDropdownOpen)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  color: '#2563EB',
-                  fontSize: '12px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                Сменить компанию ▾
-              </button>
+              <span className="chev">
+                <Icon name="down" size={14} />
+              </span>
             )}
           </div>
-
-          {/* Tenant Switcher Dropdown */}
-          {tenantDropdownOpen && memberships.length > 1 && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '50px',
-                left: '8px',
-                right: '8px',
-                background: '#FFFFFF',
-                border: '1px solid #E2E8F0',
-                borderRadius: '12px',
-                boxShadow: '0 8px 24px rgba(15,23,42,0.12)',
-                zIndex: 50,
-                padding: '6px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2px',
-              }}
-            >
-              <div style={{ fontSize: '11px', color: '#64748B', padding: '6px 8px', fontWeight: 600 }}>
-                Ваши компании:
-              </div>
+          {tenantOpen && memberships.length > 1 && (
+            <div className="menu" role="menu">
+              <div className="menu-h">Ваши компании</div>
               {memberships.map(m => (
                 <button
                   key={m.tenant_id}
                   type="button"
+                  role="menuitem"
+                  className={m.tenant_id === membership.tenant_id ? 'on' : ''}
                   onClick={() => {
                     onSelectMembership(m);
-                    setTenantDropdownOpen(false);
-                  }}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: m.tenant_id === membership.tenant_id ? '#EFF6FF' : 'transparent',
-                    color: m.tenant_id === membership.tenant_id ? '#1D4ED8' : '#0F172A',
-                    fontSize: '13px',
-                    fontWeight: m.tenant_id === membership.tenant_id ? 600 : 400,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
+                    setTenantOpen(false);
                   }}
                 >
-                  <span>{m.tenant_name}</span>
-                  <span style={{ fontSize: '11px', color: '#64748B' }}>({m.role})</span>
+                  <span className="ellip">{m.tenant_name}</span>
+                  <small>{ROLE_LABEL[m.role] || m.role}</small>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Branch Selector Pill */}
-        {branches.length > 0 && (
-          <div style={{ position: 'relative', marginBottom: '8px' }}>
-            <button
-              type="button"
-              onClick={() => setBranchDropdownOpen(!branchDropdownOpen)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 10px',
-                border: '1px solid #E2E8F0',
-                borderRadius: '10px',
-                fontSize: '13px',
-                fontWeight: 500,
-                background: '#F8FAFC',
-                color: '#334155',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                📍 {currentBranch?.name || 'Главный филиал'}
-              </span>
-              <span style={{ fontSize: '10px', color: '#64748B' }}>▼</span>
-            </button>
+        <div style={{ position: 'relative' }}>
+          <div
+            className="branch"
+            data-testid="branch-switcher"
+            onClick={() => branches.length > 0 && setBranchOpen(!branchOpen)}
+          >
+            {branchLabel}
+            {branches.length > 1 && ' ▾'}
+          </div>
+          {branchMenu}
+        </div>
 
-            {branchDropdownOpen && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  marginTop: '4px',
-                  background: '#FFFFFF',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '10px',
-                  boxShadow: '0 6px 16px rgba(15,23,42,0.1)',
-                  zIndex: 40,
-                  padding: '4px',
-                }}
-              >
-                {branches.map(b => (
+        <nav className="nav">
+          {groups.map(([g, items]) =>
+            items.length ? (
+              <React.Fragment key={g}>
+                <div className="grp">{g}</div>
+                {items.map(item => (
                   <button
-                    key={b.id}
+                    key={item.id}
                     type="button"
-                    onClick={() => {
-                      onSelectBranch(b.id);
-                      setBranchDropdownOpen(false);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: b.id === selectedBranchId ? '#EFF6FF' : 'transparent',
-                      color: b.id === selectedBranchId ? '#1D4ED8' : '#0F172A',
-                      fontSize: '13px',
-                      fontWeight: b.id === selectedBranchId ? 600 : 400,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
+                    data-testid={`nav-${item.id}`}
+                    className={currentSection === item.id ? 'on' : ''}
+                    title={item.label}
+                    onClick={() => go(item.id)}
                   >
-                    {b.name}
+                    <Icon name={item.icon} />
+                    <span>{item.label}</span>
+                    {item.id === 'calendar' && todayCount !== undefined && <em className="cnt">{todayCount}</em>}
                   </button>
                 ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Navigation Items */}
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
-          {navItems.map(item => {
-            const isActive = currentSection === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                data-testid={`nav-${item.id}`}
-                onClick={() => onNavigate(item.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '0 10px',
-                  height: '40px',
-                  borderRadius: '10px',
-                  fontSize: '14px',
-                  fontWeight: isActive ? 600 : 500,
-                  color: isActive ? '#1D4ED8' : '#334155',
-                  background: isActive ? '#EFF6FF' : 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 0.1s ease',
-                }}
-              >
-                <span style={{ fontSize: '16px' }}>{item.icon}</span>
-                <span style={{ flex: 1 }}>{item.label}</span>
-                {item.count !== undefined && (
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      background: '#E2E8F0',
-                      borderRadius: '999px',
-                      padding: '1px 8px',
-                      color: '#334155',
-                    }}
-                  >
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+              </React.Fragment>
+            ) : null,
+          )}
         </nav>
 
-        {/* User Profile & Logout */}
-        <div
-          style={{
-            borderTop: '1px solid #E2E8F0',
-            paddingTop: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 4px' }}>
-            <div
-              style={{
-                width: '30px',
-                height: '30px',
-                borderRadius: '50%',
-                background: '#E2E8F0',
-                color: '#334155',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '12px',
-                fontWeight: 600,
-              }}
-            >
-              {currentUser?.display_name ? currentUser.display_name.slice(0, 2).toUpperCase() : 'С'}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {currentUser?.display_name || 'Сотрудник'}
-              </div>
-              <div style={{ fontSize: '11px', color: '#64748B', textTransform: 'capitalize' }}>
-                {membership.role}
-              </div>
-            </div>
+        <div className="me">
+          <div className="av">{initials(userName)}</div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <b className="ellip">{userName}</b>
+            <span>{ROLE_LABEL[membership.role] || membership.role}</span>
           </div>
-
-          <button
-            type="button"
-            onClick={onLogout}
-            style={{
-              height: '34px',
-              borderRadius: '8px',
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
-              color: '#475569',
-              fontSize: '13px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
-          >
+          <button type="button" className="btn sm ghost" data-testid="logout-btn" title="Выйти из CRM" onClick={onLogout}>
             Выйти
           </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        {/* Top Header Bar (64px) */}
-        <header
-          style={{
-            height: '64px',
-            background: '#FFFFFF',
-            borderBottom: '1px solid #E2E8F0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 24px',
-            gap: '16px',
-            flexShrink: 0,
-          }}
-        >
-          {/* Mobile hamburger button */}
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            style={{
-              display: 'none',
-              background: 'none',
-              border: 'none',
-              fontSize: '20px',
-              cursor: 'pointer',
-            }}
-            className="crm-mobile-hamburger"
-          >
-            ☰
-          </button>
-
-          <div>
-            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, lineHeight: 1.2 }}>{title}</h1>
-            <div style={{ fontSize: '13px', color: '#64748B' }}>
-              <span style={{ fontWeight: 600, color: '#334155' }}>{membership.tenant_name}</span>
-              {subtitle && ` • ${subtitle}`}
+      <div className="main">
+        <div className="topbar">
+          <div className="row" style={{ minWidth: 0 }}>
+            <div className="logo" style={{ width: 32, height: 32 }}>
+              {initials(membership.tenant_name)}
+            </div>
+            <div style={{ minWidth: 0, position: 'relative' }} onClick={() => branches.length > 1 && setBranchOpen(!branchOpen)}>
+              <b className="ellip" style={{ display: 'block' }}>
+                {membership.tenant_name}
+              </b>
+              <small className="ellip">{branchLabel}</small>
+              {branchMenu}
             </div>
           </div>
+          <div className="row" style={{ gap: 6 }}>
+            <button
+              type="button"
+              className="btn ic ghost"
+              title="Тема"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              <Icon name="moon" />
+            </button>
+            <div className="av" style={{ width: 30, height: 30, fontSize: 11 }} onClick={onLogout} title="Выйти">
+              {initials(userName)}
+            </div>
+          </div>
+        </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {topActions && <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{topActions}</div>}
+        <header className="crumbs">
+          <div className="row" style={{ gap: 8, minWidth: 0 }}>
+            <span className="ellip">{membership.tenant_name}</span>
+            <span style={{ color: 'var(--muted2)' }}>/</span>
+            <b className="ellip">{title}</b>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            {topActions}
             {!isMaster && (
               <button
                 type="button"
                 data-testid="header-onboarding-btn"
-                onClick={() => onNavigate('onboarding')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  background: currentSection === 'onboarding' ? '#EFF6FF' : '#F8FAFC',
-                  border: currentSection === 'onboarding' ? '1px solid #3B82F6' : '1px solid #E2E8F0',
-                  color: currentSection === 'onboarding' ? '#1D4ED8' : '#475569',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`btn sm ${currentSection === 'onboarding' ? 'p' : ''}`}
+                onClick={() => go('onboarding')}
               >
-                <span>🚀</span>
-                <span>Онбординг-чеклист</span>
-                {branches.length === 0 && (
-                  <span
-                    style={{
-                      background: '#EF4444',
-                      color: '#FFFFFF',
-                      borderRadius: '999px',
-                      padding: '1px 6px',
-                      fontSize: '10px',
-                      fontWeight: 700,
-                    }}
-                  >
-                    1
-                  </span>
-                )}
+                <Icon name="check" size={14} />
+                Онбординг-чеклист
+                {branches.length === 0 && <span className="pill-hl">1</span>}
               </button>
             )}
+            <button
+              type="button"
+              className="btn ic"
+              data-testid="theme-toggle"
+              title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              <Icon name="moon" size={16} />
+            </button>
           </div>
         </header>
 
-        {/* Content Body */}
-        <main style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>{children}</main>
+        <main className="page">
+          {showHeader && (
+            <div className="ph">
+              <div>
+                <h1>{title}</h1>
+                {subtitle && <div className="sub">{subtitle}</div>}
+              </div>
+            </div>
+          )}
+          {children}
+        </main>
+      </div>
+
+      <div className="tabbar">
+        {tabs.map((t, i) => (
+          <React.Fragment key={t.id}>
+            {i === 2 && !isMaster && (
+              <button type="button" className="plus" title="Новая запись" onClick={() => go('calendar')}>
+                <span className="pl">
+                  <Icon name="plus" />
+                </span>
+              </button>
+            )}
+            <button type="button" className={currentSection === t.id ? 'on' : ''} onClick={() => go(t.id)}>
+              <Icon name={t.icon} size={22} />
+              {t.label}
+            </button>
+          </React.Fragment>
+        ))}
+        <button type="button" className={moreActive ? 'on' : ''} onClick={() => setMoreOpen(true)}>
+          <Icon name="more" size={22} />
+          Ещё
+        </button>
+      </div>
+
+      <div className={`scrim ${moreOpen ? 'on' : ''}`} onClick={() => setMoreOpen(false)} />
+      <div className={`sheet-more ${moreOpen ? 'on' : ''}`}>
+        <div className="grab" />
+        {moreItems.map(i => (
+          <button key={i.id} type="button" onClick={() => go(i.id)}>
+            <Icon name={i.icon} size={20} />
+            {i.label}
+          </button>
+        ))}
+        <button type="button" onClick={onLogout}>
+          <Icon name="x" size={20} />
+          Выйти
+        </button>
       </div>
     </div>
   );

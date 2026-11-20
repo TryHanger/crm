@@ -13,6 +13,7 @@ import { CashModule } from './modules/cash/CashModule';
 import { ReportsModule } from './modules/reports/ReportsModule';
 import { SettingsModule } from './modules/settings/SettingsModule';
 import { OnboardingModule } from './modules/onboarding/OnboardingModule';
+import { OverviewModule } from './modules/overview/OverviewModule';
 
 export const App: React.FC = () => {
   const [api] = useState(() => new BusinessCrmApiClient());
@@ -49,7 +50,7 @@ export const App: React.FC = () => {
 
   // Active Navigation Section
   const [currentSection, setCurrentSection] = useState<CrmNavigationSection>(() => {
-    const validSections = ['calendar', 'customers', 'staff', 'services', 'online-booking', 'cash', 'reports', 'settings', 'onboarding'];
+    const validSections = ['overview', 'calendar', 'customers', 'staff', 'services', 'online-booking', 'cash', 'reports', 'settings', 'onboarding'];
     const hash = window.location.hash.replace('#', '') as CrmNavigationSection;
     if (validSections.includes(hash)) {
       return hash;
@@ -111,7 +112,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const onHashChange = () => {
       const rawHash = window.location.hash.replace('#', '');
-      const validSections: string[] = ['calendar', 'customers', 'staff', 'services', 'online-booking', 'cash', 'reports', 'settings', 'onboarding'];
+      const validSections: string[] = ['overview', 'calendar', 'customers', 'staff', 'services', 'online-booking', 'cash', 'reports', 'settings', 'onboarding'];
       if (rawHash === 'preview-onboarding') {
         setIsPreviewMode(true);
       } else if (validSections.includes(rawHash)) {
@@ -207,7 +208,7 @@ export const App: React.FC = () => {
         id: s.id,
         name: s.display_name || s.name || s.full_name || 'Специалист',
         role_title: s.role_title,
-        color: s.color || '#3B82F6',
+        color: s.color || 'var(--brand)',
       }));
       setStaffList(mappedStaff);
 
@@ -286,19 +287,19 @@ export const App: React.FC = () => {
   // Standalone Preview Mode ("Экран готовится отдельно")
   if (isPreviewMode) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+      <div style={{ minHeight: '100vh', background: 'var(--canvas)' }}>
         <header
           style={{
             height: '60px',
-            background: '#FFFFFF',
-            borderBottom: '1px solid #E2E8F0',
+            background: 'var(--panel)',
+            borderBottom: '1px solid var(--line)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '0 24px',
           }}
         >
-          <div style={{ fontWeight: 700, fontSize: '16px', color: '#0F172A' }}>
+          <div style={{ fontWeight: 700, fontSize: '16px', color: 'var(--fg)' }}>
             CRM · Предпросмотр Онбординга (Спринт M02)
           </div>
           <button
@@ -306,9 +307,9 @@ export const App: React.FC = () => {
             onClick={() => setIsPreviewMode(false)}
             style={{
               padding: '6px 12px',
-              borderRadius: '8px',
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
+              borderRadius: '12px',
+              border: '1px solid var(--line)',
+              background: 'var(--panel)',
               fontSize: '13px',
               cursor: 'pointer',
             }}
@@ -366,6 +367,7 @@ export const App: React.FC = () => {
 
   // Section title mapping
   const sectionTitles: Record<CrmNavigationSection, { title: string; subtitle: string }> = {
+    overview: { title: 'Обзор', subtitle: 'Сегодня в филиале' },
     calendar: { title: 'Календарь записей', subtitle: 'Журнал бронирований и расписание специалистов' },
     customers: { title: 'Клиентская база', subtitle: 'Профили клиентов, история визитов и заметки' },
     staff: { title: 'Сотрудники и график', subtitle: 'Управление командой, рабочими сменами и ставками' },
@@ -394,7 +396,21 @@ export const App: React.FC = () => {
         onSelectBranch={setSelectedBranchId}
         title={activeTitle.title}
         subtitle={activeTitle.subtitle}
+        showHeader={currentSection !== 'overview'}
+        todayCount={currentDate === new Date().toISOString().split('T')[0] ? bookings.filter(b => b.status !== 'cancelled').length : undefined}
       >
+        {currentSection === 'overview' && (
+          <OverviewModule
+            api={api}
+            token={token}
+            membership={activeMembership}
+            branchId={selectedBranchId || branches[0]?.id || null}
+            branchName={(branches.find(b => b.id === (selectedBranchId || branches[0]?.id)) || {}).name}
+            userName={currentUser?.display_name}
+            onNavigate={handleNavigate}
+            onOpenCustomer={handleOpenCustomer}
+          />
+        )}
         {currentSection === 'onboarding' && (
           <OnboardingModule
             api={api}
@@ -414,45 +430,18 @@ export const App: React.FC = () => {
         {currentSection === 'calendar' && (() => {
           if (branches.length === 0) {
             return (
-              <div
-                data-testid="no-branches-empty-state"
-                style={{
-                  padding: '48px 24px',
-                  textAlign: 'center',
-                  background: '#FFFFFF',
-                  borderRadius: '16px',
-                  border: '1px solid #E2E8F0',
-                  margin: '24px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '12px',
-                }}
-              >
-                <div style={{ fontSize: '36px' }}>📍</div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#0F172A' }}>
-                  У вас пока не создано ни одного филиала
-                </h3>
-                <p style={{ margin: 0, color: '#64748B', fontSize: '14px', maxWidth: '400px' }}>
+              <div data-testid="no-branches-empty-state" className="card pad empty">
+                <h3>У вас пока не создано ни одного филиала</h3>
+                <p className="hint" style={{ maxWidth: 400, margin: '6px auto 16px' }}>
                   Для отображения календаря и записи клиентов создайте ваш первый рабочий филиал в онбординге.
                 </p>
                 <button
                   type="button"
+                  className="btn p"
                   data-testid="empty-calendar-goto-onboarding-btn"
                   onClick={() => handleNavigate('onboarding')}
-                  style={{
-                    marginTop: '8px',
-                    padding: '10px 20px',
-                    borderRadius: '10px',
-                    background: '#2563EB',
-                    color: '#FFFFFF',
-                    border: 'none',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
                 >
-                  🚀 Открыть онбординг-чеклист
+                  Открыть онбординг-чеклист
                 </button>
               </div>
             );
@@ -562,30 +551,8 @@ export const App: React.FC = () => {
 
       {/* Global Toast Notification */}
       {toastMessage && (
-        <div
-          data-testid="crm-toast"
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            zIndex: 9999,
-            background: '#0F172A',
-            color: '#FFFFFF',
-            padding: '12px 20px',
-            borderRadius: '12px',
-            fontSize: '14px',
-            fontWeight: 500,
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            border: '1px solid #334155',
-            animation: 'fadeIn 0.2s ease-out',
-            pointerEvents: 'none',
-          }}
-        >
-          <span>✓</span>
-          <span>{toastMessage}</span>
+        <div data-testid="crm-toast" className="toast on" role="status">
+          {toastMessage}
         </div>
       )}
     </>

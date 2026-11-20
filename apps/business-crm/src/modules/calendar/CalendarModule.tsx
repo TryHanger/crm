@@ -678,21 +678,21 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
-        return { bg: '#FEF9C3', text: '#854D0E', label: 'Ожидает' };
+        return { bg: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))', text: 'var(--s-arrived)', label: 'Ожидает' };
       case 'confirmed':
-        return { bg: '#DCFCE7', text: '#166534', label: 'Подтверждена' };
+        return { bg: 'color-mix(in srgb, var(--s-confirmed) 14%, var(--panel))', text: 'var(--s-confirmed)', label: 'Подтверждена' };
       case 'arrived':
-        return { bg: '#FEF3C7', text: '#92400E', label: 'Прибыл' };
+        return { bg: 'color-mix(in srgb, var(--s-arrived) 14%, var(--panel))', text: 'var(--s-arrived)', label: 'Прибыл' };
       case 'in_progress':
-        return { bg: '#DBEAFE', text: '#1E40AF', label: 'В работе' };
+        return { bg: 'var(--brand)', text: 'var(--brand-fg)', label: 'В работе' };
       case 'completed':
-        return { bg: '#F1F5F9', text: '#475569', label: 'Завершен' };
+        return { bg: 'color-mix(in srgb, var(--s-completed) 14%, var(--panel))', text: 'var(--s-completed)', label: 'Завершен' };
       case 'cancelled':
-        return { bg: '#FEE2E2', text: '#991B1B', label: 'Отменен' };
+        return { bg: 'var(--chip)', text: 'var(--s-cancelled)', label: 'Отменен' };
       case 'no_show':
-        return { bg: '#FEE2E2', text: '#B91C1C', label: 'Не явился' };
+        return { bg: 'color-mix(in srgb, var(--s-no_show) 14%, var(--panel))', text: 'var(--s-no_show)', label: 'Не явился' };
       default:
-        return { bg: '#F1F5F9', text: '#0F172A', label: status };
+        return { bg: 'var(--chip)', text: 'var(--fg)', label: status };
     }
   };
 
@@ -706,8 +706,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 24px',
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E2E8F0',
+          background: 'var(--panel)',
+          borderBottom: '1px solid var(--line)',
           gap: '12px',
         }}
       >
@@ -719,9 +719,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '34px',
               height: '34px',
-              borderRadius: '8px',
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
+              borderRadius: '12px',
+              border: '1px solid var(--line)',
+              background: 'var(--panel)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -736,9 +736,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               height: '34px',
               padding: '0 12px',
-              borderRadius: '8px',
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
+              borderRadius: '12px',
+              border: '1px solid var(--line)',
+              background: 'var(--panel)',
               fontSize: '13px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -752,9 +752,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '34px',
               height: '34px',
-              borderRadius: '8px',
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
+              borderRadius: '12px',
+              border: '1px solid var(--line)',
+              background: 'var(--panel)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -763,7 +763,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           >
             ›
           </button>
-          <span style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A', marginLeft: '6px' }}>
+          <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--fg)', marginLeft: '6px' }}>
             {new Date(currentDate).toLocaleDateString('ru-RU', {
               weekday: 'long',
               day: 'numeric',
@@ -778,9 +778,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           <div
             style={{
               display: 'flex',
-              background: '#F1F5F9',
+              background: 'var(--chip)',
               padding: '3px',
-              borderRadius: '10px',
+              borderRadius: '14px',
               gap: '2px',
             }}
           >
@@ -790,9 +790,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               onClick={() => setViewMode('day')}
               style={{
                 border: 'none',
-                background: viewMode === 'day' ? '#FFFFFF' : 'transparent',
-                color: viewMode === 'day' ? '#0F172A' : '#64748B',
-                borderRadius: '8px',
+                background: viewMode === 'day' ? 'var(--panel)' : 'transparent',
+                color: viewMode === 'day' ? 'var(--fg)' : 'var(--muted)',
+                borderRadius: '12px',
                 padding: '6px 12px',
                 fontSize: '13px',
                 fontWeight: viewMode === 'day' ? 600 : 500,
@@ -808,9 +808,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               onClick={() => setViewMode('week')}
               style={{
                 border: 'none',
-                background: viewMode === 'week' ? '#FFFFFF' : 'transparent',
-                color: viewMode === 'week' ? '#0F172A' : '#64748B',
-                borderRadius: '8px',
+                background: viewMode === 'week' ? 'var(--panel)' : 'transparent',
+                color: viewMode === 'week' ? 'var(--fg)' : 'var(--muted)',
+                borderRadius: '12px',
                 padding: '6px 12px',
                 fontSize: '13px',
                 fontWeight: viewMode === 'week' ? 600 : 500,
@@ -825,9 +825,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               onClick={() => setViewMode('list')}
               style={{
                 border: 'none',
-                background: viewMode === 'list' ? '#FFFFFF' : 'transparent',
-                color: viewMode === 'list' ? '#0F172A' : '#64748B',
-                borderRadius: '8px',
+                background: viewMode === 'list' ? 'var(--panel)' : 'transparent',
+                color: viewMode === 'list' ? 'var(--fg)' : 'var(--muted)',
+                borderRadius: '12px',
                 padding: '6px 12px',
                 fontSize: '13px',
                 fontWeight: viewMode === 'list' ? 600 : 500,
@@ -852,10 +852,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               height: '36px',
               padding: '0 12px',
-              borderRadius: '8px',
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
-              color: '#334155',
+              borderRadius: '12px',
+              border: '1px solid var(--line)',
+              background: 'var(--panel)',
+              color: 'var(--fg)',
               fontSize: '13px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -880,10 +880,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 style={{
                   height: '36px',
                   padding: '0 12px',
-                  borderRadius: '8px',
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#334155',
+                  borderRadius: '12px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--panel)',
+                  color: 'var(--fg)',
                   fontSize: '13px',
                   fontWeight: 500,
                   cursor: 'pointer',
@@ -898,10 +898,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 style={{
                   height: '36px',
                   padding: '0 14px',
-                  borderRadius: '8px',
+                  borderRadius: '12px',
                   border: 'none',
-                  background: '#2563EB',
-                  color: '#FFFFFF',
+                  background: 'var(--brand)',
+                  color: 'var(--brand-fg)',
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -922,8 +922,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             alignItems: 'center',
             gap: '6px',
             padding: '8px 24px',
-            background: '#FFFFFF',
-            borderBottom: '1px solid #E2E8F0',
+            background: 'var(--panel)',
+            borderBottom: '1px solid var(--line)',
             overflowX: 'auto',
           }}
         >
@@ -934,8 +934,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               padding: '4px 10px',
               borderRadius: '999px',
               border: 'none',
-              background: selectedStaffFilter === 'all' ? '#0F172A' : '#F1F5F9',
-              color: selectedStaffFilter === 'all' ? '#FFFFFF' : '#334155',
+              background: selectedStaffFilter === 'all' ? 'var(--brand2)' : 'var(--chip)',
+              color: selectedStaffFilter === 'all' ? 'var(--brand-fg)' : 'var(--fg)',
               fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -952,8 +952,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 padding: '4px 10px',
                 borderRadius: '999px',
                 border: 'none',
-                background: selectedStaffFilter === s.id ? '#0F172A' : '#F1F5F9',
-                color: selectedStaffFilter === s.id ? '#FFFFFF' : '#334155',
+                background: selectedStaffFilter === s.id ? 'var(--brand2)' : 'var(--chip)',
+                color: selectedStaffFilter === s.id ? 'var(--brand-fg)' : 'var(--fg)',
                 fontSize: '12px',
                 fontWeight: selectedStaffFilter === s.id ? 600 : 400,
                 cursor: 'pointer',
@@ -979,7 +979,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               justifyContent: 'center',
               fontSize: '14px',
               fontWeight: 500,
-              color: '#64748B',
+              color: 'var(--muted)',
             }}
           >
             Загрузка календаря…
@@ -993,12 +993,12 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             <div
               style={{
                 width: '60px',
-                borderRight: '1px solid #E2E8F0',
-                background: '#FFFFFF',
+                borderRight: '1px solid var(--line)',
+                background: 'var(--panel)',
                 flexShrink: 0,
               }}
             >
-              <div style={{ height: '54px', borderBottom: '1px solid #E2E8F0' }} />
+              <div style={{ height: '54px', borderBottom: '1px solid var(--line)' }} />
               {hours.map(h => (
                 <div
                   key={h}
@@ -1006,10 +1006,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     height: '80px',
                     padding: '6px 8px',
                     fontSize: '12px',
-                    color: '#64748B',
+                    color: 'var(--muted)',
                     fontWeight: 500,
                     textAlign: 'right',
-                    borderBottom: '1px dashed #F1F5F9',
+                    borderBottom: '1px dashed var(--chip)',
                     boxSizing: 'border-box',
                   }}
                 >
@@ -1028,8 +1028,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   key={staff.id}
                   style={{
                     flex: '1 0 200px',
-                    borderRight: '1px solid #E2E8F0',
-                    background: '#FFFFFF',
+                    borderRight: '1px solid var(--line)',
+                    background: 'var(--panel)',
                     position: 'relative',
                   }}
                 >
@@ -1038,8 +1038,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     style={{
                       height: '54px',
                       padding: '8px 12px',
-                      borderBottom: '1px solid #E2E8F0',
-                      background: '#F8FAFC',
+                      borderBottom: '1px solid var(--line)',
+                      background: 'var(--canvas)',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px',
@@ -1050,8 +1050,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         width: '28px',
                         height: '28px',
                         borderRadius: '50%',
-                        background: staff.color || '#3B82F6',
-                        color: '#FFFFFF',
+                        background: staff.color || 'var(--brand)',
+                        color: 'var(--brand-fg)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -1073,7 +1073,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       >
                         {staff.name}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#64748B' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                         {staff.role_title || 'Барбер'}
                       </div>
                     </div>
@@ -1085,7 +1085,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       key={h}
                       style={{
                         height: '80px',
-                        borderBottom: '1px dashed #F1F5F9',
+                        borderBottom: '1px dashed var(--chip)',
                         boxSizing: 'border-box',
                       }}
                     />
@@ -1116,10 +1116,13 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                           left: '4px',
                           right: '4px',
                           height: `${height}px`,
-                          background: b.status === 'cancelled' ? '#FEF2F2' : '#EFF6FF',
-                          border: `1px ${b.status === 'cancelled' ? 'dashed #FCA5A5' : 'solid #93C5FD'}`,
-                          borderLeft: `4px solid ${b.status === 'cancelled' ? '#EF4444' : '#2563EB'}`,
-                          borderRadius: '8px',
+                          // макет: фон — оттенок цвета статуса, «в работе» — тёмная карточка, отмена — серая и зачёркнутая
+                          background: b.status === 'in_progress' ? 'var(--brand2)' : `color-mix(in srgb, var(--s-${b.status}, var(--s-confirmed)) 22%, var(--panel))`,
+                          color: b.status === 'in_progress' ? 'var(--brand2-fg)' : 'var(--fg)',
+                          border: 0,
+                          opacity: b.status === 'cancelled' ? 0.6 : 1,
+                          textDecoration: b.status === 'cancelled' ? 'line-through' : 'none',
+                          borderRadius: '12px',
                           padding: '6px 8px',
                           boxSizing: 'border-box',
                           cursor: 'pointer',
@@ -1131,7 +1134,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1E293B' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: 'inherit' }}>
                             {startDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: timezoneIana })}
                           </span>
                           <span
@@ -1141,17 +1144,17 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               background: badge.bg,
                               color: badge.text,
                               padding: '1px 6px',
-                              borderRadius: '4px',
+                              borderRadius: '8px',
                             }}
                           >
                             {badge.label}
                           </span>
                         </div>
-                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {b.customer_name}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
-                          <span style={{ fontSize: '11px', color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <span style={{ fontSize: '11px', color: 'inherit', opacity: 0.7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {b.services.join(', ')} · {(b.amount_minor / 100).toLocaleString('ru-RU')} ₸
                           </span>
                           {b.status === 'completed' && (b.debt_minor ?? b.amount_minor) > 0 && (
@@ -1159,10 +1162,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               style={{
                                 fontSize: '9px',
                                 fontWeight: 700,
-                                color: '#991B1B',
-                                background: '#FEE2E2',
+                                color: 'var(--neg)',
+                                background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))',
                                 padding: '1px 4px',
-                                borderRadius: '4px',
+                                borderRadius: '8px',
                                 whiteSpace: 'nowrap',
                               }}
                             >
@@ -1200,11 +1203,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                           left: '4px',
                           right: '4px',
                           height: `${height}px`,
-                          background: '#F1F5F9',
-                          backgroundImage: 'repeating-linear-gradient(135deg, #F1F5F9 0 6px, #E2E8F0 6px 7px)',
-                          border: '1px solid #CBD5E1',
-                          borderLeft: '4px solid #64748B',
-                          borderRadius: '8px',
+                          background: 'var(--chip)',
+                          backgroundImage: 'repeating-linear-gradient(135deg, var(--chip) 0 6px, var(--line) 6px 7px)',
+                          border: '1px solid var(--line)',
+                          borderLeft: '4px solid var(--muted)',
+                          borderRadius: '12px',
                           padding: '4px 8px',
                           boxSizing: 'border-box',
                           cursor: 'pointer',
@@ -1217,17 +1220,17 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#334155' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--fg)' }}>
                             🔒 {startTimeStr}–{endTimeStr}
                           </span>
                           <span
                             style={{
                               fontSize: '10px',
                               fontWeight: 600,
-                              background: '#E2E8F0',
-                              color: '#475569',
+                              background: 'var(--line)',
+                              color: 'var(--muted)',
                               padding: '1px 5px',
-                              borderRadius: '4px',
+                              borderRadius: '8px',
                               whiteSpace: 'nowrap',
                             }}
                           >
@@ -1238,7 +1241,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                           style={{
                             fontSize: '12px',
                             fontWeight: 600,
-                            color: '#1E293B',
+                            color: 'var(--fg)',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -1261,10 +1264,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           <div style={{ flex: 1, padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#0F172A' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--fg)' }}>
                   Недельный обзор расписания ({weekDates[0]} – {weekDates[6]})
                 </h2>
-                <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '2px' }}>
                   Часовой пояс филиала: {timezoneIana}
                 </div>
               </div>
@@ -1276,7 +1279,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     prevMon.setDate(prevMon.getDate() - 7);
                     onDateChange(prevMon.toISOString().split('T')[0]);
                   }}
-                  style={{ padding: '6px 14px', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                  style={{ padding: '6px 14px', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '12px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
                 >
                   ← Предыдущая неделя
                 </button>
@@ -1287,7 +1290,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     nextMon.setDate(nextMon.getDate() + 7);
                     onDateChange(nextMon.toISOString().split('T')[0]);
                   }}
-                  style={{ padding: '6px 14px', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                  style={{ padding: '6px 14px', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '12px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
                 >
                   Следующая неделя →
                 </button>
@@ -1295,12 +1298,12 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             </div>
 
             {weekError && (
-              <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', color: '#B91C1C', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ padding: '12px 16px', background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))', border: '1px solid color-mix(in srgb, var(--neg) 30%, var(--panel))', borderRadius: '14px', color: 'var(--neg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                 <span style={{ fontSize: '13px' }}>⚠️ {weekError}</span>
                 <button
                   type="button"
                   onClick={() => loadWeekBookings(weekDates)}
-                  style={{ padding: '6px 14px', background: '#DC2626', color: '#FFFFFF', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                  style={{ padding: '6px 14px', background: 'var(--neg)', color: 'var(--brand-fg)', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
                 >
                   Повторить загрузку
                 </button>
@@ -1308,7 +1311,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             )}
 
             {isLoadingWeek ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#64748B', fontSize: '14px' }}>
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontSize: '14px' }}>
                 Загрузка недельного расписания команды...
               </div>
             ) : (
@@ -1332,9 +1335,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       key={dateStr}
                       data-date={dateStr}
                       style={{
-                        background: isCurrent ? '#F8FAFC' : '#FFFFFF',
-                        border: isCurrent ? '2px solid #2563EB' : '1px solid #E2E8F0',
-                        borderRadius: '12px',
+                        background: isCurrent ? 'var(--canvas)' : 'var(--panel)',
+                        border: isCurrent ? '2px solid var(--brand)' : '1px solid var(--line)',
+                        borderRadius: '18px',
                         padding: '12px',
                         minHeight: '320px',
                         display: 'flex',
@@ -1349,28 +1352,28 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
-                          borderBottom: '1px solid #F1F5F9',
+                          borderBottom: '1px solid var(--chip)',
                           paddingBottom: '8px',
                           cursor: 'pointer',
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontWeight: 700, fontSize: '14px', color: '#0F172A' }}>{dayNames[idx]}</span>
-                          <span style={{ fontSize: '12px', color: '#64748B' }}>{d}</span>
+                          <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--fg)' }}>{dayNames[idx]}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{d}</span>
                         </div>
                         {isToday && (
-                          <span style={{ fontSize: '10px', fontWeight: 700, background: '#EFF6FF', color: '#2563EB', padding: '2px 6px', borderRadius: '4px' }}>
+                          <span style={{ fontSize: '10px', fontWeight: 700, background: 'color-mix(in srgb, var(--brand) 10%, var(--panel))', color: 'var(--brand)', padding: '2px 6px', borderRadius: '8px' }}>
                             Сегодня
                           </span>
                         )}
                       </div>
 
                       <div style={{ display: 'flex', gap: '6px', fontSize: '11px', fontWeight: 600 }}>
-                        <span style={{ color: dayBookings.length > 0 ? '#2563EB' : '#94A3B8' }}>
+                        <span style={{ color: dayBookings.length > 0 ? 'var(--brand)' : 'var(--muted2)' }}>
                           Записей: {dayBookings.length}
                         </span>
                         {dayBlocks.length > 0 && (
-                          <span style={{ color: '#64748B' }}>
+                          <span style={{ color: 'var(--muted)' }}>
                             · Блоков: {dayBlocks.length}
                           </span>
                         )}
@@ -1378,7 +1381,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1 }}>
                         {dayBookings.length === 0 && dayBlocks.length === 0 && (
-                          <div style={{ padding: '20px 8px', textAlign: 'center', fontSize: '12px', color: '#94A3B8' }}>
+                          <div style={{ padding: '20px 8px', textAlign: 'center', fontSize: '12px', color: 'var(--muted2)' }}>
                             Свободно
                           </div>
                         )}
@@ -1397,10 +1400,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               onClick={() => handleSelectBooking(b)}
                               style={{
                                 padding: '8px',
-                                background: '#FFFFFF',
-                                border: '1px solid #CBD5E1',
-                                borderLeft: `3px solid ${staff?.color || '#2563EB'}`,
-                                borderRadius: '8px',
+                                background: 'var(--panel)',
+                                border: '1px solid var(--line)',
+                                borderLeft: `3px solid ${staff?.color || 'var(--brand)'}`,
+                                borderRadius: '12px',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '4px',
@@ -1409,15 +1412,15 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               }}
                             >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
-                                <span style={{ fontWeight: 700, color: '#0F172A' }}>{startTime}–{endTime}</span>
+                                <span style={{ fontWeight: 700, color: 'var(--fg)' }}>{startTime}–{endTime}</span>
                                 <span style={{ fontSize: '9px', fontWeight: 600, padding: '1px 4px', borderRadius: '3px', background: badge.bg, color: badge.text }}>
                                   {badge.label}
                                 </span>
                               </div>
-                              <div style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {b.customer_name}
                               </div>
-                              <div style={{ fontSize: '11px', color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <div style={{ fontSize: '11px', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {b.services[0] || 'Визит'} · {staff?.name || 'Мастер'}
                               </div>
                             </div>
@@ -1436,11 +1439,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               onClick={() => setSelectedBlock(bl)}
                               style={{
                                 padding: '8px',
-                                background: '#F8FAFC',
-                                backgroundImage: 'repeating-linear-gradient(135deg, #F8FAFC 0 6px, #E2E8F0 6px 7px)',
-                                border: '1px solid #CBD5E1',
-                                borderLeft: '3px solid #64748B',
-                                borderRadius: '8px',
+                                background: 'var(--canvas)',
+                                backgroundImage: 'repeating-linear-gradient(135deg, var(--canvas) 0 6px, var(--line) 6px 7px)',
+                                border: '1px solid var(--line)',
+                                borderLeft: '3px solid var(--muted)',
+                                borderRadius: '12px',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '3px',
@@ -1449,16 +1452,16 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               }}
                             >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
-                                <span style={{ fontWeight: 700, color: '#334155' }}>🔒 {startTime}–{endTime}</span>
-                                <span style={{ fontSize: '9px', fontWeight: 600, padding: '1px 4px', borderRadius: '3px', background: '#E2E8F0', color: '#475569' }}>
+                                <span style={{ fontWeight: 700, color: 'var(--fg)' }}>🔒 {startTime}–{endTime}</span>
+                                <span style={{ fontSize: '9px', fontWeight: 600, padding: '1px 4px', borderRadius: '3px', background: 'var(--line)', color: 'var(--muted)' }}>
                                   Занято
                                 </span>
                               </div>
-                              <div style={{ fontSize: '12px', fontWeight: 600, color: '#1E293B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {bl.block_reason || 'Блокировка времени'}
                               </div>
                               {staff && (
-                                <div style={{ fontSize: '11px', color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: '11px', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {staff.name}
                                 </div>
                               )}
@@ -1476,10 +1479,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
 
         {/* 3. List View (Таблица записей) */}
         {viewMode === 'list' && (
-          <div style={{ flex: 1, padding: '24px', background: '#FFFFFF' }}>
+          <div style={{ flex: 1, padding: '24px', background: 'var(--panel)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid #E2E8F0', color: '#64748B' }}>
+                <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>
                   <th style={{ padding: '10px 12px' }}>Код</th>
                   <th style={{ padding: '10px 12px' }}>Время</th>
                   <th style={{ padding: '10px 12px' }}>Клиент</th>
@@ -1493,7 +1496,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <tbody>
                 {bookings.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#64748B' }}>
+                    <td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--muted)' }}>
                       Нет записей на выбранную дату
                     </td>
                   </tr>
@@ -1507,7 +1510,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         data-booking-id={b.id}
                         data-public-ref={b.public_ref}
                         onClick={() => handleSelectBooking(b)}
-                        style={{ borderBottom: '1px solid #F1F5F9', cursor: 'pointer' }}
+                        style={{ borderBottom: '1px solid var(--chip)', cursor: 'pointer' }}
                       >
                         <td style={{ padding: '12px', fontWeight: 600 }}>{b.public_ref}</td>
                         <td style={{ padding: '12px' }}>
@@ -1527,7 +1530,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               background: badge.bg,
                               color: badge.text,
                               padding: '2px 8px',
-                              borderRadius: '4px',
+                              borderRadius: '8px',
                               fontWeight: 600,
                             }}
                           >
@@ -1566,41 +1569,16 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
         const canManageFinance = userRole === 'owner' || userRole === 'admin' || userRole === 'cashier';
 
         return (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(15,23,42,0.4)',
-              zIndex: 100,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '16px',
-            }}
-          >
-            <div
-              style={{
-                width: '100%',
-                maxWidth: '520px',
-                background: '#FFFFFF',
-                borderRadius: '20px',
-                boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-                padding: '24px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '18px',
-                maxHeight: '90vh',
-                overflowY: 'auto',
-              }}
-              data-testid="visit-card-modal"
-            >
+          <div className="visit-sheet-scrim">
+            {/* макет: карточка записи — боковая панель справа (на телефоне — лист снизу) */}
+            <div className="visit-sheet" data-testid="visit-card-modal">
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}>
                     Карточка записи #{active.public_ref}
                   </div>
-                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--fg)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span>{active.customer_name}</span>
                     {active.customer_id && onOpenCustomer && (
                       <button
@@ -1614,10 +1592,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         title="Перейти в карточку клиента"
                         style={{
                           padding: '3px 8px',
-                          borderRadius: '6px',
-                          border: '1px solid #3B82F6',
-                          background: '#EFF6FF',
-                          color: '#1D4ED8',
+                          borderRadius: '10px',
+                          border: '1px solid var(--brand)',
+                          background: 'color-mix(in srgb, var(--brand) 10%, var(--panel))',
+                          color: 'var(--brand)',
                           fontSize: '11px',
                           fontWeight: 600,
                           cursor: 'pointer',
@@ -1627,7 +1605,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       </button>
                     )}
                   </div>
-                  <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '2px' }}>
                     {active.customer_phone}
                   </div>
                 </div>
@@ -1640,7 +1618,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       background: badge.bg,
                       color: badge.text,
                       padding: '3px 8px',
-                      borderRadius: '6px',
+                      borderRadius: '10px',
                     }}
                   >
                     {badge.label}
@@ -1648,7 +1626,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   <button
                     type="button"
                     onClick={() => { setSelectedBooking(null); setBookingDetail(null); }}
-                    style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748B', padding: '4px' }}
+                    style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--muted)', padding: '4px' }}
                   >
                     ✕
                   </button>
@@ -1660,9 +1638,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <div
                   data-testid="visit-financial-block"
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '16px',
+                  background: 'var(--canvas)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '22px',
                   padding: '16px',
                   display: 'flex',
                   flexDirection: 'column',
@@ -1670,14 +1648,14 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--fg)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Финансовый расчёт визита
                   </div>
                   <div>
                     {paymentStatus === 'paid' && (
                       <span
                         data-testid="payment-status-badge"
-                        style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: '#DCFCE7', color: '#166534', border: '1px solid #86EFAC' }}
+                        style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '10px', background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))', color: 'var(--pos)', border: '1px solid color-mix(in srgb, var(--pos) 45%, var(--panel))' }}
                       >
                         ✓ Оплачено
                       </span>
@@ -1685,7 +1663,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     {paymentStatus === 'partially_paid' && (
                       <span
                         data-testid="payment-status-badge"
-                        style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: '#DBEAFE', color: '#1E40AF', border: '1px solid #93C5FD' }}
+                        style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '10px', background: 'color-mix(in srgb, var(--brand) 10%, var(--panel))', color: 'var(--brand)', border: '1px solid color-mix(in srgb, var(--brand) 40%, var(--panel))' }}
                       >
                         Частичная оплата
                       </span>
@@ -1697,10 +1675,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                           fontSize: '11px',
                           fontWeight: 700,
                           padding: '3px 8px',
-                          borderRadius: '6px',
-                          background: debtMinor > 0 ? '#FEF2F2' : '#F1F5F9',
-                          color: debtMinor > 0 ? '#991B1B' : '#475569',
-                          border: debtMinor > 0 ? '1px solid #FCA5A5' : '1px solid #CBD5E1',
+                          borderRadius: '10px',
+                          background: debtMinor > 0 ? 'color-mix(in srgb, var(--neg) 10%, var(--panel))' : 'var(--chip)',
+                          color: debtMinor > 0 ? 'var(--neg)' : 'var(--muted)',
+                          border: debtMinor > 0 ? '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))' : '1px solid var(--muted2)',
                         }}
                       >
                         {debtMinor > 0 ? 'Не оплачено (Долг)' : 'Не оплачено'}
@@ -1715,42 +1693,42 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   <div
                     data-testid="financial-cost-tile"
                     style={{
-                      background: '#FFFFFF',
-                      border: '1px solid #E2E8F0',
-                      borderRadius: '12px',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '18px',
                       padding: '12px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '4px',
                     }}
                   >
-                    <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>Стоимость</div>
-                    <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600 }}>Стоимость</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--fg)' }}>
                       {(costMinor / 100).toLocaleString('ru-RU')} {currencySymbol}
                     </div>
-                    <div style={{ fontSize: '10px', color: '#94A3B8' }}>По прайсу визита</div>
+                    <div style={{ fontSize: '10px', color: 'var(--muted2)' }}>По прайсу визита</div>
                   </div>
 
                   {/* 2. Оказано */}
                   <div
                     data-testid="financial-rendered-tile"
                     style={{
-                      background: renderedMinor > 0 ? '#F0FDF4' : '#FFFFFF',
-                      border: `1px solid ${renderedMinor > 0 ? '#BBF7D0' : '#E2E8F0'}`,
-                      borderRadius: '12px',
+                      background: renderedMinor > 0 ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'var(--panel)',
+                      border: `1px solid ${renderedMinor > 0 ? 'color-mix(in srgb, var(--pos) 30%, var(--panel))' : 'var(--line)'}`,
+                      borderRadius: '18px',
                       padding: '12px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '4px',
                     }}
                   >
-                    <div style={{ fontSize: '11px', color: renderedMinor > 0 ? '#166534' : '#64748B', fontWeight: 600 }}>
+                    <div style={{ fontSize: '11px', color: renderedMinor > 0 ? 'var(--pos)' : 'var(--muted)', fontWeight: 600 }}>
                       Оказано
                     </div>
-                    <div style={{ fontSize: '18px', fontWeight: 800, color: renderedMinor > 0 ? '#15803D' : '#64748B' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: renderedMinor > 0 ? 'var(--pos)' : 'var(--muted)' }}>
                       {(renderedMinor / 100).toLocaleString('ru-RU')} {currencySymbol}
                     </div>
-                    <div style={{ fontSize: '10px', color: renderedMinor > 0 ? '#16A34A' : '#94A3B8' }}>
+                    <div style={{ fontSize: '10px', color: renderedMinor > 0 ? 'var(--pos)' : 'var(--muted2)' }}>
                       {renderedMinor > 0 ? 'Факт оказания подтверждён' : 'Визит ещё не завершён'}
                     </div>
                   </div>
@@ -1759,22 +1737,22 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   <div
                     data-testid="financial-paid-tile"
                     style={{
-                      background: paidMinor > 0 ? '#EFF6FF' : '#FFFFFF',
-                      border: `1px solid ${paidMinor > 0 ? '#BFDBFE' : '#E2E8F0'}`,
-                      borderRadius: '12px',
+                      background: paidMinor > 0 ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--panel)',
+                      border: `1px solid ${paidMinor > 0 ? 'color-mix(in srgb, var(--brand) 30%, var(--panel))' : 'var(--line)'}`,
+                      borderRadius: '18px',
                       padding: '12px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '4px',
                     }}
                   >
-                    <div style={{ fontSize: '11px', color: paidMinor > 0 ? '#1E40AF' : '#64748B', fontWeight: 600 }}>
+                    <div style={{ fontSize: '11px', color: paidMinor > 0 ? 'var(--brand)' : 'var(--muted)', fontWeight: 600 }}>
                       Получено
                     </div>
-                    <div style={{ fontSize: '18px', fontWeight: 800, color: paidMinor > 0 ? '#2563EB' : '#64748B' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: paidMinor > 0 ? 'var(--brand)' : 'var(--muted)' }}>
                       {(paidMinor / 100).toLocaleString('ru-RU')} {currencySymbol}
                     </div>
-                    <div style={{ fontSize: '10px', color: paidMinor > 0 ? '#2563EB' : '#94A3B8' }}>
+                    <div style={{ fontSize: '10px', color: paidMinor > 0 ? 'var(--brand)' : 'var(--muted2)' }}>
                       {paidMinor > 0 ? 'Оплата внесена' : 'Оплат не поступало'}
                     </div>
                   </div>
@@ -1783,22 +1761,22 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   <div
                     data-testid="financial-debt-tile"
                     style={{
-                      background: debtMinor > 0 ? '#FEF2F2' : '#FFFFFF',
-                      border: `1px solid ${debtMinor > 0 ? '#FCA5A5' : '#E2E8F0'}`,
-                      borderRadius: '12px',
+                      background: debtMinor > 0 ? 'color-mix(in srgb, var(--neg) 10%, var(--panel))' : 'var(--panel)',
+                      border: `1px solid ${debtMinor > 0 ? 'color-mix(in srgb, var(--neg) 40%, var(--panel))' : 'var(--line)'}`,
+                      borderRadius: '18px',
                       padding: '12px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '4px',
                     }}
                   >
-                    <div style={{ fontSize: '11px', color: debtMinor > 0 ? '#991B1B' : '#64748B', fontWeight: 600 }}>
+                    <div style={{ fontSize: '11px', color: debtMinor > 0 ? 'var(--neg)' : 'var(--muted)', fontWeight: 600 }}>
                       Долг
                     </div>
-                    <div style={{ fontSize: '18px', fontWeight: 800, color: debtMinor > 0 ? '#DC2626' : '#15803D' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: debtMinor > 0 ? 'var(--neg)' : 'var(--pos)' }}>
                       {(debtMinor / 100).toLocaleString('ru-RU')} {currencySymbol}
                     </div>
-                    <div style={{ fontSize: '10px', color: debtMinor > 0 ? '#B91C1C' : '#16A34A' }}>
+                    <div style={{ fontSize: '10px', color: debtMinor > 0 ? 'var(--neg)' : 'var(--pos)' }}>
                       {debtMinor > 0 ? 'Подлежит оплате' : 'Долг отсутствует'}
                     </div>
                   </div>
@@ -1808,11 +1786,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <div
                   style={{
                     fontSize: '11px',
-                    color: '#475569',
-                    background: '#FFFFFF',
+                    color: 'var(--muted)',
+                    background: 'var(--panel)',
                     padding: '8px 10px',
-                    borderRadius: '8px',
-                    border: '1px solid #E2E8F0',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
                     lineHeight: '1.4',
                   }}
                 >
@@ -1830,10 +1808,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     }}
                     style={{
                       height: '40px',
-                      borderRadius: '10px',
+                      borderRadius: '14px',
                       border: 'none',
-                      background: '#059669',
-                      color: '#FFFFFF',
+                      background: 'var(--pos)',
+                      color: 'var(--brand-fg)',
                       fontSize: '13.5px',
                       fontWeight: 700,
                       cursor: 'pointer',
@@ -1848,18 +1826,18 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 )}
 
                 {/* SPRINT M12 & M13: Payment & Refund History */}
-                <div data-testid="payment-history-block" style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '10px' }}>
+                <div data-testid="payment-history-block" style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--line)', paddingTop: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155', textTransform: 'uppercase' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--fg)', textTransform: 'uppercase' }}>
                       История кассовых операций ({visitPayments.length})
                     </span>
-                    <span style={{ fontSize: '11px', color: '#64748B' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
                       Оплачено: {(paidMinor / 100).toLocaleString('ru-RU')} ₸
                     </span>
                   </div>
 
                   {visitPayments.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic', padding: '4px 0' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--muted2)', fontStyle: 'italic', padding: '4px 0' }}>
                       Оплат по этому визиту пока не зафиксировано
                     </div>
                   ) : (
@@ -1879,18 +1857,18 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                               justifyContent: 'space-between',
                               alignItems: 'center',
                               padding: '8px 10px',
-                              borderRadius: '8px',
-                              background: isRefund ? '#FEF2F2' : '#F0FDF4',
-                              border: `1px solid ${isRefund ? '#FECACA' : '#DCFCE7'}`,
+                              borderRadius: '12px',
+                              background: isRefund ? 'color-mix(in srgb, var(--neg) 10%, var(--panel))' : 'color-mix(in srgb, var(--pos) 12%, var(--panel))',
+                              border: `1px solid ${isRefund ? 'color-mix(in srgb, var(--neg) 30%, var(--panel))' : 'color-mix(in srgb, var(--pos) 12%, var(--panel))'}`,
                               fontSize: '12px',
                             }}
                           >
                             <div>
-                              <div style={{ fontWeight: 700, color: isRefund ? '#991B1B' : '#166534' }}>
+                              <div style={{ fontWeight: 700, color: isRefund ? 'var(--neg)' : 'var(--pos)' }}>
                                 {isRefund ? '↺ Возврат' : '✓ Поступление'}: {isRefund ? '-' : '+'}{(p.amount_minor / 100).toLocaleString('ru-RU')} {currencySymbol}
-                                <span style={{ fontWeight: 400, color: '#64748B', marginLeft: '6px' }}>({methodLabel})</span>
+                                <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: '6px' }}>({methodLabel})</span>
                               </div>
-                              <div style={{ fontSize: '10.5px', color: '#64748B', marginTop: '2px' }}>
+                              <div style={{ fontSize: '10.5px', color: 'var(--muted)', marginTop: '2px' }}>
                                 {dateStr} • {p.cashier_name} {p.comment ? `• ${p.comment}` : ''}
                               </div>
                             </div>
@@ -1907,10 +1885,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                                 title="Оформить возврат средств"
                                 style={{
                                   padding: '3px 8px',
-                                  borderRadius: '6px',
-                                  border: '1px solid #FCA5A5',
-                                  background: '#FFFFFF',
-                                  color: '#B91C1C',
+                                  borderRadius: '10px',
+                                  border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))',
+                                  background: 'var(--panel)',
+                                  color: 'var(--neg)',
                                   fontSize: '11px',
                                   fontWeight: 600,
                                   cursor: 'pointer',
@@ -1930,20 +1908,20 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <div
                   data-testid="master-restricted-view"
                   style={{
-                    background: '#F8FAFC',
-                    border: '1px solid #E2E8F0',
-                    borderRadius: '16px',
+                    background: 'var(--canvas)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '22px',
                     padding: '14px 16px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '6px',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--fg)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>✂️</span>
                     <span>Рабочий профиль мастера</span>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.4' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: '1.4' }}>
                     Вы авторизованы как специалист. Доступ к кассовому журналу, долгам и финансовым сводкам компании ограничен ролью управляющего.
                   </div>
                 </div>
@@ -1954,26 +1932,26 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <div
                   data-testid="cancelled-banner"
                   style={{
-                    background: '#FEF2F2',
-                    border: '1px solid #FCA5A5',
-                    borderRadius: '14px',
+                    background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))',
+                    border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))',
+                    borderRadius: '18px',
                     padding: '12px 16px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '4px',
                   }}
                 >
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#991B1B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--neg)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>❌</span>
                     <span>Запись отменена</span>
                   </div>
                   {(bookingDetail?.cancellation_reason || cancelReason) && (
-                    <div style={{ fontSize: '13px', color: '#7F1D1D' }} data-testid="cancellation-reason-text">
+                    <div style={{ fontSize: '13px', color: 'var(--neg)' }} data-testid="cancellation-reason-text">
                       <b>Причина:</b> {bookingDetail?.cancellation_reason || cancelReason}
                     </div>
                   )}
                   {bookingDetail?.cancelled_at && (
-                    <div style={{ fontSize: '11px', color: '#991B1B' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--neg)' }}>
                       Время отмены: {new Date(bookingDetail.cancelled_at).toLocaleString('ru-RU', { timeZone: timezoneIana })}
                     </div>
                   )}
@@ -1986,7 +1964,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   style={{
                     background: '#FFF7ED',
                     border: '1px solid #FDBA74',
-                    borderRadius: '14px',
+                    borderRadius: '18px',
                     padding: '12px 16px',
                     display: 'flex',
                     flexDirection: 'column',
@@ -2005,11 +1983,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
 
               {/* Services breakdown */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--fg)' }}>
                   Состав заказа ({bookingDetail?.items?.length || active.services.length})
                 </div>
                 {isLoadingDetail ? (
-                  <div style={{ fontSize: '12px', color: '#94A3B8' }}>Загрузка деталей услуг…</div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted2)' }}>Загрузка деталей услуг…</div>
                 ) : bookingDetail?.items && bookingDetail.items.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {bookingDetail.items.map((it, idx) => (
@@ -2020,25 +1998,25 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           padding: '8px 10px',
-                          background: '#F8FAFC',
-                          borderRadius: '8px',
+                          background: 'var(--canvas)',
+                          borderRadius: '12px',
                           fontSize: '13px',
                         }}
                       >
                         <div>
-                          <span style={{ fontWeight: 600, color: '#0F172A' }}>{it.service_name}</span>
-                          <span style={{ fontSize: '11px', color: '#64748B', marginLeft: '6px' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--fg)' }}>{it.service_name}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--muted)', marginLeft: '6px' }}>
                             ({it.duration_minutes} мин.)
                           </span>
                         </div>
-                        <div style={{ fontWeight: 700, color: '#0F172A' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--fg)' }}>
                           {(it.price_minor / 100).toLocaleString('ru-RU')} {currencySymbol}
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div style={{ fontSize: '13px', color: '#64748B' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
                     {active.services.join(', ')}
                     {userRole !== 'master' && ` — ${(active.amount_minor / 100).toLocaleString('ru-RU')} ${currencySymbol}`}
                   </div>
@@ -2049,9 +2027,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <div
                 data-testid="visit-history-block"
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '14px',
+                  background: 'var(--canvas)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '18px',
                   padding: '14px',
                   display: 'flex',
                   flexDirection: 'column',
@@ -2059,7 +2037,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--fg)' }}>
                     История изменений и событий ({bookingDetail?.events?.length || 0})
                   </div>
                 </div>
@@ -2075,32 +2053,32 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       });
                       let title = ev.event_type;
                       let icon = '📝';
-                      let color = '#334155';
+                      let color = 'var(--fg)';
 
                       if (ev.event_type === 'created') {
                         title = 'Запись создана';
                         icon = '✨';
-                        color = '#2563EB';
+                        color = 'var(--brand)';
                       } else if (ev.event_type === 'confirmed') {
                         title = 'Запись подтверждена';
                         icon = '✓';
-                        color = '#16A34A';
+                        color = 'var(--pos)';
                       } else if (ev.event_type === 'rescheduled') {
                         title = 'Перенос времени визита';
                         icon = '📅';
-                        color = '#D97706';
+                        color = 'var(--s-arrived)';
                       } else if (ev.event_type === 'cancelled') {
                         title = `Запись отменена: ${bookingDetail?.cancellation_reason || 'по запросу'}`;
                         icon = '❌';
-                        color = '#DC2626';
+                        color = 'var(--neg)';
                       } else if (ev.event_type === 'status_changed') {
                         title = `Смена статуса: ${ev.new_data?.status || 'обновлено'}`;
                         icon = '🔄';
-                        color = '#475569';
+                        color = 'var(--muted)';
                       } else if (ev.event_type === 'visit_completed') {
                         title = 'Визит успешно завершен';
                         icon = '🏁';
-                        color = '#059669';
+                        color = 'var(--pos)';
                       }
 
                       const actorLabel = ev.actor_type === 'customer' ? 'Клиент' : ev.actor_type === 'staff' ? 'Администратор' : 'Система';
@@ -2113,16 +2091,16 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                             alignItems: 'flex-start',
                             gap: '8px',
                             fontSize: '12px',
-                            background: '#FFFFFF',
-                            border: '1px solid #E2E8F0',
-                            borderRadius: '8px',
+                            background: 'var(--panel)',
+                            border: '1px solid var(--line)',
+                            borderRadius: '12px',
                             padding: '6px 10px',
                           }}
                         >
                           <span style={{ fontSize: '13px' }}>{icon}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 600, color }}>{title}</div>
-                            <div style={{ fontSize: '11px', color: '#64748B' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                               {actorLabel} • {eventTime}
                             </div>
                           </div>
@@ -2131,12 +2109,12 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     })}
                   </div>
                 ) : (
-                  <div style={{ fontSize: '12px', color: '#94A3B8' }}>История событий загружается…</div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted2)' }}>История событий загружается…</div>
                 )}
               </div>
 
               {/* Action buttons */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--line)', paddingTop: '16px' }}>
                 {active.status === 'pending' && (
                   <button
                     type="button"
@@ -2145,10 +2123,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     disabled={isUpdatingStatus}
                     style={{
                       height: '42px',
-                      borderRadius: '10px',
+                      borderRadius: '14px',
                       border: 'none',
-                      background: '#2563EB',
-                      color: '#FFFFFF',
+                      background: 'var(--brand)',
+                      color: 'var(--brand-fg)',
                       fontSize: '14px',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -2167,10 +2145,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       style={{
                         flex: 1,
                         height: '42px',
-                        borderRadius: '10px',
+                        borderRadius: '14px',
                         border: 'none',
-                        background: '#D97706',
-                        color: '#FFFFFF',
+                        background: 'var(--s-arrived)',
+                        color: 'var(--brand-fg)',
                         fontSize: '14px',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -2187,10 +2165,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       style={{
                         height: '42px',
                         padding: '0 14px',
-                        borderRadius: '10px',
-                        border: '1px solid #CBD5E1',
-                        background: '#FFFFFF',
-                        color: '#64748B',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                        background: 'var(--panel)',
+                        color: 'var(--muted)',
                         fontSize: '13px',
                         fontWeight: 500,
                         cursor: 'pointer',
@@ -2210,10 +2188,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       style={{
                         flex: 1,
                         height: '42px',
-                        borderRadius: '10px',
+                        borderRadius: '14px',
                         border: 'none',
-                        background: '#2563EB',
-                        color: '#FFFFFF',
+                        background: 'var(--brand)',
+                        color: 'var(--brand-fg)',
                         fontSize: '14px',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -2230,10 +2208,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       style={{
                         height: '42px',
                         padding: '0 14px',
-                        borderRadius: '10px',
-                        border: '1px solid #CBD5E1',
-                        background: '#FFFFFF',
-                        color: '#64748B',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                        background: 'var(--panel)',
+                        color: 'var(--muted)',
                         fontSize: '13px',
                         fontWeight: 500,
                         cursor: 'pointer',
@@ -2251,10 +2229,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     disabled={isUpdatingStatus}
                     style={{
                       height: '42px',
-                      borderRadius: '10px',
+                      borderRadius: '14px',
                       border: 'none',
-                      background: '#059669',
-                      color: '#FFFFFF',
+                      background: 'var(--pos)',
+                      color: 'var(--brand-fg)',
                       fontSize: '14px',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -2273,9 +2251,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         style={{
                           flex: 1,
                           height: '38px',
-                          borderRadius: '8px',
-                          border: '1px solid #CBD5E1',
-                          background: '#FFFFFF',
+                          borderRadius: '12px',
+                          border: '1px solid var(--line)',
+                          background: 'var(--panel)',
                           fontSize: '13px',
                           fontWeight: 500,
                           cursor: 'pointer',
@@ -2290,10 +2268,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                         style={{
                           flex: 1,
                           height: '38px',
-                          borderRadius: '8px',
-                          border: '1px solid #FCA5A5',
-                          background: '#FEF2F2',
-                          color: '#991B1B',
+                          borderRadius: '12px',
+                          border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))',
+                          background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))',
+                          color: 'var(--neg)',
                           fontSize: '13px',
                           fontWeight: 500,
                           cursor: 'pointer',
@@ -2311,9 +2289,9 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       flex: (active.status === 'completed' || active.status === 'cancelled') ? 1 : 'none',
                       padding: '0 16px',
                       height: '38px',
-                      borderRadius: '8px',
-                      border: '1px solid #CBD5E1',
-                      background: '#F8FAFC',
+                      borderRadius: '12px',
+                      border: '1px solid var(--line)',
+                      background: 'var(--canvas)',
                       fontSize: '13px',
                       fontWeight: 500,
                       cursor: 'pointer',
@@ -2346,8 +2324,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '440px',
-              background: '#FFFFFF',
-              borderRadius: '16px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
@@ -2355,15 +2333,15 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
             }}
           >
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--fg)' }}>
               Подтверждение отмены записи
             </h3>
-            <p style={{ margin: 0, fontSize: '13px', color: '#64748B', lineHeight: '1.4' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)', lineHeight: '1.4' }}>
               Запись <b>#{selectedBooking.public_ref}</b> ({selectedBooking.customer_name}) будет отменена. Слот будет немедленно освобожден в календаре и публичной записи, а факт отмены сохранится в истории.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--fg)' }}>
                 Выберите причину отмены:
               </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -2381,11 +2359,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     onClick={() => setCancelReason(reason)}
                     style={{
                       padding: '4px 8px',
-                      borderRadius: '6px',
+                      borderRadius: '10px',
                       fontSize: '11px',
-                      border: cancelReason === reason ? '1px solid #EF4444' : '1px solid #CBD5E1',
-                      background: cancelReason === reason ? '#FEF2F2' : '#F8FAFC',
-                      color: cancelReason === reason ? '#B91C1C' : '#334155',
+                      border: cancelReason === reason ? '1px solid var(--neg)' : '1px solid var(--muted2)',
+                      background: cancelReason === reason ? 'color-mix(in srgb, var(--neg) 10%, var(--panel))' : 'var(--canvas)',
+                      color: cancelReason === reason ? 'var(--neg)' : 'var(--fg)',
                       cursor: 'pointer',
                       fontWeight: cancelReason === reason ? 600 : 400,
                     }}
@@ -2404,8 +2382,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   marginTop: '6px',
                   height: '38px',
                   padding: '0 12px',
-                  borderRadius: '8px',
-                  border: '1px solid #CBD5E1',
+                  borderRadius: '12px',
+                  border: '1px solid var(--line)',
                   fontSize: '13px',
                 }}
               />
@@ -2415,7 +2393,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <button
                 type="button"
                 onClick={() => setShowCancelModal(false)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)', cursor: 'pointer' }}
               >
                 Назад
               </button>
@@ -2426,10 +2404,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 disabled={isUpdatingStatus}
                 style={{
                   padding: '8px 16px',
-                  borderRadius: '8px',
+                  borderRadius: '12px',
                   border: 'none',
-                  background: '#DC2626',
-                  color: '#FFFFFF',
+                  background: 'var(--neg)',
+                  color: 'var(--brand-fg)',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
@@ -2459,8 +2437,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '420px',
-              background: '#FFFFFF',
-              borderRadius: '16px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
@@ -2469,7 +2447,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             }}
           >
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Перенос записи</h3>
-            <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
               Выберите нового специалиста, дату или время для визита #{selectedBooking.public_ref}.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -2478,7 +2456,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 data-testid="reschedule-staff-select"
                 value={rescheduleStaffId || selectedBooking.staff_id}
                 onChange={e => setRescheduleStaffId(e.target.value)}
-                style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '14px' }}
+                style={{ height: '40px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)', fontSize: '14px' }}
               >
                 {staffList.map(s => (
                   <option key={s.id} value={s.id}>
@@ -2494,7 +2472,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 data-testid="reschedule-date-input"
                 value={rescheduleDate}
                 onChange={e => setRescheduleDate(e.target.value)}
-                style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '40px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -2504,14 +2482,14 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 data-testid="reschedule-time-input"
                 value={rescheduleTime}
                 onChange={e => setRescheduleTime(e.target.value)}
-                style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '40px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <button
                 type="button"
                 onClick={() => setShowRescheduleModal(false)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)', cursor: 'pointer' }}
               >
                 Назад
               </button>
@@ -2520,7 +2498,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 data-testid="confirm-reschedule-btn"
                 onClick={handleRescheduleBooking}
                 disabled={isUpdatingStatus}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: 'none', background: 'var(--brand)', color: 'var(--brand-fg)', fontWeight: 600, cursor: 'pointer' }}
               >
                 {isUpdatingStatus ? 'Перенос...' : 'Перенести запись'}
               </button>
@@ -2548,8 +2526,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '460px',
-              background: '#FFFFFF',
-              borderRadius: '16px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
               display: 'flex',
@@ -2559,14 +2537,14 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Приём оплаты</div>
-                <div style={{ fontSize: '12px', color: '#64748B' }}>Запись #{selectedBooking.public_ref} • {selectedBooking.customer_name}</div>
-                <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>Фискальный чек выбивается салоном на своей ККМ</div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--fg)' }}>Приём оплаты</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Запись #{selectedBooking.public_ref} • {selectedBooking.customer_name}</div>
+                <div style={{ fontSize: '11px', color: 'var(--muted2)', marginTop: '2px' }}>Фискальный чек выбивается салоном на своей ККМ</div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowPaymentModal(false)}
-                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748B' }}
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--muted)' }}
               >
                 ✕
               </button>
@@ -2574,16 +2552,16 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
 
             <form onSubmit={handleRegisterPayment} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {/* Financial Context */}
-              <div style={{ background: '#F8FAFC', padding: '12px 14px', borderRadius: '10px', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+              <div style={{ background: 'var(--canvas)', padding: '12px 14px', borderRadius: '14px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                 <div>
-                  <div style={{ color: '#64748B', fontSize: '11px' }}>Стоимость заказа</div>
-                  <div style={{ fontWeight: 700, color: '#0F172A', marginTop: '2px' }}>
+                  <div style={{ color: 'var(--muted)', fontSize: '11px' }}>Стоимость заказа</div>
+                  <div style={{ fontWeight: 700, color: 'var(--fg)', marginTop: '2px' }}>
                     {((selectedBooking.cost_minor || selectedBooking.amount_minor) / 100).toLocaleString('ru-RU')} ₸
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: '#64748B', fontSize: '11px' }}>Остаток долга</div>
-                  <div style={{ fontWeight: 800, color: '#DC2626', marginTop: '2px' }}>
+                  <div style={{ color: 'var(--muted)', fontSize: '11px' }}>Остаток долга</div>
+                  <div style={{ fontWeight: 800, color: 'var(--neg)', marginTop: '2px' }}>
                     {((selectedBooking.debt_minor ?? selectedBooking.amount_minor) / 100).toLocaleString('ru-RU')} ₸
                   </div>
                 </div>
@@ -2591,7 +2569,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
 
               {/* Amount Input */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                   Сумма платежа (₸) *
                 </label>
                 <input
@@ -2606,8 +2584,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   style={{
                     height: '42px',
                     padding: '0 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
                     fontSize: '16px',
                     fontWeight: 700,
                     outline: 'none',
@@ -2623,10 +2601,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   onClick={() => setPaymentAmountStr(((selectedBooking.debt_minor ?? selectedBooking.amount_minor) / 100).toString())}
                   style={{
                     padding: '5px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid #BBF7D0',
-                    background: '#F0FDF4',
-                    color: '#15803D',
+                    borderRadius: '10px',
+                    border: '1px solid color-mix(in srgb, var(--pos) 30%, var(--panel))',
+                    background: 'color-mix(in srgb, var(--pos) 12%, var(--panel))',
+                    color: 'var(--pos)',
                     fontSize: '12px',
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -2641,10 +2619,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     onClick={() => setPaymentAmountStr(val.toString())}
                     style={{
                       padding: '5px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid #E2E8F0',
-                      background: '#FFFFFF',
-                      color: '#475569',
+                      borderRadius: '10px',
+                      border: '1px solid var(--line)',
+                      background: 'var(--panel)',
+                      color: 'var(--muted)',
                       fontSize: '12px',
                       cursor: 'pointer',
                     }}
@@ -2656,7 +2634,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
 
               {/* Payment Method */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                   Способ оплаты *
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
@@ -2672,10 +2650,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                       onClick={() => setPaymentMethod(m.id)}
                       style={{
                         padding: '10px 8px',
-                        borderRadius: '8px',
-                        border: paymentMethod === m.id ? '2px solid #2563EB' : '1px solid #CBD5E1',
-                        background: paymentMethod === m.id ? '#EFF6FF' : '#FFFFFF',
-                        color: paymentMethod === m.id ? '#1D4ED8' : '#475569',
+                        borderRadius: '12px',
+                        border: paymentMethod === m.id ? '2px solid var(--brand)' : '1px solid var(--muted2)',
+                        background: paymentMethod === m.id ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--panel)',
+                        color: paymentMethod === m.id ? 'var(--brand)' : 'var(--muted)',
                         fontSize: '12px',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -2694,7 +2672,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
 
               {/* Comment */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                   Комментарий / номер чека (опционально)
                 </label>
                 <input
@@ -2706,8 +2684,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   style={{
                     height: '38px',
                     padding: '0 10px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
                     fontSize: '13px',
                     outline: 'none',
                   }}
@@ -2718,7 +2696,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowPaymentModal(false)}
-                  style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', cursor: 'pointer' }}
+                  style={{ padding: '9px 16px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)', cursor: 'pointer' }}
                 >
                   Отмена
                 </button>
@@ -2728,10 +2706,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   disabled={isSubmittingPayment}
                   style={{
                     padding: '9px 20px',
-                    borderRadius: '8px',
+                    borderRadius: '12px',
                     border: 'none',
-                    background: '#059669',
-                    color: '#FFFFFF',
+                    background: 'var(--pos)',
+                    color: 'var(--brand-fg)',
                     fontWeight: 700,
                     cursor: isSubmittingPayment ? 'not-allowed' : 'pointer',
                     opacity: isSubmittingPayment ? 0.7 : 1,
@@ -2764,8 +2742,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '460px',
-              background: '#FFFFFF',
-              borderRadius: '16px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
               display: 'flex',
@@ -2775,25 +2753,25 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: '#DC2626' }}>Оформление возврата</div>
-                <div style={{ fontSize: '12px', color: '#64748B' }}>К платежу #{(selectedPaymentForRefund.id).slice(-6)}</div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--neg)' }}>Оформление возврата</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>К платежу #{(selectedPaymentForRefund.id).slice(-6)}</div>
               </div>
               <button
                 type="button"
                 onClick={() => { setShowRefundModal(false); setSelectedPaymentForRefund(null); }}
-                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748B' }}
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--muted)' }}
               >
                 ✕
               </button>
             </div>
 
             <form onSubmit={handleConfirmRefund} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ background: '#FEF2F2', padding: '12px 14px', borderRadius: '10px', border: '1px solid #FECACA', fontSize: '12.5px', color: '#991B1B', lineHeight: '1.4' }}>
+              <div style={{ background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))', padding: '12px 14px', borderRadius: '14px', border: '1px solid color-mix(in srgb, var(--neg) 30%, var(--panel))', fontSize: '12.5px', color: 'var(--neg)', lineHeight: '1.4' }}>
                 ℹ️ <b>Корректирующее движение:</b> Возврат оформляется обратной проводкой. Исходный платёж сохраняется в кассовом аудите.
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                   Сумма возврата (₸) *
                 </label>
                 <input
@@ -2808,20 +2786,20 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   style={{
                     height: '42px',
                     padding: '0 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
                     fontSize: '16px',
                     fontWeight: 700,
                     outline: 'none',
                   }}
                 />
-                <div style={{ fontSize: '11px', color: '#64748B' }}>
+                <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                   Максимум: {(selectedPaymentForRefund.amount_minor / 100).toLocaleString('ru-RU')} ₸
                 </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                   Причина возврата *
                 </label>
                 <select
@@ -2831,11 +2809,11 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   style={{
                     height: '40px',
                     padding: '0 10px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
                     fontSize: '13px',
                     outline: 'none',
-                    background: '#FFFFFF',
+                    background: 'var(--panel)',
                   }}
                 >
                   <option value="Отказ от части услуги">Отказ от части услуги</option>
@@ -2846,7 +2824,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
                   Пояснение (опционально)
                 </label>
                 <input
@@ -2858,8 +2836,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   style={{
                     height: '38px',
                     padding: '0 10px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
                     fontSize: '13px',
                     outline: 'none',
                   }}
@@ -2870,7 +2848,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <button
                   type="button"
                   onClick={() => { setShowRefundModal(false); setSelectedPaymentForRefund(null); }}
-                  style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', cursor: 'pointer' }}
+                  style={{ padding: '9px 16px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)', cursor: 'pointer' }}
                 >
                   Отмена
                 </button>
@@ -2880,10 +2858,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   disabled={isSubmittingRefund}
                   style={{
                     padding: '9px 20px',
-                    borderRadius: '8px',
+                    borderRadius: '12px',
                     border: 'none',
-                    background: '#DC2626',
-                    color: '#FFFFFF',
+                    background: 'var(--neg)',
+                    color: 'var(--brand-fg)',
                     fontWeight: 700,
                     cursor: isSubmittingRefund ? 'not-allowed' : 'pointer',
                     opacity: isSubmittingRefund ? 0.7 : 1,
@@ -2916,8 +2894,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '460px',
-              background: '#FFFFFF',
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
@@ -2937,13 +2915,13 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
 
             {/* Linked customer badge */}
             {selectedCustomerId && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#EFF6FF', borderRadius: '8px', border: '1px solid #BFDBFE', fontSize: '12px', color: '#1D4ED8' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'color-mix(in srgb, var(--brand) 10%, var(--panel))', borderRadius: '12px', border: '1px solid color-mix(in srgb, var(--brand) 30%, var(--panel))', fontSize: '12px', color: 'var(--brand)' }}>
                 <span>🔗 Связан с карточкой: <b>{selectedCustomerName}</b></span>
                 <button
                   type="button"
                   onClick={handleClearSelectedCustomer}
                   title="Отвязать карточку"
-                  style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', fontWeight: 700 }}
+                  style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontWeight: 700 }}
                 >
                   ✕
                 </button>
@@ -2959,7 +2937,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 onChange={e => handleCustPhoneOrNameChange(e.target.value, newCustPhone)}
                 placeholder="Айбек Жумабаев"
                 required
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
             </div>
 
@@ -2972,26 +2950,26 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 onChange={e => handleCustPhoneOrNameChange(newCustName, e.target.value)}
                 placeholder="+7 (701) 234-56-78"
                 required
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
             </div>
 
             {/* Suggestions dropdown */}
             {custSuggestions.length > 0 && !selectedCustomerId && (
-              <div style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
-                <div style={{ padding: '6px 10px', fontSize: '11px', color: '#64748B', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+              <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                <div style={{ padding: '6px 10px', fontSize: '11px', color: 'var(--muted)', background: 'var(--canvas)', borderBottom: '1px solid var(--line)' }}>
                   Найдено в базе клиентов (нажмите для выбора):
                 </div>
                 {custSuggestions.map(c => (
                   <div
                     key={c.id}
                     onClick={() => handleSelectCustomer(c)}
-                    style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #F1F5F9', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#F1F5F9')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '#FFFFFF')}
+                    style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--chip)', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--chip)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'var(--panel)')}
                   >
                     <span style={{ fontWeight: 600 }}>{c.full_name}</span>
-                    <span style={{ color: '#64748B' }}>{(c as any).phone || c.phone_e164}</span>
+                    <span style={{ color: 'var(--muted)' }}>{(c as any).phone || c.phone_e164}</span>
                   </div>
                 ))}
               </div>
@@ -3003,7 +2981,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 data-testid="booking-staff-select"
                 value={newStaffId}
                 onChange={e => setNewStaffId(e.target.value)}
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               >
                 {staffList.map(s => (
                   <option key={s.id} value={s.id}>{s.name} ({s.role_title || 'Барбер'})</option>
@@ -3018,7 +2996,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 data-testid="booking-time-input"
                 value={newTime}
                 onChange={e => setNewTime(e.target.value)}
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
             </div>
 
@@ -3051,14 +3029,14 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <button
                 type="button"
                 onClick={() => setShowNewBookingModal(false)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)' }}
               >
                 Отмена
               </button>
               <button
                 type="submit"
                 data-testid="submit-booking-btn"
-                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontWeight: 600 }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: 'none', background: 'var(--brand)', color: 'var(--brand-fg)', fontWeight: 600 }}
               >
                 Создать бронь
               </button>
@@ -3086,8 +3064,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '400px',
-              background: '#FFFFFF',
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
@@ -3100,7 +3078,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <select
                 value={blockStaffId || (staffList.length > 0 ? staffList[0].id : '')}
                 onChange={e => setBlockStaffId(e.target.value)}
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               >
                 {staffList.map(s => (
                   <option key={s.id} value={s.id}>{s.name} ({s.role_title || 'Барбер'})</option>
@@ -3115,7 +3093,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   type="time"
                   value={blockStart}
                   onChange={e => setBlockStart(e.target.value)}
-                  style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                  style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
                 />
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -3124,7 +3102,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                   type="time"
                   value={blockEnd}
                   onChange={e => setBlockEnd(e.target.value)}
-                  style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                  style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
                 />
               </div>
             </div>
@@ -3136,7 +3114,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 value={blockReason}
                 onChange={e => setBlockReason(e.target.value)}
                 placeholder="Обед, санитарный час, отгул"
-                style={{ height: '38px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1' }}
+                style={{ height: '38px', padding: '0 12px', borderRadius: '12px', border: '1px solid var(--line)' }}
               />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '2px' }}>
                 {['Перерыв на обед', 'Обучение', 'Личные дела', 'Технический перерыв'].map(r => (
@@ -3146,10 +3124,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                     onClick={() => setBlockReason(r)}
                     style={{
                       padding: '3px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid #CBD5E1',
-                      background: blockReason === r ? '#0F172A' : '#F1F5F9',
-                      color: blockReason === r ? '#FFFFFF' : '#334155',
+                      borderRadius: '10px',
+                      border: '1px solid var(--line)',
+                      background: blockReason === r ? 'var(--brand2)' : 'var(--chip)',
+                      color: blockReason === r ? 'var(--brand-fg)' : 'var(--fg)',
                       fontSize: '11px',
                       cursor: 'pointer',
                     }}
@@ -3164,14 +3142,14 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <button
                 type="button"
                 onClick={() => setShowBlockModal(false)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel)' }}
               >
                 Отмена
               </button>
               <button
                 type="submit"
                 data-testid="submit-block-btn"
-                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#0F172A', color: '#FFFFFF', fontWeight: 600 }}
+                style={{ padding: '8px 16px', borderRadius: '12px', border: 'none', background: 'var(--brand2)', color: 'var(--brand-fg)', fontWeight: 600 }}
               >
                 Заблокировать
               </button>
@@ -3198,8 +3176,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
             style={{
               width: '100%',
               maxWidth: '420px',
-              background: '#FFFFFF',
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              borderRadius: '22px',
               boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
               padding: '24px',
               display: 'flex',
@@ -3215,37 +3193,37 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedBlock(null)}
-                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748B' }}
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--muted)' }}
               >
                 ✕
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '14px', background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '14px', background: 'var(--canvas)', padding: '14px', borderRadius: '18px', border: '1px solid var(--line)' }}>
               <div>
-                <span style={{ color: '#64748B' }}>Специалист: </span>
+                <span style={{ color: 'var(--muted)' }}>Специалист: </span>
                 <b>{staffList.find(s => s.id === selectedBlock.staff_id)?.name || 'Все / Не указан'}</b>
               </div>
               <div>
-                <span style={{ color: '#64748B' }}>Время: </span>
+                <span style={{ color: 'var(--muted)' }}>Время: </span>
                 <b>{formatTimeInZone(selectedBlock.starts_at_utc, timezoneIana)} – {formatTimeInZone(selectedBlock.ends_at_utc, timezoneIana)}</b>
               </div>
               <div>
-                <span style={{ color: '#64748B' }}>Причина: </span>
+                <span style={{ color: 'var(--muted)' }}>Причина: </span>
                 <b>{selectedBlock.block_reason || 'Перерыв / блокировка'}</b>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
+            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--line)', paddingTop: '16px' }}>
               <button
                 type="button"
                 onClick={() => setSelectedBlock(null)}
                 style={{
                   flex: 1,
                   height: '42px',
-                  borderRadius: '10px',
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
+                  borderRadius: '14px',
+                  border: '1px solid var(--line)',
+                  background: 'var(--panel)',
                   fontSize: '14px',
                   fontWeight: 500,
                   cursor: 'pointer',
@@ -3261,10 +3239,10 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
                 style={{
                   flex: 1,
                   height: '42px',
-                  borderRadius: '10px',
+                  borderRadius: '14px',
                   border: 'none',
-                  background: '#DC2626',
-                  color: '#FFFFFF',
+                  background: 'var(--neg)',
+                  color: 'var(--brand-fg)',
                   fontSize: '14px',
                   fontWeight: 600,
                   cursor: 'pointer',

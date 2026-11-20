@@ -44,131 +44,47 @@ export const LoginPage: React.FC<LoginPageProps> = ({ api, onSuccess }) => {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#0F172A',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-        fontFamily: 'Inter, system-ui, sans-serif',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '420px',
-          background: '#FFFFFF',
-          borderRadius: '20px',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
-          padding: '36px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '24px',
-        }}
-      >
-        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div
-            style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '12px',
-              background: '#0F172A',
-              color: '#FFFFFF',
-              margin: '0 auto 8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '18px',
-              fontWeight: 700,
-            }}
-          >
-            BH
-          </div>
-          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700, color: '#0F172A' }}>
-            Вход в CRM
-          </h1>
-          <p style={{ margin: 0, fontSize: '14px', color: '#64748B' }}>
-            Введите учетные данные сотрудника компании
-          </p>
-        </div>
+    <div className="auth">
+      <div className="card">
+        <div className="logo">CRM</div>
+        <h1>Вход в CRM</h1>
+        <div className="sub">Введите учётные данные сотрудника компании</div>
 
         {error && (
-          <div
-            role="alert"
-            style={{
-              background: '#FEE2E2',
-              color: '#991B1B',
-              padding: '12px 16px',
-              borderRadius: '10px',
-              fontSize: '14px',
-              border: '1px solid #FCA5A5',
-            }}
-          >
+          <div role="alert" className="err">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>
-              Email сотрудника
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="owner@barberhouse.kz"
-              data-testid="crm-login-email-input"
-              required
-              style={{
-                height: '44px',
-                padding: '0 14px',
-                borderRadius: '10px',
-                border: '1px solid #CBD5E1',
-                fontSize: '15px',
-                outline: 'none',
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>Пароль</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              data-testid="crm-login-password-input"
-              required
-              style={{
-                height: '44px',
-                padding: '0 14px',
-                borderRadius: '10px',
-                border: '1px solid #CBD5E1',
-                fontSize: '15px',
-                outline: 'none',
-              }}
-            />
-          </div>
-
+        <form onSubmit={handleSubmit}>
+          <label className="f">Email сотрудника</label>
+          <input
+            className="inp"
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="owner@barberhouse.kz"
+            data-testid="crm-login-email-input"
+            autoComplete="username"
+            required
+          />
+          <label className="f">Пароль</label>
+          <input
+            className="inp"
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
+            data-testid="crm-login-password-input"
+            autoComplete="current-password"
+            required
+          />
           <button
             type="submit"
+            className="btn p"
             data-testid="crm-login-submit-btn"
             disabled={isLoading}
-            style={{
-              height: '46px',
-              marginTop: '8px',
-              borderRadius: '10px',
-              background: '#2563EB',
-              color: '#FFFFFF',
-              border: 'none',
-              fontSize: '15px',
-              fontWeight: 600,
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              opacity: isLoading ? 0.7 : 1,
-            }}
+            style={{ opacity: isLoading ? 0.7 : 1 }}
           >
             {isLoading ? 'Авторизация…' : 'Войти в панель'}
           </button>

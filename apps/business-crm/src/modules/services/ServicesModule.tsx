@@ -330,13 +330,13 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
   const parsedFormDuration = parseInt(formDuration, 10) || 0;
 
   return (
-    <div style={{ height: 'calc(100vh - 64px)', display: 'flex', background: '#F8FAFC', overflow: 'hidden' }}>
+    <div style={{ height: 'calc(100vh - 64px)', display: 'flex', background: 'var(--canvas)', overflow: 'hidden' }}>
       {/* Column 1: Categories Sidebar (250px) */}
       <div
         style={{
           width: '250px',
-          background: '#FFFFFF',
-          borderRight: '1px solid #E2E8F0',
+          background: 'var(--panel)',
+          borderRight: '1px solid var(--line)',
           padding: '16px 12px',
           display: 'flex',
           flexDirection: 'column',
@@ -346,8 +346,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px 10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Tag style={{ width: '15px', height: '15px', color: '#64748B' }} />
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>КАТЕГОРИИ</span>
+            <Tag style={{ width: '15px', height: '15px', color: 'var(--muted)' }} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em' }}>КАТЕГОРИИ</span>
           </div>
           {userRole !== 'master' && (
             <button
@@ -357,12 +357,12 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#2563EB',
+                color: 'var(--brand)',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
                 padding: '2px 6px',
-                borderRadius: '6px',
+                borderRadius: '10px',
               }}
             >
               + Категория
@@ -376,10 +376,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
           onClick={() => setActiveCategoryId(null)}
           style={{
             padding: '10px 12px',
-            borderRadius: '10px',
+            borderRadius: '14px',
             border: 'none',
-            background: activeCategoryId === null ? '#EFF6FF' : 'transparent',
-            color: activeCategoryId === null ? '#1D4ED8' : '#1E293B',
+            background: activeCategoryId === null ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'transparent',
+            color: activeCategoryId === null ? 'var(--brand)' : 'var(--fg)',
             fontWeight: activeCategoryId === null ? 600 : 500,
             fontSize: '13.5px',
             cursor: 'pointer',
@@ -394,9 +394,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
           <span style={{
             fontSize: '11px',
             padding: '2px 8px',
-            borderRadius: '12px',
-            background: activeCategoryId === null ? '#DBEAFE' : '#F1F5F9',
-            color: activeCategoryId === null ? '#1E40AF' : '#64748B',
+            borderRadius: '18px',
+            background: activeCategoryId === null ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--chip)',
+            color: activeCategoryId === null ? 'var(--brand)' : 'var(--muted)',
             fontWeight: 600,
           }}>
             {services.length}
@@ -415,8 +415,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  borderRadius: '10px',
-                  background: isActive ? '#EFF6FF' : 'transparent',
+                  borderRadius: '14px',
+                  background: isActive ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'transparent',
                   transition: 'background 0.15s ease',
                 }}
               >
@@ -428,7 +428,7 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                     padding: '9px 12px',
                     border: 'none',
                     background: 'transparent',
-                    color: isActive ? '#1D4ED8' : '#1E293B',
+                    color: isActive ? 'var(--brand)' : 'var(--fg)',
                     fontWeight: isActive ? 600 : 500,
                     fontSize: '13px',
                     cursor: 'pointer',
@@ -444,9 +444,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   <span style={{
                     fontSize: '11px',
                     padding: '2px 6px',
-                    borderRadius: '10px',
-                    background: isActive ? '#DBEAFE' : '#F1F5F9',
-                    color: isActive ? '#1E40AF' : '#64748B',
+                    borderRadius: '14px',
+                    background: isActive ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--chip)',
+                    color: isActive ? 'var(--brand)' : 'var(--muted)',
                     fontWeight: 600,
                   }}>
                     {count}
@@ -460,9 +460,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                         padding: '4px',
                         border: 'none',
                         background: 'transparent',
-                        color: '#94A3B8',
+                        color: 'var(--muted2)',
                         cursor: 'pointer',
-                        borderRadius: '4px',
+                        borderRadius: '8px',
                         display: 'flex',
                         alignItems: 'center',
                       }}
@@ -481,21 +481,21 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
           <div style={{
             marginTop: 'auto',
             padding: '10px 12px',
-            background: '#F1F5F9',
-            borderRadius: '10px',
+            background: 'var(--chip)',
+            borderRadius: '14px',
             display: 'flex',
             flexDirection: 'column',
             gap: '4px',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 600, color: '#475569' }}>
-              <Building2 style={{ width: '13px', height: '13px', color: '#2563EB' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 600, color: 'var(--muted)' }}>
+              <Building2 style={{ width: '13px', height: '13px', color: 'var(--brand)' }} />
               <span>ТЕКУЩИЙ ФИЛИАЛ</span>
             </div>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {currentBranch.name}
             </div>
             {currentBranch.city && (
-              <div style={{ fontSize: '11px', color: '#64748B' }}>г. {currentBranch.city}</div>
+              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>г. {currentBranch.city}</div>
             )}
           </div>
         )}
@@ -505,19 +505,19 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
       <div
         style={{
           width: '350px',
-          background: '#FFFFFF',
-          borderRight: '1px solid #E2E8F0',
+          background: 'var(--panel)',
+          borderRight: '1px solid var(--line)',
           display: 'flex',
           flexDirection: 'column',
           flexShrink: 0,
         }}
       >
         {/* Top Action Bar */}
-        <div style={{ padding: '16px', borderBottom: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ padding: '16px', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <span style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A' }}>Услуги</span>
-              <span style={{ fontSize: '13px', color: '#64748B', marginLeft: '6px' }}>({filteredServices.length})</span>
+              <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--fg)' }}>Услуги</span>
+              <span style={{ fontSize: '13px', color: 'var(--muted)', marginLeft: '6px' }}>({filteredServices.length})</span>
             </div>
             {userRole !== 'master' && (
               <button
@@ -535,10 +535,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   alignItems: 'center',
                   gap: '6px',
                   padding: '7px 14px',
-                  borderRadius: '10px',
+                  borderRadius: '14px',
                   border: 'none',
-                  background: '#2563EB',
-                  color: '#FFFFFF',
+                  background: 'var(--brand)',
+                  color: 'var(--brand-fg)',
                   fontSize: '12.5px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -553,7 +553,7 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
 
           {/* Search Box */}
           <div style={{ position: 'relative' }}>
-            <Search style={{ position: 'absolute', left: '10px', top: '10px', width: '15px', height: '15px', color: '#94A3B8' }} />
+            <Search style={{ position: 'absolute', left: '10px', top: '10px', width: '15px', height: '15px', color: 'var(--muted2)' }} />
             <input
               type="text"
               data-testid="services-search-input"
@@ -564,8 +564,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                 width: '100%',
                 height: '36px',
                 padding: '0 10px 0 32px',
-                borderRadius: '8px',
-                border: '1px solid #CBD5E1',
+                borderRadius: '12px',
+                border: '1px solid var(--line)',
                 fontSize: '13px',
                 outline: 'none',
                 boxSizing: 'border-box',
@@ -580,11 +580,11 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               onClick={() => setStatusFilter('all')}
               style={{
                 padding: '4px 10px',
-                borderRadius: '6px',
+                borderRadius: '10px',
                 border: '1px solid',
-                borderColor: statusFilter === 'all' ? '#2563EB' : '#E2E8F0',
-                background: statusFilter === 'all' ? '#EFF6FF' : '#FFFFFF',
-                color: statusFilter === 'all' ? '#1D4ED8' : '#64748B',
+                borderColor: statusFilter === 'all' ? 'var(--brand)' : 'var(--line)',
+                background: statusFilter === 'all' ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--panel)',
+                color: statusFilter === 'all' ? 'var(--brand)' : 'var(--muted)',
                 fontSize: '11.5px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -597,11 +597,11 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               onClick={() => setStatusFilter('active')}
               style={{
                 padding: '4px 10px',
-                borderRadius: '6px',
+                borderRadius: '10px',
                 border: '1px solid',
-                borderColor: statusFilter === 'active' ? '#059669' : '#E2E8F0',
-                background: statusFilter === 'active' ? '#ECFDF5' : '#FFFFFF',
-                color: statusFilter === 'active' ? '#047857' : '#64748B',
+                borderColor: statusFilter === 'active' ? 'var(--pos)' : 'var(--line)',
+                background: statusFilter === 'active' ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'var(--panel)',
+                color: statusFilter === 'active' ? 'var(--pos)' : 'var(--muted)',
                 fontSize: '11.5px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -614,11 +614,11 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               onClick={() => setStatusFilter('archived')}
               style={{
                 padding: '4px 10px',
-                borderRadius: '6px',
+                borderRadius: '10px',
                 border: '1px solid',
-                borderColor: statusFilter === 'archived' ? '#991B1B' : '#E2E8F0',
-                background: statusFilter === 'archived' ? '#FEF2F2' : '#FFFFFF',
-                color: statusFilter === 'archived' ? '#991B1B' : '#64748B',
+                borderColor: statusFilter === 'archived' ? 'var(--neg)' : 'var(--line)',
+                background: statusFilter === 'archived' ? 'color-mix(in srgb, var(--neg) 10%, var(--panel))' : 'var(--panel)',
+                color: statusFilter === 'archived' ? 'var(--neg)' : 'var(--muted)',
                 fontSize: '11.5px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -632,11 +632,11 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
         {/* Services List Scroll */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
           {isLoading ? (
-            <div style={{ padding: '24px', textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
               Загрузка услуг...
             </div>
           ) : filteredServices.length === 0 ? (
-            <div style={{ padding: '32px 16px', textAlign: 'center', color: '#94A3B8' }}>
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--muted2)' }}>
               <p style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 6px' }}>Услуг не найдено</p>
               <span style={{ fontSize: '12px' }}>
                 {searchQuery ? 'Попробуйте изменить поисковый запрос' : 'Добавьте первую услугу кнопкой выше'}
@@ -655,9 +655,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   onClick={() => selectService(s)}
                   style={{
                     padding: '12px 14px',
-                    borderRadius: '12px',
-                    background: isSelected ? '#EFF6FF' : '#FFFFFF',
-                    border: isSelected ? '1.5px solid #3B82F6' : '1px solid #E2E8F0',
+                    borderRadius: '18px',
+                    background: isSelected ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--panel)',
+                    border: isSelected ? '1.5px solid var(--brand)' : '1px solid var(--line)',
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
@@ -668,32 +668,32 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: 1.3 }}>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--fg)', lineHeight: 1.3 }}>
                       {s.name}
                     </span>
-                    <span style={{ fontSize: '14px', fontWeight: 700, color: '#1D4ED8', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap' }}>
                       {formatTenge(priceTenge)}
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#64748B' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--muted)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock style={{ width: '13px', height: '13px', color: '#94A3B8' }} />
+                      <Clock style={{ width: '13px', height: '13px', color: 'var(--muted2)' }} />
                       <span>{formatDurationText(s.base_duration_minutes)}</span>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {catObj && (
-                        <span style={{ fontSize: '11px', background: '#F1F5F9', color: '#475569', padding: '1px 6px', borderRadius: '4px' }}>
+                        <span style={{ fontSize: '11px', background: 'var(--chip)', color: 'var(--muted)', padding: '1px 6px', borderRadius: '8px' }}>
                           {catObj.name}
                         </span>
                       )}
                       <span style={{
                         fontSize: '11px',
                         padding: '1px 6px',
-                        borderRadius: '4px',
-                        background: s.active ? '#ECFDF5' : '#F1F5F9',
-                        color: s.active ? '#059669' : '#94A3B8',
+                        borderRadius: '8px',
+                        background: s.active ? 'color-mix(in srgb, var(--pos) 12%, var(--panel))' : 'var(--chip)',
+                        color: s.active ? 'var(--pos)' : 'var(--muted2)',
                         fontWeight: 600,
                       }}>
                         {s.active ? 'Активна' : 'Архив'}
@@ -715,9 +715,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
             data-testid="service-edit-form"
             style={{
               maxWidth: '640px',
-              background: '#FFFFFF',
-              borderRadius: '20px',
-              border: '1px solid #E2E8F0',
+              background: 'var(--panel)',
+              borderRadius: '22px',
+              border: '1px solid var(--line)',
               padding: '28px',
               display: 'flex',
               flexDirection: 'column',
@@ -726,10 +726,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
             }}
           >
             {/* Form Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #F1F5F9', paddingBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--chip)', paddingBottom: '16px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 700, color: '#0F172A' }}>Параметры услуги</h3>
-                <span style={{ fontSize: '12.5px', color: '#64748B' }}>Редактирование параметров стоимости, длительности и видимости</span>
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 700, color: 'var(--fg)' }}>Параметры услуги</h3>
+                <span style={{ fontSize: '12.5px', color: 'var(--muted)' }}>Редактирование параметров стоимости, длительности и видимости</span>
               </div>
               {userRole !== 'master' && (
                 <button
@@ -741,10 +741,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                     alignItems: 'center',
                     gap: '6px',
                     padding: '7px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid #FCA5A5',
-                    background: '#FEF2F2',
-                    color: '#991B1B',
+                    borderRadius: '12px',
+                    border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))',
+                    background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))',
+                    color: 'var(--neg)',
                     fontSize: '12.5px',
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -758,14 +758,14 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
 
             {formError && (
               <div style={{
-                background: '#FEF2F2',
-                border: '1px solid #FCA5A5',
-                borderRadius: '10px',
+                background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))',
+                border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))',
+                borderRadius: '14px',
                 padding: '10px 14px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                color: '#DC2626',
+                color: 'var(--neg)',
                 fontSize: '13px',
               }}>
                 <AlertCircle style={{ width: '16px', height: '16px', flexShrink: 0 }} />
@@ -775,8 +775,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
 
             {/* Service Name */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                Название услуги <span style={{ color: '#EF4444' }}>*</span>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
+                Название услуги <span style={{ color: 'var(--neg)' }}>*</span>
               </label>
               <input
                 type="text"
@@ -788,8 +788,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                 style={{
                   height: '42px',
                   padding: '0 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #CBD5E1',
+                  borderRadius: '14px',
+                  border: '1px solid var(--line)',
                   fontSize: '14px',
                   outline: 'none',
                 }}
@@ -798,7 +798,7 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
 
             {/* Category */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Категория услуги</label>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>Категория услуги</label>
               <select
                 data-testid="service-category-select"
                 value={formCatId}
@@ -806,11 +806,11 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                 style={{
                   height: '42px',
                   padding: '0 12px',
-                  borderRadius: '10px',
-                  border: '1px solid #CBD5E1',
+                  borderRadius: '14px',
+                  border: '1px solid var(--line)',
                   fontSize: '14px',
                   outline: 'none',
-                  background: '#FFFFFF',
+                  background: 'var(--panel)',
                 }}
               >
                 <option value="">Без категории</option>
@@ -825,10 +825,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               {/* Price with presets */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                    Базовая цена (₸) <span style={{ color: '#EF4444' }}>*</span>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
+                    Базовая цена (₸) <span style={{ color: 'var(--neg)' }}>*</span>
                   </label>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#2563EB' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--brand)' }}>
                     {formatTenge(parsedFormPrice)}
                   </span>
                 </div>
@@ -844,8 +844,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   style={{
                     height: '42px',
                     padding: '0 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '14px',
+                    border: '1px solid var(--line)',
                     fontSize: '15px',
                     fontWeight: 600,
                     outline: 'none',
@@ -861,10 +861,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                       onClick={() => setQuickPrice(p)}
                       style={{
                         padding: '3px 8px',
-                        borderRadius: '6px',
-                        border: parsedFormPrice === p ? '1px solid #2563EB' : '1px solid #E2E8F0',
-                        background: parsedFormPrice === p ? '#EFF6FF' : '#F8FAFC',
-                        color: parsedFormPrice === p ? '#1D4ED8' : '#475569',
+                        borderRadius: '10px',
+                        border: parsedFormPrice === p ? '1px solid var(--brand)' : '1px solid var(--line)',
+                        background: parsedFormPrice === p ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--canvas)',
+                        color: parsedFormPrice === p ? 'var(--brand)' : 'var(--muted)',
                         fontSize: '11px',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -878,10 +878,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                     onClick={() => addQuickPrice(500)}
                     style={{
                       padding: '3px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid #E2E8F0',
-                      background: '#F8FAFC',
-                      color: '#475569',
+                      borderRadius: '10px',
+                      border: '1px solid var(--line)',
+                      background: 'var(--canvas)',
+                      color: 'var(--muted)',
                       fontSize: '11px',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -894,10 +894,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                     onClick={() => addQuickPrice(1000)}
                     style={{
                       padding: '3px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid #E2E8F0',
-                      background: '#F8FAFC',
-                      color: '#475569',
+                      borderRadius: '10px',
+                      border: '1px solid var(--line)',
+                      background: 'var(--canvas)',
+                      color: 'var(--muted)',
                       fontSize: '11px',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -911,10 +911,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               {/* Duration with presets */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                    Длительность (мин) <span style={{ color: '#EF4444' }}>*</span>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
+                    Длительность (мин) <span style={{ color: 'var(--neg)' }}>*</span>
                   </label>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#2563EB' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--brand)' }}>
                     {formatDurationText(parsedFormDuration)}
                   </span>
                 </div>
@@ -931,8 +931,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   style={{
                     height: '42px',
                     padding: '0 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #CBD5E1',
+                    borderRadius: '14px',
+                    border: '1px solid var(--line)',
                     fontSize: '15px',
                     fontWeight: 600,
                     outline: 'none',
@@ -948,10 +948,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                       onClick={() => setQuickDuration(d)}
                       style={{
                         padding: '3px 8px',
-                        borderRadius: '6px',
-                        border: parsedFormDuration === d ? '1px solid #2563EB' : '1px solid #E2E8F0',
-                        background: parsedFormDuration === d ? '#EFF6FF' : '#F8FAFC',
-                        color: parsedFormDuration === d ? '#1D4ED8' : '#475569',
+                        borderRadius: '10px',
+                        border: parsedFormDuration === d ? '1px solid var(--brand)' : '1px solid var(--line)',
+                        background: parsedFormDuration === d ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--canvas)',
+                        color: parsedFormDuration === d ? 'var(--brand)' : 'var(--muted)',
                         fontSize: '11px',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -967,8 +967,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
             {/* Description */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Описание для клиента</label>
-                <span style={{ fontSize: '11px', color: '#94A3B8' }}>{formDesc.length} / 500 символов</span>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>Описание для клиента</label>
+                <span style={{ fontSize: '11px', color: 'var(--muted2)' }}>{formDesc.length} / 500 символов</span>
               </div>
               <textarea
                 data-testid="service-desc-input"
@@ -979,8 +979,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                 placeholder="Что входит в услугу (мытье головы, укладка, консультация стилиста)…"
                 style={{
                   padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #CBD5E1',
+                  borderRadius: '14px',
+                  border: '1px solid var(--line)',
                   fontSize: '13.5px',
                   outline: 'none',
                   fontFamily: 'inherit',
@@ -990,18 +990,18 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
             </div>
 
             {/* Toggles */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '10px', borderTop: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '10px', borderTop: '1px solid var(--chip)' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13.5px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   data-testid="service-active-toggle"
                   checked={formActive}
                   onChange={e => setFormActive(e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: '#2563EB' }}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--brand)' }}
                 />
                 <div>
-                  <span style={{ fontWeight: 600, color: '#1E293B' }}>Услуга активна в компании</span>
-                  <p style={{ margin: 0, fontSize: '11.5px', color: '#64748B' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--fg)' }}>Услуга активна в компании</span>
+                  <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--muted)' }}>
                     Сотрудники могут добавлять эту услугу при записи вручную через журнал
                   </p>
                 </div>
@@ -1013,11 +1013,11 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   data-testid="service-online-toggle"
                   checked={formOnline}
                   onChange={e => setFormOnline(e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: '#2563EB' }}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--brand)' }}
                 />
                 <div>
-                  <span style={{ fontWeight: 600, color: '#1E293B' }}>Отображать на сайте онлайн-записи</span>
-                  <p style={{ margin: 0, fontSize: '11.5px', color: '#64748B' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--fg)' }}>Отображать на сайте онлайн-записи</span>
+                  <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--muted)' }}>
                     Клиенты увидят услугу с ценой {formatTenge(parsedFormPrice)} при бронировании
                   </p>
                 </div>
@@ -1033,10 +1033,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                 style={{
                   marginTop: '10px',
                   height: '46px',
-                  borderRadius: '12px',
+                  borderRadius: '18px',
                   border: 'none',
-                  background: '#2563EB',
-                  color: '#FFFFFF',
+                  background: 'var(--brand)',
+                  color: 'var(--brand-fg)',
                   fontWeight: 700,
                   fontSize: '14px',
                   cursor: isSaving ? 'not-allowed' : 'pointer',
@@ -1049,9 +1049,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
             )}
           </form>
         ) : (
-          <div style={{ padding: '60px 20px', textAlign: 'center', color: '#64748B' }}>
-            <Sparkles style={{ width: '32px', height: '32px', color: '#94A3B8', margin: '0 auto 12px' }} />
-            <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 600, color: '#1E293B' }}>
+          <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--muted)' }}>
+            <Sparkles style={{ width: '32px', height: '32px', color: 'var(--muted2)', margin: '0 auto 12px' }} />
+            <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 600, color: 'var(--fg)' }}>
               Выберите услугу из списка
             </h4>
             <p style={{ margin: 0, fontSize: '13px' }}>
@@ -1066,10 +1066,10 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
           <form
             onSubmit={handleCreateCategory}
-            style={{ width: '100%', maxWidth: '380px', background: '#FFFFFF', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+            style={{ width: '100%', maxWidth: '380px', background: 'var(--panel)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
           >
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Новая категория услуг</h3>
-            <p style={{ margin: '-8px 0 0', fontSize: '13px', color: '#64748B' }}>Например: Стрижки, Борода, Комплексы, СПА</p>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--fg)' }}>Новая категория услуг</h3>
+            <p style={{ margin: '-8px 0 0', fontSize: '13px', color: 'var(--muted)' }}>Например: Стрижки, Борода, Комплексы, СПА</p>
             <input
               type="text"
               data-testid="new-category-name-input"
@@ -1078,20 +1078,20 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               placeholder="Название категории"
               required
               autoFocus
-              style={{ height: '42px', padding: '0 14px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', outline: 'none' }}
+              style={{ height: '42px', padding: '0 14px', borderRadius: '14px', border: '1px solid var(--line)', fontSize: '14px', outline: 'none' }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
               <button
                 type="button"
                 onClick={() => setShowCatModal(false)}
-                style={{ padding: '9px 16px', borderRadius: '10px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#475569', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '9px 16px', borderRadius: '14px', border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--muted)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
               >
                 Отмена
               </button>
               <button
                 type="submit"
                 data-testid="submit-create-category-btn"
-                style={{ padding: '9px 18px', borderRadius: '10px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                style={{ padding: '9px 18px', borderRadius: '14px', border: 'none', background: 'var(--brand)', color: 'var(--brand-fg)', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
               >
                 Создать
               </button>
@@ -1105,9 +1105,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
           <form
             onSubmit={handleUpdateCategory}
-            style={{ width: '100%', maxWidth: '380px', background: '#FFFFFF', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+            style={{ width: '100%', maxWidth: '380px', background: 'var(--panel)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
           >
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Редактирование категории</h3>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--fg)' }}>Редактирование категории</h3>
             <input
               type="text"
               value={editCatName}
@@ -1115,19 +1115,19 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               placeholder="Название категории"
               required
               autoFocus
-              style={{ height: '42px', padding: '0 14px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', outline: 'none' }}
+              style={{ height: '42px', padding: '0 14px', borderRadius: '14px', border: '1px solid var(--line)', fontSize: '14px', outline: 'none' }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
               <button
                 type="button"
                 onClick={() => { setShowEditCatModal(false); setEditingCat(null); }}
-                style={{ padding: '9px 16px', borderRadius: '10px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#475569', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '9px 16px', borderRadius: '14px', border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--muted)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
               >
                 Отмена
               </button>
               <button
                 type="submit"
-                style={{ padding: '9px 18px', borderRadius: '10px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                style={{ padding: '9px 18px', borderRadius: '14px', border: 'none', background: 'var(--brand)', color: 'var(--brand-fg)', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
               >
                 Сохранить
               </button>
@@ -1142,17 +1142,17 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
           <form
             onSubmit={handleCreateService}
             data-testid="create-service-form"
-            style={{ width: '100%', maxWidth: '460px', background: '#FFFFFF', borderRadius: '20px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 12px 30px rgba(0,0,0,0.12)' }}
+            style={{ width: '100%', maxWidth: '460px', background: 'var(--panel)', borderRadius: '22px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 12px 30px rgba(0,0,0,0.12)' }}
           >
-            <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 700, color: '#0F172A' }}>Добавление услуги</h3>
+            <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 700, color: 'var(--fg)' }}>Добавление услуги</h3>
 
             {createSvcError && (
               <div style={{
-                background: '#FEF2F2',
-                border: '1px solid #FCA5A5',
-                borderRadius: '8px',
+                background: 'color-mix(in srgb, var(--neg) 10%, var(--panel))',
+                border: '1px solid color-mix(in srgb, var(--neg) 40%, var(--panel))',
+                borderRadius: '12px',
                 padding: '8px 12px',
-                color: '#DC2626',
+                color: 'var(--neg)',
                 fontSize: '12.5px',
               }}>
                 {createSvcError}
@@ -1160,8 +1160,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                Название услуги <span style={{ color: '#EF4444' }}>*</span>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
+                Название услуги <span style={{ color: 'var(--neg)' }}>*</span>
               </label>
               <input
                 type="text"
@@ -1171,15 +1171,15 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                 placeholder="Стрижка бороды"
                 required
                 autoFocus
-                style={{ height: '40px', padding: '0 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', outline: 'none' }}
+                style={{ height: '40px', padding: '0 12px', borderRadius: '14px', border: '1px solid var(--line)', fontSize: '14px', outline: 'none' }}
               />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Цена (₸)</label>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563EB' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>Цена (₸)</label>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--brand)' }}>
                     {formatTenge(parseFloat(newSvcPrice) || 0)}
                   </span>
                 </div>
@@ -1191,7 +1191,7 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   required
                   min="0"
                   step="100"
-                  style={{ height: '40px', padding: '0 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', outline: 'none' }}
+                  style={{ height: '40px', padding: '0 12px', borderRadius: '14px', border: '1px solid var(--line)', fontSize: '14px', outline: 'none' }}
                 />
                 {/* 8000 KZT button */}
                 <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
@@ -1204,9 +1204,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                       style={{
                         padding: '2px 6px',
                         borderRadius: '5px',
-                        border: '1px solid #E2E8F0',
-                        background: newSvcPrice === String(p) ? '#EFF6FF' : '#F8FAFC',
-                        color: newSvcPrice === String(p) ? '#1D4ED8' : '#475569',
+                        border: '1px solid var(--line)',
+                        background: newSvcPrice === String(p) ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--canvas)',
+                        color: newSvcPrice === String(p) ? 'var(--brand)' : 'var(--muted)',
                         fontSize: '11px',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -1220,8 +1220,8 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Длительность</label>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563EB' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>Длительность</label>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--brand)' }}>
                     {formatDurationText(parseInt(newSvcDuration, 10) || 0)}
                   </span>
                 </div>
@@ -1234,7 +1234,7 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                   min="5"
                   max="720"
                   step="5"
-                  style={{ height: '40px', padding: '0 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', outline: 'none' }}
+                  style={{ height: '40px', padding: '0 12px', borderRadius: '14px', border: '1px solid var(--line)', fontSize: '14px', outline: 'none' }}
                 />
                 <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
                   {[30, 45, 60, 90].map(d => (
@@ -1246,9 +1246,9 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
                       style={{
                         padding: '2px 6px',
                         borderRadius: '5px',
-                        border: '1px solid #E2E8F0',
-                        background: newSvcDuration === String(d) ? '#EFF6FF' : '#F8FAFC',
-                        color: newSvcDuration === String(d) ? '#1D4ED8' : '#475569',
+                        border: '1px solid var(--line)',
+                        background: newSvcDuration === String(d) ? 'color-mix(in srgb, var(--brand) 10%, var(--panel))' : 'var(--canvas)',
+                        color: newSvcDuration === String(d) ? 'var(--brand)' : 'var(--muted)',
                         fontSize: '11px',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -1262,11 +1262,11 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Категория</label>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>Категория</label>
               <select
                 value={newSvcCatId}
                 onChange={e => setNewSvcCatId(e.target.value)}
-                style={{ height: '40px', padding: '0 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', outline: 'none', background: '#FFFFFF' }}
+                style={{ height: '40px', padding: '0 12px', borderRadius: '14px', border: '1px solid var(--line)', fontSize: '14px', outline: 'none', background: 'var(--panel)' }}
               >
                 {categories.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -1275,23 +1275,23 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Описание (необязательно)</label>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>Описание (необязательно)</label>
               <textarea
                 value={newSvcDesc}
                 onChange={e => setNewSvcDesc(e.target.value)}
                 rows={2}
                 placeholder="Что входит в услугу…"
-                style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', outline: 'none', fontFamily: 'inherit' }}
+                style={{ padding: '8px 12px', borderRadius: '14px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', fontFamily: 'inherit' }}
               />
             </div>
 
             <div style={{ display: 'flex', gap: '16px', paddingTop: '4px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={newSvcActive} onChange={e => setNewSvcActive(e.target.checked)} style={{ accentColor: '#2563EB' }} />
+                <input type="checkbox" checked={newSvcActive} onChange={e => setNewSvcActive(e.target.checked)} style={{ accentColor: 'var(--brand)' }} />
                 <span>Активна</span>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={newSvcOnline} onChange={e => setNewSvcOnline(e.target.checked)} style={{ accentColor: '#2563EB' }} />
+                <input type="checkbox" checked={newSvcOnline} onChange={e => setNewSvcOnline(e.target.checked)} style={{ accentColor: 'var(--brand)' }} />
                 <span>Онлайн-запись</span>
               </label>
             </div>
@@ -1300,14 +1300,14 @@ export const ServicesModule: React.FC<ServicesModuleProps> = ({
               <button
                 type="button"
                 onClick={() => setShowCreateSvcModal(false)}
-                style={{ padding: '9px 16px', borderRadius: '10px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#475569', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '9px 16px', borderRadius: '14px', border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--muted)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
               >
                 Отмена
               </button>
               <button
                 type="submit"
                 data-testid="submit-create-service-btn"
-                style={{ padding: '9px 18px', borderRadius: '10px', border: 'none', background: '#2563EB', color: '#FFFFFF', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                style={{ padding: '9px 18px', borderRadius: '14px', border: 'none', background: 'var(--brand)', color: 'var(--brand-fg)', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
               >
                 Добавить
               </button>
