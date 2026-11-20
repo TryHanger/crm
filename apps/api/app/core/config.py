@@ -215,6 +215,9 @@ class Settings(BaseSettings):
     PLATFORM_DOMAIN: str = Field(default=os.getenv("PLATFORM_ROOT_DOMAIN") or os.getenv("PLATFORM_DOMAIN") or "console.example.kz")
 
     CRM_DOMAIN: str = Field(default=os.getenv("CRM_DOMAIN", "app.example.kz"))
+    # base URL of the CRM in links sent to people (invites). Empty = https://<CRM_DOMAIN>.
+    # The local stand sets http://localhost:3001 (scripts/dev_stack.py).
+    CRM_PUBLIC_URL: str = Field(default=os.getenv("CRM_PUBLIC_URL", "").strip())
 
     BOOKING_DOMAIN_SUFFIX: str = Field(default=os.getenv("BOOKING_DOMAIN_SUFFIX", ".book.example.kz"))
 
@@ -346,6 +349,9 @@ class Settings(BaseSettings):
                     or len(self.ADMIN_DB_PASSWORD) < 16
                 ):
                     raise RuntimeError(f"FATAL: Default or weak admin database password configured in {self.ENVIRONMENT} environment!")
+
+            if self.CRM_PUBLIC_URL and not self.CRM_PUBLIC_URL.startswith("https://"):
+                raise RuntimeError(f"FATAL: CRM_PUBLIC_URL must use https:// in {self.ENVIRONMENT} environment (invite links carry one-time tokens)")
 
             if self.ENVIRONMENT == "production" and self.SMTP_HOST and self.SMTP_SECURITY == "none":
                 raise RuntimeError("FATAL: SMTP_SECURITY=none (plain SMTP) is forbidden in production: use starttls or ssl")

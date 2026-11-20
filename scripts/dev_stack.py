@@ -53,6 +53,8 @@ def build_env(db_port: int) -> dict:
         "SMTP_SECURITY": "none",
         "SMTP_FROM": "noreply@crm.localhost",
         "PUBLIC_BOOKING_URL_TEMPLATE": "http://{slug}.localhost:3000",
+        # invite links in emails and in the console open the local CRM, not app.example.kz
+        "CRM_PUBLIC_URL": "http://localhost:3001",
     }
     for k, v in defaults.items():
         env.setdefault(k, v)

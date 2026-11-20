@@ -76,8 +76,13 @@ def new_token() -> tuple[str, str]:
     return raw, hash_token(raw)
 
 
+def crm_base_url() -> str:
+    """Где сотрудник открывает CRM: CRM_PUBLIC_URL, иначе https://<CRM_DOMAIN>."""
+    return (settings.CRM_PUBLIC_URL or f"https://{settings.CRM_DOMAIN}").rstrip("/")
+
+
 def invite_url(raw_token: str) -> str:
-    return f"https://{settings.CRM_DOMAIN}/accept-invite?token={raw_token}"
+    return f"{crm_base_url()}/accept-invite?token={raw_token}"
 
 
 def reveal_link_in_response(delivery_status: str, manual_requested: bool = False) -> bool:

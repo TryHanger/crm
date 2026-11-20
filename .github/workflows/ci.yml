@@ -187,6 +187,7 @@ jobs:
           SMTP_SECURITY: none
           SMTP_FROM: noreply@crm.localhost
           PUBLIC_BOOKING_URL_TEMPLATE: http://{slug}.localhost:3000
+          CRM_PUBLIC_URL: http://localhost:3001
         run: |
           sudo sed -i 's/127.0.0.1 localhost/127.0.0.1 localhost barberhouse.localhost moderncut.localhost/' /etc/hosts
           python -c "from apps.api.app.infrastructure.db.init_db import init_database, seed_database; init_database(); seed_database()"

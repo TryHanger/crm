@@ -1,6 +1,7 @@
 import uuid
 import datetime
 import zoneinfo
+import re
 import logging
 
 logger = logging.getLogger("saas_crm")
@@ -22,6 +23,7 @@ from apps.api.app.infrastructure.db.models import (BranchRoleGrant, Notification
                                                    OutboxEvent, TenantSettings)
 from apps.api.app.infrastructure.db.session import set_tenant_context
 from apps.api.app.modules.customers import identity as customer_identity
+from apps.api.app.modules.onboarding import service as onboarding_service
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy import select, and_, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -173,6 +175,21 @@ async def get_crm_dashboard(
 # BRANCHES
 # =========================================================================
 
+def _branch_phone(raw: Optional[str]) -> Optional[str]:
+    """Телефон филиала в E.164 или None.
+
+    Пусто или только префикс маски формы («+7 (701)», не больше 4 цифр) — телефон не указан.
+    Начатый, но неполный или неверный номер — 422 PHONE_INVALID, а не мусор в базе.
+    """
+    value = (raw or "").strip()
+    if len(re.sub(r"\D", "", value)) <= 4:
+        return None
+    try:
+        return customer_identity.normalize_phone(value)
+    except customer_identity.PhoneError as e:
+        raise HTTPException(status_code=422, detail={"code": "PHONE_INVALID", "message": f"Телефон филиала: {e}"})
+
+
 @router.get("/branches", response_model=List[BranchResponse])
 async def list_branches(
     crm_user: AuthenticatedTenantUser = Depends(get_crm_tenant_user),
@@ -190,6 +207,7 @@ async def create_branch(
     db: AsyncSession = Depends(get_db)
 ):
     await check_crm_write_permitted(crm_user.tenant_id, db)
+    phone = _branch_phone(data.get("phone") or data.get("phone_number"))   # bad input first, then plan limits
     stmt_cnt = select(func.count(Branch.id)).where(Branch.tenant_id == crm_user.tenant_id, Branch.status == "active")
     cur_cnt = (await db.execute(stmt_cnt)).scalar() or 0
     await check_tenant_entitlement_limit(crm_user.tenant_id, "max_branches", cur_cnt, db)
@@ -200,7 +218,7 @@ async def create_branch(
         city=data.get("city", "Астана"),
         address=data["address"],
         timezone_iana=ownership.require_timezone(data.get("timezone_iana") or data.get("timezone") or "Asia/Almaty"),
-        phone=data.get("phone") or data.get("phone_number")
+        phone=phone
     )
     db.add(branch)
     await db.flush()
@@ -2983,9 +3001,9 @@ async def update_branch(
     elif getattr(req, "timezone", None) is not None:
         branch.timezone_iana = ownership.require_timezone(req.timezone)
     if req.phone is not None:
-        branch.phone = req.phone
+        branch.phone = _branch_phone(req.phone)
     elif getattr(req, "phone_number", None) is not None:
-        branch.phone = req.phone_number
+        branch.phone = _branch_phone(req.phone_number)
     if req.weekly_hours is not None:
         branch.weekly_hours = req.weekly_hours
 
@@ -3271,5 +3289,5 @@ async def create_crm_invite(
         "role": inv.role,
         "token": raw_token,
         "invite_token": raw_token,
-        "invite_url": f"/accept-invite?token={raw_token}"
+        "invite_url": onboarding_service.invite_url(raw_token)   # full link the owner can copy and send
     }
