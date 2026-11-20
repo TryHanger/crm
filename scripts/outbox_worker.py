@@ -18,8 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from apps.api.app.modules.notifications import worker  # noqa: E402
 
 
+MAX_BACKOFF = 60.0
+
+
 async def loop(interval: float, once: bool, batch: int) -> int:
-    reminders_every, tick = max(1, int(60 / max(interval, 1))), 0
+    """Работает, пока его не остановят. Временная недоступность БД (сон машины, рестарт Postgres,
+    сеть) не роняет процесс: пишем тип ошибки в лог и повторяем с растущей паузой до минуты."""
+    reminders_every, tick, delay = max(1, int(60 / max(interval, 1))), 0, max(interval, 1.0)
     while True:
         if tick % reminders_every == 0:
             try:
@@ -28,7 +33,16 @@ async def loop(interval: float, once: bool, batch: int) -> int:
                     logging.info("reminders queued: %s", n)
             except Exception as e:  # the queue must keep moving even if reminder scan fails
                 logging.error("reminder scan failed: %s", type(e).__name__)
-        stats = await worker.run_once(limit=batch)
+        try:
+            stats = await worker.run_once(limit=batch)
+        except Exception as e:  # noqa: BLE001 — сообщение может содержать адрес БД: в лог только тип
+            logging.error("outbox pass failed (%s), retry in %.0fs", type(e).__name__, delay)
+            if once:
+                return 1
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, MAX_BACKOFF)
+            continue
+        delay = max(interval, 1.0)
         if stats.claimed:
             logging.info("outbox: claimed %s, sent %s, skipped %s, retried %s, failed %s, deferred %s",
                          stats.claimed, stats.sent, stats.skipped, stats.retried, stats.failed, stats.deferred)

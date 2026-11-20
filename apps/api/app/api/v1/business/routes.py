@@ -2715,6 +2715,16 @@ async def get_staff_schedule(
     return results
 
 
+def _local_time(value: Any, field: str) -> datetime.time:
+    """«HH:MM» → time; всё остальное — 422, а не 500."""
+    if isinstance(value, datetime.time):
+        return value
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})(?::\d{2})?", str(value or "").strip())
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        raise HTTPException(status_code=422, detail=f"{field}: время в формате ЧЧ:ММ")
+    return datetime.time(int(m.group(1)), int(m.group(2)))
+
+
 @router.put("/staff/{staff_id}/schedule")
 async def update_staff_schedule(
     staff_id: uuid.UUID,
@@ -2762,14 +2772,11 @@ async def update_staff_schedule(
         l_end = item.local_end if hasattr(item, "local_end") else item.get("local_end", "20:00")
         raw_breaks = item.breaks if hasattr(item, "breaks") else item.get("breaks", [])
 
-        if not (1 <= w_iso <= 7):
+        if isinstance(w_iso, bool) or not isinstance(w_iso, int) or not (1 <= w_iso <= 7):
             raise HTTPException(status_code=422, detail="weekday_iso must be between 1 and 7")
         if not is_wk:
             continue
-        st_parts = [int(p) for p in l_start.split(":")]
-        end_parts = [int(p) for p in l_end.split(":")]
-        start_time = datetime.time(st_parts[0], st_parts[1])
-        end_time = datetime.time(end_parts[0], end_parts[1])
+        start_time, end_time = _local_time(l_start, "local_start"), _local_time(l_end, "local_end")
         if start_time >= end_time:
             raise HTTPException(status_code=422, detail="Shift start must be before end time")
 
@@ -2788,10 +2795,7 @@ async def update_staff_schedule(
         for b_item in (raw_breaks or []):
             b_l_start = b_item.local_start if hasattr(b_item, "local_start") else b_item.get("local_start", "14:00")
             b_l_end = b_item.local_end if hasattr(b_item, "local_end") else b_item.get("local_end", "15:00")
-            b_st = [int(p) for p in b_l_start.split(":")]
-            b_end = [int(p) for p in b_l_end.split(":")]
-            brk_start = datetime.time(b_st[0], b_st[1])
-            brk_end = datetime.time(b_end[0], b_end[1])
+            brk_start, brk_end = _local_time(b_l_start, "break.local_start"), _local_time(b_l_end, "break.local_end")
             if brk_start >= brk_end or brk_start < start_time or brk_end > end_time:
                 raise HTTPException(status_code=422, detail="Break must be within shift hours")
             s_break = ShiftBreak(
