@@ -180,7 +180,14 @@ export const App: React.FC = () => {
           }
         }
       } catch (err: any) {
-        if (err instanceof ApiError && err.status === 404) {
+        const errorCode =
+          err?.code ||
+          err?.details?.code ||
+          err?.details?.detail?.code;
+
+        if (errorCode === 'SITE_NOT_PUBLISHED') {
+          setTenantSuspended(true);
+        } else if (err instanceof ApiError && err.status === 404) {
           setDomainNotFound(true);
         } else if (err instanceof ApiError && err.status === 403) {
           setTenantSuspended(true);
@@ -231,20 +238,6 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Determine services to search with:
-    // In service-first or master-first, require selectedServices.
-    // In time-first, if selectedServices is empty, use branch's first service to get real working slots!
-    const serviceIds =
-      selectedServices.length > 0
-        ? selectedServices.map(s => s.id)
-        : services.length > 0
-        ? [services[0].id]
-        : [];
-
-    if (serviceIds.length === 0) {
-      return;
-    }
-
     const fetchSlots = async () => {
       try {
         setIsLoadingSlots(true);
@@ -253,18 +246,46 @@ export const App: React.FC = () => {
         const staffId =
           typeof selectedStaff === 'object' && selectedStaff !== null ? selectedStaff.id : undefined;
 
-        const res = await api.searchAvailability({
-          branch_id: selectedBranch.id,
-          service_ids: serviceIds,
-          from_date: selectedDate,
-          to_date: selectedDate,
-          staff_id: staffId,
-          staff_mode: selectedStaff === 'any' || (flow === 'time-first' && !selectedStaff) ? 'any' : undefined,
-        });
+        let returnedSlots: SlotResponse[] = [];
 
-        if (isCancelled) return;
+        if (flow === 'time-first' && selectedServices.length === 0) {
+          // M06: Authoritative time-first endpoint (does not hack around services[0])
+          const tfRes = await api.searchTimeFirst({
+            branch_id: selectedBranch.id,
+            from_date: selectedDate,
+            to_date: selectedDate,
+          });
+          if (isCancelled) return;
+          returnedSlots = (tfRes.slots || []).map((t) => ({
+            quote_id: '',
+            starts_at_utc: t.starts_at_utc,
+            ends_at_utc: t.starts_at_utc,
+            staff_id: staffId || '',
+            staff_name: '',
+            staff_role: '',
+            price_minor: 0,
+            currency: 'KZT',
+            duration_minutes: 0,
+            quote_expires_at: '',
+          }));
+        } else {
+          const serviceIds = selectedServices.map(s => s.id);
+          if (serviceIds.length === 0) {
+            setAvailableSlots([]);
+            return;
+          }
+          const res = await api.searchAvailability({
+            branch_id: selectedBranch.id,
+            service_ids: serviceIds,
+            from_date: selectedDate,
+            to_date: selectedDate,
+            staff_id: staffId,
+            staff_mode: selectedStaff === 'any' || (flow === 'time-first' && !selectedStaff) ? 'any' : undefined,
+          });
+          if (isCancelled) return;
+          returnedSlots = res.slots || [];
+        }
 
-        const returnedSlots = res.slots || [];
         setAvailableSlots(returnedSlots);
 
         // Keep or auto-match selected slot
@@ -553,7 +574,8 @@ export const App: React.FC = () => {
 
         if (isQuoteMismatch) {
           const detailObj = (err.details && typeof err.details === 'object' && 'detail' in err.details) ? (err.details as any).detail : err.details;
-          const newPrice = detailObj?.new_price_minor ?? detailObj?.expected_price_minor ?? (selectedSlot.price_minor + 150000);
+          const matchingFresh = altSlots.find(s => s.starts_at_utc === selectedSlot.starts_at_utc);
+          const newPrice = detailObj?.new_price_minor ?? detailObj?.expected_price_minor ?? matchingFresh?.price_minor ?? selectedSlot.price_minor;
           const oldPrice = detailObj?.old_price_minor ?? selectedSlot.price_minor;
           setError({
             title: 'Условия бронирования изменились',
@@ -586,8 +608,26 @@ export const App: React.FC = () => {
     setError(null);
   };
 
-  const handleAcceptPriceChange = () => {
-    if (error?.priceChange && selectedSlot) {
+  const handleAcceptPriceChange = async () => {
+    if (error?.priceChange && selectedSlot && selectedBranch) {
+      try {
+        const staffId = typeof selectedStaff === 'object' && selectedStaff !== null ? selectedStaff.id : undefined;
+        const fresh = await api.searchAvailability({
+          branch_id: selectedBranch.id,
+          service_ids: selectedServices.map(s => s.id),
+          from_date: selectedDate,
+          to_date: selectedDate,
+          staff_id: staffId,
+          at_utc: selectedSlot.starts_at_utc,
+        });
+        const exact = (fresh.slots || []).find(s => s.starts_at_utc === selectedSlot.starts_at_utc) || fresh.slots?.[0];
+        if (exact) {
+          setSelectedSlot(exact);
+          setBookingIntentKey(null);
+          setError(null);
+          return;
+        }
+      } catch (_) {}
       setSelectedSlot({
         ...selectedSlot,
         price_minor: error.priceChange.newPriceMinor,
@@ -629,7 +669,7 @@ export const App: React.FC = () => {
 
   if (domainNotFound) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+      <div data-testid="booking-domain-not-found" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
         <div style={{ maxWidth: '480px', textAlign: 'center', background: '#FFFFFF', padding: '36px', borderRadius: '20px', border: '1px solid #E2E8F0' }}>
           <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 10px' }}>Компания не найдена</h1>
           <p style={{ color: '#64748B', margin: 0 }}>
@@ -642,7 +682,7 @@ export const App: React.FC = () => {
 
   if (tenantSuspended) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+      <div data-testid="booking-unpublished-view" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
         <div style={{ maxWidth: '520px', textAlign: 'center', background: '#FFFFFF', padding: '36px', borderRadius: '20px', border: '1px solid #FCA5A5' }}>
           <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: '#FEF2F2', color: '#B91C1C', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -655,7 +695,7 @@ export const App: React.FC = () => {
             Онлайн-запись временно недоступна
           </h1>
           <p style={{ color: '#64748B', margin: 0, fontSize: '15px', lineHeight: 1.5 }}>
-            Подписка компании приостановлена. Для записи, пожалуйста, свяжитесь с филиалом напрямую по телефону.
+            Онлайн-запись для этой компании временно приостановлена. Для записи, пожалуйста, свяжитесь с филиалом напрямую по телефону.
           </p>
         </div>
       </div>

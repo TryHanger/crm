@@ -19,7 +19,7 @@ export const App: React.FC = () => {
 
   // Feature flag: Onboarding checklist (M02 requirement)
   const [featureOnboardingEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('feature_flag_onboarding') === 'true';
+    return localStorage.getItem('feature_flag_onboarding') !== 'false';
   });
 
   // Standalone Preview Mode ("Экран готовится отдельно")
@@ -49,13 +49,14 @@ export const App: React.FC = () => {
 
   // Active Navigation Section
   const [currentSection, setCurrentSection] = useState<CrmNavigationSection>(() => {
+    const validSections = ['calendar', 'customers', 'staff', 'services', 'online-booking', 'cash', 'reports', 'settings', 'onboarding'];
     const hash = window.location.hash.replace('#', '') as CrmNavigationSection;
-    if (['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings', 'onboarding'].includes(hash)) {
+    if (validSections.includes(hash)) {
       return hash;
     }
     const params = new URLSearchParams(window.location.search);
     const sec = params.get('section') as CrmNavigationSection;
-    if (['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings', 'onboarding'].includes(sec)) {
+    if (validSections.includes(sec)) {
       return sec;
     }
     return 'calendar';
@@ -110,7 +111,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const onHashChange = () => {
       const rawHash = window.location.hash.replace('#', '');
-      const validSections: string[] = ['calendar', 'customers', 'staff', 'services', 'online-booking', 'reports', 'settings', 'onboarding'];
+      const validSections: string[] = ['calendar', 'customers', 'staff', 'services', 'online-booking', 'cash', 'reports', 'settings', 'onboarding'];
       if (rawHash === 'preview-onboarding') {
         setIsPreviewMode(true);
       } else if (validSections.includes(rawHash)) {

@@ -1,6 +1,13 @@
 import { test, expect } from '@playwright/test';
+import { execSync } from 'child_process';
 
 test.describe('Sprint M09 — Жизненный цикл визита, причины отмены и история событий', () => {
+
+  test.beforeAll(() => {
+    try {
+      execSync('python scripts/clean_test_bookings.py', { stdio: 'inherit' });
+    } catch (_) {}
+  });
 
   test.beforeEach(async ({ page }) => {
     // Open Business CRM and login as owner
@@ -36,7 +43,7 @@ test.describe('Sprint M09 — Жизненный цикл визита, прич
 
     const bookingTimeInput = page.locator('[data-testid="booking-time-input"]');
     if (await bookingTimeInput.isVisible().catch(() => false)) {
-      await bookingTimeInput.fill('17:00');
+      await bookingTimeInput.fill('10:00');
     }
 
     const svcCheckbox = page.locator('input[type="checkbox"]').first();

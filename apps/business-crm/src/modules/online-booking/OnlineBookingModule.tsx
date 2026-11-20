@@ -148,12 +148,32 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
   const handleCopyUrl = async () => {
     if (!publicUrl) return;
     try {
-      await navigator.clipboard.writeText(publicUrl);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(publicUrl);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
       setCopied(true);
       onShowToast('Ссылка скопирована в буфер обмена');
       setTimeout(() => setCopied(false), 2500);
     } catch (err) {
-      onShowToast('Не удалось скопировать ссылку');
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = publicUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+        setCopied(true);
+        onShowToast('Ссылка скопирована в буфер обмена');
+        setTimeout(() => setCopied(false), 2500);
+      } catch (fallbackErr) {
+        onShowToast('Не удалось скопировать ссылку');
+      }
     }
   };
 
@@ -566,6 +586,7 @@ export const OnlineBookingModule: React.FC<OnlineBookingModuleProps> = ({
                 {userRole !== 'master' && (
                   <button
                     type="button"
+                    data-testid="publication-toggle-btn"
                     onClick={handleTogglePublication}
                     disabled={isSaving}
                     style={{

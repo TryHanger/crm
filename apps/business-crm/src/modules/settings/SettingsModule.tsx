@@ -122,6 +122,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   };
   const [branches, setBranches] = useState<BranchResponse[]>([]);
   const [users, setUsers] = useState<MembershipResponse[]>([]);
+  const [staffProfiles, setStaffProfiles] = useState<any[]>([]);
+  const [notifSettings, setNotifSettings] = useState<any | null>(null);
+  const [notifDeliveries, setNotifDeliveries] = useState<any[]>([]);
+  const [notifSaving, setNotifSaving] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,6 +133,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const [showInviteModal, setShowInviteModal] = useState<boolean>(false);
   const [inviteEmail, setInviteEmail] = useState<string>('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'master'>('master');
+  const [inviteStaffId, setInviteStaffId] = useState<string>('');
+  const [inviteBranchIds, setInviteBranchIds] = useState<string[]>([]);
   const [inviteResult, setInviteResult] = useState<{ invite_url?: string; invite_token?: string } | null>(null);
   const [inviteLoading, setInviteLoading] = useState<boolean>(false);
   const [inviteCopied, setInviteCopied] = useState<boolean>(false);
@@ -154,12 +160,22 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
       setLoading(true);
       setError(null);
       try {
-        const [branchesData, usersData] = await Promise.all([
+        const [branchesData, usersData, staffData] = await Promise.all([
           api.getBranches(token, tenantId),
           api.getUsers(token, tenantId),
+          api.getStaff({}, token, tenantId).catch(() => []),
         ]);
         setBranches(branchesData);
         setUsers(usersData);
+        setStaffProfiles(Array.isArray(staffData) ? staffData : []);
+        if (userRole === 'owner' || userRole === 'admin') {
+          const [ns, nd] = await Promise.all([
+            api.getNotificationSettings(token, tenantId).catch(() => null),
+            api.getNotificationDeliveries(token, tenantId, 30).catch(() => []),
+          ]);
+          if (ns) setNotifSettings(ns);
+          if (Array.isArray(nd)) setNotifDeliveries(nd);
+        }
       } catch (err: any) {
         setError(err?.message || 'Не удалось загрузить настройки');
       } finally {
@@ -167,7 +183,20 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
       }
     };
     loadData();
-  }, [token, tenantId, api]);
+  }, [token, tenantId, api, userRole]);
+
+  const handleToggleEmailNotifications = async (enabled: boolean) => {
+    setNotifSaving(true);
+    try {
+      await api.updateNotificationSettings({ email_enabled: enabled }, token, tenantId);
+      setNotifSettings((prev: any) => ({ ...(prev || {}), email_enabled: enabled }));
+      if (onShowToast) onShowToast(enabled ? 'Email-уведомления включены' : 'Email-уведомления приостановлены');
+    } catch (err: any) {
+      if (onShowToast) onShowToast(err?.message || 'Не удалось обновить настройки уведомлений');
+    } finally {
+      setNotifSaving(false);
+    }
+  };
 
   const handleCreateInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +208,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         {
           email: inviteEmail,
           role: inviteRole,
+          ...(inviteRole === 'master' && inviteStaffId ? { staff_id: inviteStaffId } : {}),
+          ...(inviteRole === 'admin' && inviteBranchIds.length > 0 ? { branch_ids: inviteBranchIds } : {}),
         },
         token,
         tenantId
@@ -555,7 +586,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 Разграничение доступа для владельцев, управляющих и специалистов
               </div>
             </div>
-            {['owner', 'admin'].includes(userRole) && (
+            {userRole === 'owner' && (
               <button
                 type="button"
                 data-testid="invite-staff-btn"
@@ -563,6 +594,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   setShowInviteModal(true);
                   setInviteResult(null);
                   setInviteEmail('');
+                  setInviteStaffId('');
+                  setInviteBranchIds(branches.map(b => b.id));
                 }}
                 style={{
                   display: 'flex',
@@ -993,14 +1026,36 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#16A34A' }}></span>
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: notifSettings?.email_enabled === false ? '#94A3B8' : '#16A34A' }}></span>
                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#166534' }}>
-                  Транзакционный Email Шлюз: Активен (Transactional Outbox)
+                  Транзакционный Email Шлюз: {notifSettings?.email_enabled === false ? 'Приостановлен' : 'Активен (Transactional Outbox)'}
                 </span>
               </div>
-              <span style={{ fontSize: '12px', background: '#DCFCE7', color: '#15803D', padding: '3px 10px', borderRadius: '6px', fontWeight: 600 }}>
-                SMTP / Outbox Worker Healthy
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '12px', background: '#DCFCE7', color: '#15803D', padding: '3px 10px', borderRadius: '6px', fontWeight: 600 }}>
+                  Лимит: {notifSettings?.daily_limit ?? 200}/день · Отправок: {notifDeliveries.length}
+                </span>
+                {userRole === 'owner' && (
+                  <button
+                    type="button"
+                    data-testid="toggle-email-notifications-btn"
+                    disabled={notifSaving}
+                    onClick={() => handleToggleEmailNotifications(notifSettings?.email_enabled === false)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #86EFAC',
+                      background: '#FFFFFF',
+                      color: '#166534',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {notifSettings?.email_enabled === false ? 'Включить' : 'Пауза'}
+                  </button>
+                )}
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginTop: '4px' }}>
@@ -1442,7 +1497,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   <select
                     data-testid="invite-role-select"
                     value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value as any)}
+                    onChange={(e) => setInviteRole(e.target.value as 'admin' | 'master')}
                     style={{
                       height: '42px',
                       padding: '0 12px',
@@ -1455,11 +1510,60 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   >
                     <option value="master">Мастер (доступ только к графику и клиентам, касса скрыта)</option>
                     <option value="admin">Управляющий (полное управление филиалом и расписанием)</option>
-                    {userRole === 'owner' && (
-                      <option value="owner">Владелец / Совладелец (полный доступ ко всем филиалам и тарифам)</option>
-                    )}
                   </select>
                 </div>
+
+                {inviteRole === 'master' && staffProfiles.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                      Привязать к профилю мастера (для доступа к своему графику)
+                    </label>
+                    <select
+                      data-testid="invite-staff-profile-select"
+                      value={inviteStaffId}
+                      onChange={(e) => setInviteStaffId(e.target.value)}
+                      style={{
+                        height: '40px',
+                        padding: '0 12px',
+                        borderRadius: '10px',
+                        border: '1px solid #CBD5E1',
+                        fontSize: '13px',
+                        background: '#FFFFFF',
+                      }}
+                    >
+                      <option value="">— Привязать позже —</option>
+                      {staffProfiles.map((st: any) => (
+                        <option key={st.id} value={st.id}>{st.display_name} ({st.role_title || 'Мастер'})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {inviteRole === 'admin' && branches.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                      Доступные филиалы управляющего
+                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                      {branches.map(b => (
+                        <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#334155', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={inviteBranchIds.includes(b.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setInviteBranchIds(prev => [...prev, b.id]);
+                              } else {
+                                setInviteBranchIds(prev => prev.filter(id => id !== b.id));
+                              }
+                            }}
+                          />
+                          <span>{b.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                   <button

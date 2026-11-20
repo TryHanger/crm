@@ -144,7 +144,8 @@ async def test_crm_calendar_and_master_role_isolation():
         # Another person with the SAME phone is NOT merged: new client + hint (M10)
         cust2 = await client.post("/api/v1/business/customers", json={
             "full_name": "Тот же номер",
-            "phone_e164": uniq_phone
+            "phone_e164": uniq_phone,
+            "confirm_shared_phone": True
         }, headers=owner_headers)
         assert cust2.status_code in (200, 201)
         assert cust2.json()["duplicate_detected"] is False

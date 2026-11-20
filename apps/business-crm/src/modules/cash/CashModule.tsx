@@ -25,6 +25,7 @@ export const CashModule: React.FC<CashModuleProps> = ({
 }) => {
   const [shiftSummary, setShiftSummary] = useState<CashShiftSummary | null>(null);
   const [shiftsHistory, setShiftsHistory] = useState<CashShift[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Modals
@@ -39,6 +40,7 @@ export const CashModule: React.FC<CashModuleProps> = ({
   const [isClosing, setIsClosing] = useState(false);
 
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [advanceCustomerId, setAdvanceCustomerId] = useState('');
   const [advanceCustomerName, setAdvanceCustomerName] = useState('');
   const [advanceAmountStr, setAdvanceAmountStr] = useState('2000');
   const [advanceMethod, setAdvanceMethod] = useState<PaymentMethod>('cash');
@@ -48,15 +50,17 @@ export const CashModule: React.FC<CashModuleProps> = ({
   const isMaster = userRole === 'master';
 
   const loadData = React.useCallback(async () => {
-    if (!token || !tenantId) return;
+    if (!token || !tenantId || !branchId) return;
     try {
       setIsLoading(true);
-      const [curr, history] = await Promise.all([
+      const [curr, history, custs] = await Promise.all([
         api.getCurrentCashShift(branchId, token, tenantId),
         api.getCashShifts(branchId, token, tenantId),
+        api.getCustomers({}, token, tenantId).catch(() => []),
       ]);
       setShiftSummary(curr);
       setShiftsHistory(history || []);
+      setCustomers(Array.isArray(custs) ? custs : []);
       if (curr) {
         setActualCashStr((curr.expected_cash_balance_minor / 100).toString());
       }
@@ -81,9 +85,17 @@ export const CashModule: React.FC<CashModuleProps> = ({
     }
     try {
       setIsOpening(true);
+      let effectiveBranchId = branchId;
+      if (!effectiveBranchId) {
+        const bList = await api.getBranches(token, tenantId);
+        effectiveBranchId = bList?.[0]?.id || '';
+      }
+      if (!effectiveBranchId) {
+        throw new Error('Филиал не выбран');
+      }
       await api.openCashShift(
         {
-          branch_id: branchId,
+          branch_id: effectiveBranchId,
           opened_by: userRole === 'owner' ? 'Владелец' : 'Администратор',
           opening_balance_minor: Math.round(balance * 100),
           comment: openComment.trim() || undefined,
@@ -134,7 +146,7 @@ export const CashModule: React.FC<CashModuleProps> = ({
     }
   };
 
-  // Handle Register Advance
+  // Handle Register Advance (real M13 POST /customers/{id}/advances)
   const handleAdvanceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(advanceAmountStr);
@@ -142,22 +154,49 @@ export const CashModule: React.FC<CashModuleProps> = ({
       onShowToast('Введите корректную сумму аванса');
       return;
     }
-    if (!advanceCustomerName.trim()) {
-      onShowToast('Укажите имя клиента для внесения аванса');
+    if (!advanceCustomerId && !advanceCustomerName.trim()) {
+      onShowToast('Выберите или укажите клиента для внесения аванса');
       return;
     }
     try {
       setIsSubmittingAdvance(true);
+      let targetCustomerId = advanceCustomerId;
+      if (!targetCustomerId) {
+        const raw = advanceCustomerName.trim();
+        const phoneMatch = raw.match(/\+?\d[\d\s\-()]{8,}/);
+        const extractedPhone = phoneMatch ? phoneMatch[0].replace(/[^\d+]/g, '') : '';
+        const cleanName = raw.replace(/\(?\+?\d[\d\s\-()]{8,}\)?/, '').trim() || raw;
+        const found = customers.find(
+          (c: any) =>
+            (extractedPhone && c.phone_e164 && c.phone_e164.replace(/\D/g, '').endsWith(extractedPhone.replace(/\D/g, '').slice(-10))) ||
+            (c.full_name && c.full_name.toLowerCase() === cleanName.toLowerCase())
+        );
+        if (found) {
+          targetCustomerId = found.id;
+        } else {
+          const created: any = await api.createCustomer(
+            {
+              full_name: cleanName,
+              phone_e164: extractedPhone || `+7701${Math.floor(1000000 + Math.random() * 8999999)}`,
+              confirm_shared_phone: true,
+            } as any,
+            token,
+            tenantId
+          );
+          targetCustomerId = created.id || created.existing_customer_id;
+        }
+      }
+      if (!targetCustomerId) {
+        throw new Error('Не удалось определить клиента для аванса');
+      }
       const idempotencyKey = `adv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      await api.createPayment(
+      await api.createCustomerAdvance(
+        targetCustomerId,
         {
-          booking_id: 'advance_' + Math.random().toString(36).substring(2, 8),
+          branch_id: branchId,
           amount_minor: Math.round(amount * 100),
-          payment_type: 'advance',
-          payment_method: advanceMethod,
-          comment: `Аванс: ${advanceCustomerName.trim()}${advanceComment ? ` (${advanceComment.trim()})` : ''}`,
-          cashier_name: userRole === 'owner' ? 'Владелец' : 'Администратор',
-          shift_id: shiftSummary?.shift.id,
+          payment_method: advanceMethod === 'advance' ? 'cash' : advanceMethod,
+          note: advanceComment.trim() || `Аванс: ${advanceCustomerName.trim()}`,
         },
         token,
         tenantId,
@@ -165,6 +204,7 @@ export const CashModule: React.FC<CashModuleProps> = ({
       );
       onShowToast(`Аванс ${(amount).toLocaleString('ru-RU')} ₸ успешно принят`);
       setShowAdvanceModal(false);
+      setAdvanceCustomerId('');
       setAdvanceCustomerName('');
       setAdvanceComment('');
       loadData();
@@ -731,15 +771,35 @@ export const CashModule: React.FC<CashModuleProps> = ({
             <form onSubmit={handleAdvanceSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                  Имя клиента *
+                  Клиент *
                 </label>
+                {customers.length > 0 && (
+                  <select
+                    data-testid="advance-customer-select"
+                    value={advanceCustomerId}
+                    onChange={e => {
+                      setAdvanceCustomerId(e.target.value);
+                      const c = customers.find((x: any) => x.id === e.target.value);
+                      if (c) setAdvanceCustomerName(`${c.full_name} (${c.phone_e164})`);
+                    }}
+                    style={{ height: '38px', padding: '0 10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', background: '#FFFFFF' }}
+                  >
+                    <option value="">— Выбрать из базы или ввести ниже —</option>
+                    {customers.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.full_name} ({c.phone_e164})</option>
+                    ))}
+                  </select>
+                )}
                 <input
                   type="text"
                   data-testid="advance-customer-input"
                   value={advanceCustomerName}
-                  onChange={e => setAdvanceCustomerName(e.target.value)}
-                  placeholder="Асет Калиев"
-                  required
+                  onChange={e => {
+                    setAdvanceCustomerName(e.target.value);
+                    setAdvanceCustomerId('');
+                  }}
+                  placeholder="Асет Калиев (+7701...)"
+                  required={!advanceCustomerId}
                   style={{ height: '40px', padding: '0 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '14px' }}
                 />
               </div>

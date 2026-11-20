@@ -44,6 +44,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
   const [servicePrice, setServicePrice] = useState('8000');
   const [serviceDuration, setServiceDuration] = useState('60');
   const [serviceCreated, setServiceCreated] = useState(false);
+  const [existingServices, setExistingServices] = useState<any[]>([]);
   const [isSubmittingService, setIsSubmittingService] = useState(false);
 
   // Quick staff state (Step 3)
@@ -54,7 +55,39 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
   const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
 
   // Online booking state (Step 4)
-  const [isBookingPublished, setIsBookingPublished] = useState(true);
+  const [isBookingPublished, setIsBookingPublished] = useState(false);
+  const [dynamicBookingUrl, setDynamicBookingUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isStandalonePreview || !api || !token || !tenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [svcs, stf, bSettings] = await Promise.all([
+          api.getServices({}, token, tenantId).catch(() => []),
+          api.getStaff({}, token, tenantId).catch(() => []),
+          api.getBookingSettings(token, tenantId).catch(() => null),
+        ]);
+        if (cancelled) return;
+        if (Array.isArray(svcs)) {
+          setExistingServices(svcs);
+          if (svcs.length > 0) setServiceCreated(true);
+        }
+        if (Array.isArray(stf) && stf.length > 0) {
+          setStaffCreated(true);
+        }
+        if (bSettings) {
+          const bs: any = bSettings;
+          setIsBookingPublished(Boolean(bs.publication?.is_published ?? bs.is_published ?? false));
+          const pubUrl = bs.publication?.public_url || bs.public_url;
+          if (pubUrl) {
+            setDynamicBookingUrl(pubUrl);
+          }
+        }
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [isStandalonePreview, api, token, tenantId, branches.length]);
 
   // Derived completion statuses
   const hasBranch = branches.length > 0;
@@ -68,7 +101,11 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
 
   const activeTenantName = tenantName || membership?.tenant_name || 'Ваш бизнес';
   const activeSlug = tenantSlug || membership?.tenant_slug || 'salon';
-  const bookingUrl = `https://${activeSlug}.book.example.kz`;
+  const bookingUrl = dynamicBookingUrl || (
+    typeof window !== 'undefined' && window.location.hostname.includes('localhost')
+      ? `http://${activeSlug}.localhost:3000`
+      : `https://${activeSlug}.book.${typeof window !== 'undefined' ? window.location.hostname.replace(/^crm\./, '') : 'example.kz'}`
+  );
 
   const handleCreateBranch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,7 +160,7 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
     setIsSubmittingService(true);
     try {
       if (!isStandalonePreview && api && token && tenantId) {
-        await api.createService(
+        const createdSvc = await api.createService(
           {
             name: serviceName.trim(),
             base_price_minor: Math.round(parseFloat(servicePrice || '0') * 100),
@@ -134,6 +171,9 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
           token,
           tenantId
         );
+        if (createdSvc) {
+          setExistingServices(prev => [...prev, createdSvc]);
+        }
       }
       setServiceCreated(true);
       setShowQuickService(false);
@@ -151,19 +191,54 @@ export const OnboardingModule: React.FC<OnboardingModuleProps> = ({
     setIsSubmittingStaff(true);
     try {
       if (!isStandalonePreview && api && token && tenantId) {
-        await api.createStaff(
+        const branchIds = branches.map(b => b.id);
+        const createdStaff = await api.createStaff(
           {
             display_name: name,
             role_title: staffRole,
-            branch_ids: branches.map(b => b.id),
+            branch_ids: branchIds,
           },
           token,
           tenantId
         );
+        const primaryBranchId = branchIds[0];
+        if (createdStaff?.id && primaryBranchId) {
+          // Link newly created staff to existing services so online booking works immediately (M04->M05->M06)
+          const svcsToLink = existingServices.length > 0
+            ? existingServices
+            : await api.getServices({}, token, tenantId).catch(() => []);
+          if (svcsToLink.length > 0) {
+            await api.updateStaffServices(
+              createdStaff.id,
+              svcsToLink.map((s: any) => ({
+                branch_id: primaryBranchId,
+                service_id: s.id,
+                price_override_minor: null,
+                duration_override_minutes: null,
+                is_active: true,
+              })),
+              token,
+              tenantId
+            ).catch(() => {});
+          }
+          // Set default Mon-Sat 10:00-20:00 working schedule so slots are immediately bookable
+          await api.updateStaffSchedule(
+            createdStaff.id,
+            [0, 1, 2, 3, 4, 5].map(day => ({
+              day_of_week: day,
+              start_time: '10:00',
+              end_time: '20:00',
+              breaks: [],
+            })),
+            token,
+            tenantId,
+            primaryBranchId
+          ).catch(() => {});
+        }
       }
       setStaffCreated(true);
       setShowQuickStaff(false);
-      onShowToast(`Специалист "${name}" добавлен!`);
+      onShowToast(`Специалист "${name}" добавлен с базовым графиком и услугами!`);
     } catch (err: any) {
       onShowToast(err?.message || 'Не удалось сохранить сотрудника');
     } finally {

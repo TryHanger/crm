@@ -90,7 +90,7 @@ test.describe('Sprint M08 — Календарь (Журнал админист�
 
     const bookingTimeInput = page.locator('[data-testid="booking-time-input"]');
     if (await bookingTimeInput.isVisible().catch(() => false)) {
-      await bookingTimeInput.fill('15:30');
+      await bookingTimeInput.fill('11:00');
     }
 
     // Select first service if checkboxes/radio exist

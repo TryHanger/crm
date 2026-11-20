@@ -379,6 +379,9 @@ test.describe('SaaS Booking Web & CRM Integration', () => {
 
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + 3);
+    if (futureDate.getDay() === 0) {
+      futureDate.setDate(futureDate.getDate() + 1);
+    }
     const futureDateStr = futureDate.toISOString().split('T')[0];
     await freshPage.fill('input[type="date"]', futureDateStr);
 

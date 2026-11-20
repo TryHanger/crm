@@ -57,21 +57,28 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
 
   // Expense modal state
+  const getLocalDateStr = (d: Date = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [expenseCategory, setExpenseCategory] = useState('Материалы и косметика');
   const [expenseAmountStr, setExpenseAmountStr] = useState('');
-  const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [expenseDate, setExpenseDate] = useState(() => getLocalDateStr());
   const [expenseMethod, setExpenseMethod] = useState<'cash' | 'account'>('account');
   const [expenseComment, setExpenseComment] = useState('');
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
 
   // Date filters
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateStr();
   const [dateRangeType, setDateRangeType] = useState<'today' | 'yesterday' | 'week' | 'month' | 'prev_month' | 'custom'>('month');
 
   const getInitialDates = () => {
     const d = new Date();
-    const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+    const firstDay = getLocalDateStr(new Date(d.getFullYear(), d.getMonth(), 1));
     return { from: firstDay, to: todayStr };
   };
 
@@ -87,23 +94,23 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     } else if (type === 'yesterday') {
       const y = new Date();
       y.setDate(now.getDate() - 1);
-      const yStr = y.toISOString().split('T')[0];
+      const yStr = getLocalDateStr(y);
       setFromDate(yStr);
       setToDate(yStr);
     } else if (type === 'week') {
       const weekAgo = new Date();
       weekAgo.setDate(now.getDate() - 7);
-      setFromDate(weekAgo.toISOString().split('T')[0]);
+      setFromDate(getLocalDateStr(weekAgo));
       setToDate(todayStr);
     } else if (type === 'month') {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      setFromDate(monthStart.toISOString().split('T')[0]);
+      setFromDate(getLocalDateStr(monthStart));
       setToDate(todayStr);
     } else if (type === 'prev_month') {
       const prevMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const prevMonthLast = new Date(now.getFullYear(), now.getMonth(), 0);
-      setFromDate(prevMonthFirst.toISOString().split('T')[0]);
-      setToDate(prevMonthLast.toISOString().split('T')[0]);
+      setFromDate(getLocalDateStr(prevMonthFirst));
+      setToDate(getLocalDateStr(prevMonthLast));
     }
   };
 

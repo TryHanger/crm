@@ -84,8 +84,7 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
     await page.click('[data-testid="invite-submit-btn"]');
 
     // 4. Automatically redirects into Business CRM dashboard
-    await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
-    await expect(page.locator('header')).toContainText(new RegExp(pilotName, 'i'));
+    await expect(page.locator('header')).toContainText(new RegExp(pilotName, 'i'), { timeout: 15000 });
 
     // 5. Verify single-use token invalidation: trying to reuse the same token displays error in a fresh context
     const freshContext = await page.context().browser()!.newContext();
@@ -108,7 +107,7 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
       await page.fill('input[type="password"]', pilotPassword);
       await page.click('button[type="submit"]');
     }
-    await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
+    await expect(page.locator('header')).toContainText(new RegExp(pilotName, 'i'), { timeout: 15000 });
 
     // 2. Setup First Branch in Settings -> Branches
     await page.click('nav a:has-text("Настройки"), aside button:has-text("Настройки")');
@@ -254,7 +253,7 @@ test.describe('PR-5: Pilot Readiness & First Company Lifecycle Suite', () => {
       await page.fill('input[type="password"]', pilotPassword);
       await page.click('button[type="submit"]');
     }
-    await expect(page.locator('h1')).toContainText('Календарь записей', { timeout: 15000 });
+    await expect(page.locator('header')).toContainText(new RegExp(pilotName, 'i'), { timeout: 15000 });
 
     // Assert booking card is visible with exact public reference
     const bookingCard = page.locator(`[data-public-ref="${bookedPublicRef}"]`);

@@ -247,18 +247,18 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
     if (!token || !tenantId) return;
     setIsLoadingDetail(true);
     try {
-      const [card, payments] = await Promise.all([
-        api.getBooking(b.id, token, tenantId),
-        api.getVisitPayments(b.id, token, tenantId),
-      ]);
+      const card = await api.getBooking(b.id, token, tenantId);
       setBookingDetail(card);
-      setVisitPayments(payments || []);
+      if (userRole !== 'master') {
+        const payments = await api.getVisitPayments(b.id, token, tenantId).catch(() => []);
+        setVisitPayments(payments || []);
+      }
     } catch (err) {
       console.error('Failed to load full booking details:', err);
     } finally {
       setIsLoadingDetail(false);
     }
-  }, [api, token, tenantId, currentDate, timezoneIana]);
+  }, [api, token, tenantId, currentDate, timezoneIana, userRole]);
 
   // Modals state
   const [showNewBookingModal, setShowNewBookingModal] = useState(false);
@@ -559,8 +559,12 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       onShowToast(`Платёж ${(amountMinor / 100).toLocaleString('ru-RU')} ₸ успешно принят`);
       setShowPaymentModal(false);
       setPaymentComment('');
-      // Reload payments
-      const updatedPayments = await api.getVisitPayments(selectedBooking.id, token, tenantId);
+      // Reload payments and booking financial summary
+      const [updatedCard, updatedPayments] = await Promise.all([
+        api.getBooking(selectedBooking.id, token, tenantId).catch(() => null),
+        api.getVisitPayments(selectedBooking.id, token, tenantId).catch(() => []),
+      ]);
+      if (updatedCard) setBookingDetail(updatedCard);
       setVisitPayments(updatedPayments || []);
       onRefresh();
     } catch (err: any) {
@@ -590,6 +594,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       await api.refundPayment(
         {
           payment_id: selectedPaymentForRefund.id,
+          booking_id: selectedBooking.id,
           amount_minor: refundMinor,
           reason: refundReason,
           comment: refundComment.trim() || undefined,
@@ -604,8 +609,12 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
       setShowRefundModal(false);
       setSelectedPaymentForRefund(null);
       setRefundComment('');
-      // Reload payments
-      const updatedPayments = await api.getVisitPayments(selectedBooking.id, token, tenantId);
+      // Reload payments and booking financial summary
+      const [updatedCard, updatedPayments] = await Promise.all([
+        api.getBooking(selectedBooking.id, token, tenantId).catch(() => null),
+        api.getVisitPayments(selectedBooking.id, token, tenantId).catch(() => []),
+      ]);
+      if (updatedCard) setBookingDetail(updatedCard);
       setVisitPayments(updatedPayments || []);
       onRefresh();
     } catch (err: any) {
@@ -2552,6 +2561,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({
               <div>
                 <div style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Приём оплаты</div>
                 <div style={{ fontSize: '12px', color: '#64748B' }}>Запись #{selectedBooking.public_ref} • {selectedBooking.customer_name}</div>
+                <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>Фискальный чек выбивается салоном на своей ККМ</div>
               </div>
               <button
                 type="button"

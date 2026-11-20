@@ -72,7 +72,11 @@ import {
   FinanceReportData,
   DebtsReportData,
   DebtItem,
-  AlternativeSlot
+  AlternativeSlot,
+  CashAccountItem,
+  ExpenseCategoryItem,
+  NotificationSettingsResponse,
+  NotificationDeliveryItem
 } from './types';
 
 export * from './types';
@@ -968,67 +972,62 @@ export class BusinessCrmApiClient {
   // SPRINT M12: Ручная касса и частичная оплата
   // ==========================================
 
+  private mapShiftRecord(raw: any, tenantId: string): CashShift {
+    return {
+      id: raw.id,
+      tenant_id: tenantId,
+      branch_id: raw.branch_id,
+      status: raw.status,
+      opened_by: raw.opened_by || 'Кассир',
+      opened_at: raw.opened_at,
+      closed_by: raw.closed_by || null,
+      closed_at: raw.closed_at || null,
+      opening_balance_minor: raw.opening_float_minor ?? raw.opening_balance_minor ?? 0,
+      closing_cash_actual_minor: raw.counted_minor ?? raw.closing_cash_actual_minor ?? null,
+      closing_cash_expected_minor: raw.expected_minor ?? raw.closing_cash_expected_minor ?? null,
+      difference_minor: raw.difference_minor ?? null,
+      comment: raw.close_note ?? raw.comment ?? null,
+    };
+  }
+
+  async getCashAccounts(
+    branchId: string,
+    token: string,
+    tenantId: string
+  ): Promise<CashAccountItem[]> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/cash-accounts?branch_id=${encodeURIComponent(branchId)}`,
+      {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      }
+    );
+    return handleResponse<CashAccountItem[]>(res);
+  }
+
   async createPayment(
     payload: PaymentCreateRequest,
     token: string,
     tenantId: string,
     idempotencyKey?: string
   ): Promise<PaymentRecord> {
-    try {
-      const headers = this.headers(token, tenantId);
-      headers['Content-Type'] = 'application/json';
-      if (idempotencyKey) {
-        headers['Idempotency-Key'] = idempotencyKey;
-      }
-      const url = payload.booking_id
-        ? `${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(payload.booking_id)}/payments`
-        : `${this.baseUrl}/api/v1/business/payments`;
-      const res = await fetch(url, {
+    if (!payload.booking_id) {
+      throw new ApiError(400, 'BOOKING_ID_REQUIRED', 'Не указан визит для оплаты');
+    }
+    const headers: Record<string, string> = {
+      ...this.headers(token, tenantId),
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey || `pay_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    };
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(payload.booking_id)}/payments`,
+      {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const record = await handleResponse<PaymentRecord>(res);
-        FinanceMockStorage.savePayment(tenantId, record);
-        return record;
       }
-    } catch (_) {}
-
-    // Check idempotency in mock
-    if (idempotencyKey) {
-      const existing = FinanceMockStorage.getPayments(tenantId).find(
-        p => p.idempotency_key === idempotencyKey
-      );
-      if (existing) {
-        return existing;
-      }
-    }
-
-    const openShift = FinanceMockStorage.getShifts(tenantId).find(s => s.status === 'open');
-    const shiftId = payload.shift_id || openShift?.id || null;
-    const branchId = openShift?.branch_id || '';
-
-    const newPayment: PaymentRecord = {
-      id: 'pay_' + Math.random().toString(36).substring(2, 10),
-      tenant_id: tenantId,
-      branch_id: branchId,
-      booking_id: payload.booking_id,
-      customer_id: payload.customer_id,
-      amount_minor: payload.amount_minor,
-      currency: 'KZT',
-      payment_method: payload.payment_method,
-      payment_type: payload.payment_type || 'payment',
-      status: 'confirmed',
-      cashier_name: payload.cashier_name || 'Администратор',
-      comment: payload.comment,
-      created_at: new Date().toISOString(),
-      shift_id: shiftId,
-      idempotency_key: idempotencyKey,
-    };
-
-    FinanceMockStorage.savePayment(tenantId, newPayment);
-    return newPayment;
+    );
+    return handleResponse<PaymentRecord>(res);
   }
 
   async getVisitPayments(
@@ -1036,17 +1035,14 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<PaymentRecord[]> {
-    try {
-      const res = await fetch(`${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(bookingId)}/payments`, {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(bookingId)}/payments`,
+      {
         method: 'GET',
         headers: this.headers(token, tenantId),
-      });
-      if (res.ok) {
-        return await handleResponse<PaymentRecord[]>(res);
       }
-    } catch (_) {}
-
-    return FinanceMockStorage.getPayments(tenantId).filter(p => p.booking_id === bookingId);
+    );
+    return handleResponse<PaymentRecord[]>(res);
   }
 
   // ==========================================
@@ -1059,57 +1055,136 @@ export class BusinessCrmApiClient {
     tenantId: string,
     idempotencyKey?: string
   ): Promise<PaymentRecord> {
-    const all = FinanceMockStorage.getPayments(tenantId);
-    const orig = all.find(p => p.id === payload.payment_id);
-    const bookingId = payload.booking_id || orig?.booking_id;
-    try {
-      const headers = this.headers(token, tenantId);
-      headers['Content-Type'] = 'application/json';
-      if (idempotencyKey) {
-        headers['Idempotency-Key'] = idempotencyKey;
-      }
-      const url = bookingId
-        ? `${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(bookingId)}/refunds`
-        : `${this.baseUrl}/api/v1/business/payments/${encodeURIComponent(payload.payment_id)}/refund`;
-      const res = await fetch(url, {
+    if (!payload.booking_id) {
+      throw new ApiError(400, 'BOOKING_ID_REQUIRED', 'Не указан визит для возврата');
+    }
+    const headers: Record<string, string> = {
+      ...this.headers(token, tenantId),
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey || `ref_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    };
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(payload.booking_id)}/refunds`,
+      {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const record = await handleResponse<PaymentRecord>(res);
-        FinanceMockStorage.savePayment(tenantId, record);
-        return record;
       }
-    } catch (_) {}
-    if (!orig) {
-      throw new ApiError(404, 'PAYMENT_NOT_FOUND', 'Исходный платеж не найден');
-    }
-
-    const openShift = FinanceMockStorage.getShifts(tenantId).find(s => s.status === 'open');
-
-    // CRITICAL: Return is a NEW corrective record, does NOT delete original payment!
-    const refundRecord: PaymentRecord = {
-      id: 'ref_' + Math.random().toString(36).substring(2, 10),
+    );
+    const data = await handleResponse<any>(res);
+    return {
+      id: data.entry_id || data.id,
       tenant_id: tenantId,
-      branch_id: orig.branch_id || openShift?.branch_id,
-      booking_id: orig.booking_id,
-      customer_id: orig.customer_id,
-      amount_minor: payload.amount_minor,
-      currency: orig.currency,
-      payment_method: payload.payment_method || orig.payment_method,
+      booking_id: payload.booking_id,
+      amount_minor: data.amount_minor ?? payload.amount_minor,
+      currency: 'KZT',
+      payment_method: payload.payment_method || 'cash',
       payment_type: 'refund',
       status: 'confirmed',
-      cashier_name: payload.cashier_name || 'Администратор',
+      cashier_name: payload.cashier_name || 'Кассир',
       comment: `Возврат: ${payload.reason}${payload.comment ? ` (${payload.comment})` : ''}`,
       created_at: new Date().toISOString(),
-      shift_id: openShift?.id || null,
-      original_payment_id: orig.id,
-      idempotency_key: idempotencyKey,
+      original_payment_id: payload.payment_id,
     };
+  }
 
-    FinanceMockStorage.savePayment(tenantId, refundRecord);
-    return refundRecord;
+  async getCustomerAdvance(
+    customerId: string,
+    token: string,
+    tenantId: string
+  ): Promise<{ customer_id: string; advance_balance_minor: number }> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/customers/${encodeURIComponent(customerId)}/advance`,
+      {
+        method: 'GET',
+        headers: this.headers(token, tenantId),
+      }
+    );
+    return handleResponse<{ customer_id: string; advance_balance_minor: number }>(res);
+  }
+
+  async createCustomerAdvance(
+    customerId: string,
+    payload: { branch_id: string; amount_minor: number; cash_account_id?: string; payment_method?: 'cash' | 'card' | 'external_transfer'; note?: string },
+    token: string,
+    tenantId: string,
+    idempotencyKey?: string
+  ): Promise<{ entry_id: string; amount_minor: number; advance_balance_minor: number }> {
+    let cashAccountId = payload.cash_account_id;
+    if (!cashAccountId) {
+      const accounts = await this.getCashAccounts(payload.branch_id, token, tenantId);
+      const wantKind = payload.payment_method === 'cash' ? 'cash' : 'bank_transfer';
+      const acc = accounts.find(a => a.kind === wantKind) || accounts[0];
+      if (!acc) {
+        throw new ApiError(400, 'NO_CASH_ACCOUNT', 'Нет доступной кассы для филиала');
+      }
+      cashAccountId = acc.id;
+    }
+    const headers: Record<string, string> = {
+      ...this.headers(token, tenantId),
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey || `adv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    };
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/customers/${encodeURIComponent(customerId)}/advances`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          branch_id: payload.branch_id,
+          amount_minor: payload.amount_minor,
+          cash_account_id: cashAccountId,
+          note: payload.note,
+        }),
+      }
+    );
+    return handleResponse<{ entry_id: string; amount_minor: number; advance_balance_minor: number }>(res);
+  }
+
+  async applyBookingAdvance(
+    bookingId: string,
+    amountMinor: number,
+    token: string,
+    tenantId: string,
+    idempotencyKey?: string
+  ): Promise<any> {
+    const headers: Record<string, string> = {
+      ...this.headers(token, tenantId),
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey || `appadv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    };
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/bookings/${encodeURIComponent(bookingId)}/apply-advance`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ amount_minor: amountMinor }),
+      }
+    );
+    return handleResponse<any>(res);
+  }
+
+  async reverseLedgerEntry(
+    entryId: string,
+    reason: string,
+    token: string,
+    tenantId: string,
+    idempotencyKey?: string
+  ): Promise<any> {
+    const headers: Record<string, string> = {
+      ...this.headers(token, tenantId),
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey || `rev_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    };
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/ledger-entries/${encodeURIComponent(entryId)}/reverse`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ reason }),
+      }
+    );
+    return handleResponse<any>(res);
   }
 
   async getCurrentCashShift(
@@ -1117,54 +1192,22 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<CashShiftSummary | null> {
-    try {
-      const qs = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
-      const res = await fetch(`${this.baseUrl}/api/v1/business/cash/shifts/current${qs}`, {
-        method: 'GET',
-        headers: this.headers(token, tenantId),
-      });
-      if (res.ok) {
-        return await handleResponse<CashShiftSummary>(res);
-      }
-    } catch (_) {}
-
-    const shifts = FinanceMockStorage.getShifts(tenantId);
-    const openShift = shifts.find(s => s.status === 'open' && (!branchId || s.branch_id === branchId));
-    if (!openShift) return null;
-
-    // Calculate shift movements
-    const payments = FinanceMockStorage.getPayments(tenantId).filter(
-      p => p.shift_id === openShift.id || (p.branch_id === openShift.branch_id && new Date(p.created_at) >= new Date(openShift.opened_at))
-    );
-
-    let cash_inflow = 0;
-    let cash_refund = 0;
-    let card_inflow = 0;
-    let advance_inflow = 0;
-
-    for (const p of payments) {
-      if (p.payment_type === 'refund') {
-        if (p.payment_method === 'cash') cash_refund += p.amount_minor;
-      } else if (p.payment_type === 'advance') {
-        advance_inflow += p.amount_minor;
-        if (p.payment_method === 'cash') cash_inflow += p.amount_minor;
-        else card_inflow += p.amount_minor;
-      } else {
-        if (p.payment_method === 'cash') cash_inflow += p.amount_minor;
-        else card_inflow += p.amount_minor;
-      }
-    }
-
-    const expected_cash = openShift.opening_balance_minor + cash_inflow - cash_refund;
-
+    const qs = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
+    const res = await fetch(`${this.baseUrl}/api/v1/business/cash-shifts/current${qs}`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    const raw = await handleResponse<any>(res);
+    if (!raw || !raw.id) return null;
+    const moves = raw.movements || {};
     return {
-      shift: openShift,
-      cash_inflow_minor: cash_inflow,
-      cash_refund_minor: cash_refund,
-      card_inflow_minor: card_inflow,
-      advance_inflow_minor: advance_inflow,
-      expected_cash_balance_minor: expected_cash,
-      transactions_count: payments.length,
+      shift: this.mapShiftRecord(raw, tenantId),
+      cash_inflow_minor: moves.payment ?? 0,
+      cash_refund_minor: moves.refund ?? 0,
+      card_inflow_minor: 0,
+      advance_inflow_minor: moves.advance ?? 0,
+      expected_cash_balance_minor: raw.expected_minor ?? raw.opening_float_minor ?? 0,
+      transactions_count: Object.values(moves).filter((v: any) => Number(v) > 0).length,
     };
   }
 
@@ -1173,35 +1216,28 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<CashShift> {
-    try {
-      const res = await fetch(`${this.baseUrl}/api/v1/business/cash/shifts/open`, {
-        method: 'POST',
-        headers: {
-          ...this.headers(token, tenantId),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const record = await handleResponse<CashShift>(res);
-        FinanceMockStorage.saveShift(tenantId, record);
-        return record;
+    let cashAccountId = payload.cash_account_id;
+    if (!cashAccountId) {
+      const accounts = await this.getCashAccounts(payload.branch_id, token, tenantId);
+      const cashAcc = accounts.find(a => a.kind === 'cash') || accounts[0];
+      if (!cashAcc) {
+        throw new ApiError(400, 'NO_CASH_ACCOUNT', 'Нет наличной кассы для филиала');
       }
-    } catch (_) {}
-
-    const newShift: CashShift = {
-      id: 'shift_' + Math.random().toString(36).substring(2, 10),
-      tenant_id: tenantId,
-      branch_id: payload.branch_id,
-      status: 'open',
-      opened_by: payload.opened_by,
-      opened_at: new Date().toISOString(),
-      opening_balance_minor: payload.opening_balance_minor,
-      comment: payload.comment || null,
-    };
-
-    FinanceMockStorage.saveShift(tenantId, newShift);
-    return newShift;
+      cashAccountId = cashAcc.id;
+    }
+    const res = await fetch(`${this.baseUrl}/api/v1/business/cash-shifts/open`, {
+      method: 'POST',
+      headers: {
+        ...this.headers(token, tenantId),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        cash_account_id: cashAccountId,
+        opening_float_minor: payload.opening_float_minor ?? payload.opening_balance_minor ?? 0,
+      }),
+    });
+    const raw = await handleResponse<any>(res);
+    return this.mapShiftRecord(raw, tenantId);
   }
 
   async closeCashShift(
@@ -1209,42 +1245,22 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<CashShift> {
-    try {
-      const res = await fetch(`${this.baseUrl}/api/v1/business/cash/shifts/${encodeURIComponent(payload.shift_id)}/close`, {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/cash-shifts/${encodeURIComponent(payload.shift_id)}/close`,
+      {
         method: 'POST',
         headers: {
           ...this.headers(token, tenantId),
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const record = await handleResponse<CashShift>(res);
-        FinanceMockStorage.saveShift(tenantId, record);
-        return record;
+        body: JSON.stringify({
+          counted_minor: payload.counted_minor ?? payload.closing_cash_actual_minor ?? 0,
+          note: payload.note ?? payload.comment,
+        }),
       }
-    } catch (_) {}
-
-    const shifts = FinanceMockStorage.getShifts(tenantId);
-    const shift = shifts.find(s => s.id === payload.shift_id);
-    if (!shift) {
-      throw new ApiError(404, 'SHIFT_NOT_FOUND', 'Смена не найдена');
-    }
-
-    const summary = await this.getCurrentCashShift(shift.branch_id, token, tenantId);
-    const expected = summary?.expected_cash_balance_minor ?? shift.opening_balance_minor;
-    const diff = payload.closing_cash_actual_minor - expected;
-
-    shift.status = 'closed';
-    shift.closed_by = payload.closed_by;
-    shift.closed_at = new Date().toISOString();
-    shift.closing_cash_actual_minor = payload.closing_cash_actual_minor;
-    shift.closing_cash_expected_minor = expected;
-    shift.difference_minor = diff;
-    if (payload.comment) shift.comment = payload.comment;
-
-    FinanceMockStorage.saveShift(tenantId, shift);
-    return shift;
+    );
+    const raw = await handleResponse<any>(res);
+    return this.mapShiftRecord(raw, tenantId);
   }
 
   async getCashShifts(
@@ -1252,25 +1268,62 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<CashShift[]> {
-    try {
-      const qs = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
-      const res = await fetch(`${this.baseUrl}/api/v1/business/cash/shifts${qs}`, {
-        method: 'GET',
-        headers: this.headers(token, tenantId),
-      });
-      if (res.ok) {
-        return await handleResponse<CashShift[]>(res);
-      }
-    } catch (_) {}
-
-    return FinanceMockStorage.getShifts(tenantId).filter(
-      s => !branchId || s.branch_id === branchId
-    );
+    const qs = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
+    const res = await fetch(`${this.baseUrl}/api/v1/business/cash-shifts${qs}`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    const list = await handleResponse<any[]>(res);
+    return (list || []).map(r => this.mapShiftRecord(r, tenantId));
   }
 
   // ==========================================
   // SPRINT M14: Расходы и базовые отчёты
   // ==========================================
+
+  async getExpenseCategories(
+    token: string,
+    tenantId: string,
+    includeArchived = false
+  ): Promise<ExpenseCategoryItem[]> {
+    const qs = includeArchived ? '?include_archived=true' : '';
+    const res = await fetch(`${this.baseUrl}/api/v1/business/expense-categories${qs}`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<ExpenseCategoryItem[]>(res);
+  }
+
+  async createExpenseCategory(
+    name: string,
+    token: string,
+    tenantId: string
+  ): Promise<ExpenseCategoryItem> {
+    const res = await fetch(`${this.baseUrl}/api/v1/business/expense-categories`, {
+      method: 'POST',
+      headers: {
+        ...this.headers(token, tenantId),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name }),
+    });
+    return handleResponse<ExpenseCategoryItem>(res);
+  }
+
+  async archiveExpenseCategory(
+    categoryId: string,
+    token: string,
+    tenantId: string
+  ): Promise<ExpenseCategoryItem> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/expense-categories/${encodeURIComponent(categoryId)}/archive`,
+      {
+        method: 'POST',
+        headers: this.headers(token, tenantId),
+      }
+    );
+    return handleResponse<ExpenseCategoryItem>(res);
+  }
 
   async getExpenses(
     branchId?: string,
@@ -1279,87 +1332,61 @@ export class BusinessCrmApiClient {
     fromDate?: string,
     toDate?: string
   ): Promise<ExpenseRecord[]> {
-    if (token && tenantId) {
-      try {
-        const params: string[] = [];
-        if (branchId) params.push(`branch_id=${encodeURIComponent(branchId)}`);
-        if (fromDate) params.push(`from_date=${encodeURIComponent(fromDate)}`);
-        if (toDate) params.push(`to_date=${encodeURIComponent(toDate)}`);
-        const qs = params.length > 0 ? `?${params.join('&')}` : '';
-        const res = await fetch(`${this.baseUrl}/api/v1/business/expenses${qs}`, {
-          method: 'GET',
-          headers: this.headers(token, tenantId),
-        });
-        if (res.ok) {
-          return await handleResponse<ExpenseRecord[]>(res);
-        }
-      } catch (_) {}
-    }
-
-    let list = tenantId ? FinanceMockStorage.getExpenses(tenantId) : [];
-    if (branchId) {
-      list = list.filter(e => !e.branch_id || e.branch_id === branchId);
-    }
-    if (fromDate) {
-      list = list.filter(e => e.expense_date >= fromDate);
-    }
-    if (toDate) {
-      list = list.filter(e => e.expense_date <= toDate);
-    }
-    return list;
+    if (!token || !tenantId) return [];
+    const params: string[] = [];
+    if (branchId) params.push(`branch_id=${encodeURIComponent(branchId)}`);
+    if (fromDate) params.push(`from_date=${encodeURIComponent(fromDate)}`);
+    if (toDate) params.push(`to_date=${encodeURIComponent(toDate)}`);
+    const qs = params.length > 0 ? `?${params.join('&')}` : '';
+    const res = await fetch(`${this.baseUrl}/api/v1/business/expenses${qs}`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<ExpenseRecord[]>(res);
   }
 
   async createExpense(
     payload: ExpenseCreateRequest,
     token: string,
-    tenantId: string
+    tenantId: string,
+    idempotencyKey?: string
   ): Promise<ExpenseRecord> {
-    try {
-      const res = await fetch(`${this.baseUrl}/api/v1/business/expenses`, {
-        method: 'POST',
-        headers: {
-          ...this.headers(token, tenantId),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const record = await handleResponse<ExpenseRecord>(res);
-        FinanceMockStorage.saveExpense(tenantId, record);
-        return record;
-      }
-    } catch (_) {}
-
-    const newExp: ExpenseRecord = {
-      id: 'exp_' + Math.random().toString(36).substring(2, 10),
+    const headers: Record<string, string> = {
+      ...this.headers(token, tenantId),
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey || (payload as any).idempotency_key || `exp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    };
+    const res = await fetch(`${this.baseUrl}/api/v1/business/expenses`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...payload,
+        reason: (payload as any).reason ?? payload.comment ?? payload.category ?? 'Расход',
+      }),
+    });
+    const data = await handleResponse<any>(res);
+    return {
+      id: data.entry_id || data.id,
       tenant_id: tenantId,
       branch_id: payload.branch_id,
-      category: payload.category,
-      amount_minor: payload.amount_minor,
+      category: payload.category || 'Прочее',
+      amount_minor: data.amount_minor ?? payload.amount_minor,
       currency: 'KZT',
-      expense_date: payload.expense_date,
-      created_by: payload.created_by,
-      payment_method: payload.payment_method,
-      comment: payload.comment,
+      expense_date: payload.expense_date || new Date().toISOString().split('T')[0],
+      created_by: payload.created_by || 'Владелец',
+      payment_method: payload.payment_method || 'cash',
+      comment: payload.comment || (payload as any).reason,
       created_at: new Date().toISOString(),
     };
-
-    FinanceMockStorage.saveExpense(tenantId, newExp);
-    return newExp;
   }
 
   async deleteExpense(
     expenseId: string,
     token: string,
-    tenantId: string
+    tenantId: string,
+    reason = 'Сторно расхода'
   ): Promise<void> {
-    try {
-      await fetch(`${this.baseUrl}/api/v1/business/expenses/${encodeURIComponent(expenseId)}`, {
-        method: 'DELETE',
-        headers: this.headers(token, tenantId),
-      });
-    } catch (_) {}
-    FinanceMockStorage.deleteExpense(tenantId, expenseId);
+    await this.reverseLedgerEntry(expenseId, reason, token, tenantId);
   }
 
   async getVisitsReport(
@@ -1367,67 +1394,16 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<VisitsReportData> {
-    try {
-      const q = new URLSearchParams();
-      if (params.branchId) q.set('branch_id', params.branchId);
-      if (params.fromDate) q.set('from_date', params.fromDate);
-      if (params.toDate) q.set('to_date', params.toDate);
-      if (params.staffId) q.set('staff_id', params.staffId);
-      const res = await fetch(`${this.baseUrl}/api/v1/business/reports/visits?${q.toString()}`, {
-        method: 'GET',
-        headers: this.headers(token, tenantId),
-      });
-      if (res.ok) return await handleResponse<VisitsReportData>(res);
-    } catch (_) {}
-
-    // Generate from calendar data
-    let bookings: any[] = [];
-    try {
-      const cal = await this.getCalendar(
-        { date: params.fromDate || new Date().toISOString().split('T')[0], branch_id: params.branchId || '', staff_id: params.staffId },
-        token,
-        tenantId
-      );
-      bookings = cal?.bookings || [];
-    } catch (_) {}
-
-    if (params.staffId) {
-      bookings = bookings.filter((b: any) => b.staff_id === params.staffId);
-    }
-
-    const total = bookings.length;
-    const completed = bookings.filter((b: any) => b.status === 'completed').length;
-    const cancelled = bookings.filter((b: any) => b.status === 'cancelled').length;
-    const arrived = bookings.filter((b: any) => b.status === 'arrived').length;
-    const in_progress = bookings.filter((b: any) => b.status === 'in_progress').length;
-    const no_show = bookings.filter((b: any) => b.status === 'no_show').length;
-    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-    const items = bookings.map((b: any) => {
-      const d = new Date(b.starts_at_utc);
-      return {
-        id: b.id,
-        public_ref: b.public_ref,
-        customer_name: b.customer_name,
-        staff_name: b.staff_name,
-        services: b.services,
-        date_display: d.toISOString().split('T')[0],
-        time_display: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: b.status,
-        amount_minor: b.amount_minor,
-      };
+    const q = new URLSearchParams();
+    if (params.branchId) q.set('branch_id', params.branchId);
+    if (params.fromDate) q.set('from_date', params.fromDate);
+    if (params.toDate) q.set('to_date', params.toDate);
+    if (params.staffId) q.set('staff_id', params.staffId);
+    const res = await fetch(`${this.baseUrl}/api/v1/business/reports/visits?${q.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
     });
-
-    return {
-      total_bookings: total,
-      completed_bookings: completed,
-      cancelled_bookings: cancelled,
-      arrived_bookings: arrived,
-      in_progress_bookings: in_progress,
-      no_show_bookings: no_show,
-      completion_rate_percent: rate,
-      items,
-    };
+    return handleResponse<VisitsReportData>(res);
   }
 
   async getServicesReport(
@@ -1435,62 +1411,15 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<ServicesReportData> {
-    try {
-      const q = new URLSearchParams();
-      if (params.branchId) q.set('branch_id', params.branchId);
-      if (params.fromDate) q.set('from_date', params.fromDate);
-      if (params.toDate) q.set('to_date', params.toDate);
-      const res = await fetch(`${this.baseUrl}/api/v1/business/reports/services?${q.toString()}`, {
-        method: 'GET',
-        headers: this.headers(token, tenantId),
-      });
-      if (res.ok) return await handleResponse<ServicesReportData>(res);
-    } catch (_) {}
-
-    let bookings: any[] = [];
-    try {
-      const cal = await this.getCalendar(
-        { date: params.fromDate || new Date().toISOString().split('T')[0], branch_id: params.branchId || '' },
-        token,
-        tenantId
-      );
-      bookings = cal?.bookings || [];
-    } catch (_) {}
-
-    const completed = bookings.filter((b: any) => b.status === 'completed');
-
-    const serviceCounts: Record<string, { count: number; total_minor: number }> = {};
-    let totalServicesCount = 0;
-    let totalRendered = 0;
-
-    for (const b of completed) {
-      const srvList = b.services || ['Услуга'];
-      const perServiceAmount = Math.round(b.amount_minor / srvList.length);
-      for (const sName of srvList) {
-        if (!serviceCounts[sName]) {
-          serviceCounts[sName] = { count: 0, total_minor: 0 };
-        }
-        serviceCounts[sName].count += 1;
-        serviceCounts[sName].total_minor += perServiceAmount;
-        totalServicesCount += 1;
-        totalRendered += perServiceAmount;
-      }
-    }
-
-    const top_services = Object.entries(serviceCounts).map(([name, data]) => ({
-      service_id: name,
-      service_name: name,
-      count: data.count,
-      total_minor: data.total_minor,
-      percentage: totalRendered > 0 ? Math.round((data.total_minor / totalRendered) * 100) : 0,
-    })).sort((a, b) => b.total_minor - a.total_minor);
-
-    return {
-      total_services_count: totalServicesCount,
-      total_rendered_minor: totalRendered,
-      average_ticket_minor: totalServicesCount > 0 ? Math.round(totalRendered / totalServicesCount) : 0,
-      top_services,
-    };
+    const q = new URLSearchParams();
+    if (params.branchId) q.set('branch_id', params.branchId);
+    if (params.fromDate) q.set('from_date', params.fromDate);
+    if (params.toDate) q.set('to_date', params.toDate);
+    const res = await fetch(`${this.baseUrl}/api/v1/business/reports/services?${q.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<ServicesReportData>(res);
   }
 
   async getFinanceReport(
@@ -1498,97 +1427,32 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<FinanceReportData> {
-    try {
-      const q = new URLSearchParams();
-      if (params.branchId) q.set('branch_id', params.branchId);
-      if (params.fromDate) q.set('from_date', params.fromDate);
-      if (params.toDate) q.set('to_date', params.toDate);
-      const res = await fetch(`${this.baseUrl}/api/v1/business/reports/finance?${q.toString()}`, {
-        method: 'GET',
-        headers: this.headers(token, tenantId),
-      });
-      if (res.ok) {
-        const raw = await handleResponse<any>(res);
-        if (raw && raw.total) {
-          const t = raw.total;
-          const cashIn = t.received_by_account_kind?.cash ?? 0;
-          const cardIn = (t.received_by_account_kind?.bank_transfer ?? 0) + (t.received_by_account_kind?.card ?? 0);
-          return {
-            rendered_minor: t.rendered_minor ?? 0,
-            paid_minor: t.received_minor ?? 0,
-            debt_minor: t.receivables_end_minor ?? 0,
-            expenses_minor: t.expenses_minor ?? 0,
-            refunds_minor: 0,
-            advances_minor: t.advances_received_minor ?? 0,
-            net_cash_flow_minor: t.net_cash_flow_minor ?? 0,
-            cash_inflow_minor: cashIn,
-            card_inflow_minor: cardIn,
-          };
-        }
-        return raw;
-      }
-    } catch (_) {}
-
-    // Strict Sprint M14 Rule:
-    // Rendered = strictly completed bookings sum
-    // Paid = actual payment transactions minus refunds
-    // Debt = Rendered - Paid
-    let bookings: any[] = [];
-    try {
-      const cal = await this.getCalendar(
-        { date: params.fromDate || new Date().toISOString().split('T')[0], branch_id: params.branchId || '' },
-        token,
-        tenantId
-      );
-      bookings = cal?.bookings || [];
-    } catch (_) {}
-
-    const completedBookings = bookings.filter((b: any) => b.status === 'completed');
-    const rendered_minor = completedBookings.reduce((sum: number, b: any) => sum + (b.cost_minor || b.amount_minor || 0), 0);
-
-    const allPayments = FinanceMockStorage.getPayments(tenantId);
-    let cash_inflow = 0;
-    let card_inflow = 0;
-    let advance_inflow = 0;
-    let refunds_minor = 0;
-
-    for (const p of allPayments) {
-      if (params.branchId && p.branch_id && p.branch_id !== params.branchId) continue;
-      if (params.fromDate && p.created_at < params.fromDate) continue;
-      if (params.toDate && p.created_at > params.toDate + 'T23:59:59.999Z') continue;
-
-      if (p.payment_type === 'refund') {
-        refunds_minor += p.amount_minor;
-      } else if (p.payment_type === 'advance') {
-        advance_inflow += p.amount_minor;
-      } else {
-        if (p.payment_method === 'cash') {
-          cash_inflow += p.amount_minor;
-        } else {
-          card_inflow += p.amount_minor;
-        }
-      }
+    const q = new URLSearchParams();
+    if (params.branchId) q.set('branch_id', params.branchId);
+    if (params.fromDate) q.set('from_date', params.fromDate);
+    if (params.toDate) q.set('to_date', params.toDate);
+    const res = await fetch(`${this.baseUrl}/api/v1/business/reports/finance?${q.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    const raw = await handleResponse<any>(res);
+    if (raw && raw.total) {
+      const t = raw.total;
+      const cashIn = t.received_by_account_kind?.cash ?? 0;
+      const cardIn = (t.received_by_account_kind?.bank_transfer ?? 0) + (t.received_by_account_kind?.card ?? 0);
+      return {
+        rendered_minor: t.rendered_minor ?? 0,
+        paid_minor: t.received_minor ?? 0,
+        debt_minor: t.receivables_end_minor ?? 0,
+        expenses_minor: t.expenses_minor ?? 0,
+        refunds_minor: t.refunds_minor ?? 0,
+        advances_minor: t.advances_received_minor ?? 0,
+        net_cash_flow_minor: t.net_cash_flow_minor ?? 0,
+        cash_inflow_minor: cashIn,
+        card_inflow_minor: cardIn,
+      };
     }
-
-    const paid_minor = (cash_inflow + card_inflow) - refunds_minor;
-    const debt_minor = Math.max(0, rendered_minor - paid_minor);
-
-    const expensesList = await this.getExpenses(params.branchId, token, tenantId, params.fromDate, params.toDate);
-    const expenses_minor = expensesList.reduce((s: number, e: ExpenseRecord) => s + e.amount_minor, 0);
-
-    const net_cash_flow_minor = paid_minor + advance_inflow - expenses_minor;
-
-    return {
-      rendered_minor,
-      paid_minor,
-      debt_minor,
-      expenses_minor,
-      refunds_minor,
-      advances_minor: advance_inflow,
-      net_cash_flow_minor,
-      cash_inflow_minor: cash_inflow,
-      card_inflow_minor: card_inflow,
-    };
+    return raw;
   }
 
   async getDebtsReport(
@@ -1596,140 +1460,136 @@ export class BusinessCrmApiClient {
     token: string,
     tenantId: string
   ): Promise<DebtsReportData> {
-    try {
-      const q = new URLSearchParams();
-      if (params.branchId) q.set('branch_id', params.branchId);
-      const res = await fetch(`${this.baseUrl}/api/v1/business/reports/debts?${q.toString()}`, {
+    const q = new URLSearchParams();
+    if (params.branchId) q.set('branch_id', params.branchId);
+    const res = await fetch(`${this.baseUrl}/api/v1/business/reports/debts?${q.toString()}`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<DebtsReportData>(res);
+  }
+
+  // ==========================================
+  // SPRINT M15: Роли, привязки и уведомления
+  // ==========================================
+
+  async getNotificationSettings(
+    token: string,
+    tenantId: string
+  ): Promise<NotificationSettingsResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/business/notification-settings`, {
+      method: 'GET',
+      headers: this.headers(token, tenantId),
+    });
+    return handleResponse<NotificationSettingsResponse>(res);
+  }
+
+  async updateNotificationSettings(
+    payload: { email_enabled?: boolean; daily_limit?: number; sender_name?: string | null },
+    token: string,
+    tenantId: string
+  ): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/business/notification-settings`, {
+      method: 'PUT',
+      headers: {
+        ...this.headers(token, tenantId),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<any>(res);
+  }
+
+  async updateNotificationTemplate(
+    code: string,
+    payload: { subject: string; body_text: string },
+    token: string,
+    tenantId: string
+  ): Promise<any> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/notification-templates/${encodeURIComponent(code)}`,
+      {
+        method: 'PUT',
+        headers: {
+          ...this.headers(token, tenantId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+    return handleResponse<any>(res);
+  }
+
+  async deleteNotificationTemplate(
+    code: string,
+    token: string,
+    tenantId: string
+  ): Promise<any> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/notification-templates/${encodeURIComponent(code)}`,
+      {
+        method: 'DELETE',
+        headers: this.headers(token, tenantId),
+      }
+    );
+    return handleResponse<any>(res);
+  }
+
+  async getNotificationDeliveries(
+    token: string,
+    tenantId: string,
+    limit = 50
+  ): Promise<NotificationDeliveryItem[]> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/notification-deliveries?limit=${limit}`,
+      {
         method: 'GET',
         headers: this.headers(token, tenantId),
-      });
-      if (res.ok) return await handleResponse<DebtsReportData>(res);
-    } catch (_) {}
-
-    let bookings: any[] = [];
-    try {
-      const cal = await this.getCalendar(
-        { date: new Date().toISOString().split('T')[0], branch_id: params.branchId || '' },
-        token,
-        tenantId
-      );
-      bookings = cal?.bookings || [];
-    } catch (_) {}
-
-    const allPayments = FinanceMockStorage.getPayments(tenantId);
-
-    const items: DebtItem[] = [];
-    let totalDebt = 0;
-
-    for (const b of bookings) {
-      // Debt exists when service was rendered (completed) and cost > paid
-      const cost = b.cost_minor || b.amount_minor || 0;
-      const isCompleted = b.status === 'completed';
-      const rendered = isCompleted ? cost : 0;
-
-      const visitPayments = allPayments.filter(p => p.booking_id === b.id);
-      let paid = 0;
-      for (const p of visitPayments) {
-        if (p.payment_type === 'refund') paid -= p.amount_minor;
-        else paid += p.amount_minor;
       }
-      paid = Math.max(0, paid);
+    );
+    return handleResponse<NotificationDeliveryItem[]>(res);
+  }
 
-      const debt = isCompleted ? Math.max(0, rendered - paid) : 0;
-      if (debt > 0) {
-        totalDebt += debt;
-        const d = new Date(b.starts_at_utc);
-        items.push({
-          booking_id: b.id,
-          public_ref: b.public_ref,
-          customer_id: b.customer_id,
-          customer_name: b.customer_name,
-          customer_phone: b.customer_phone,
-          visit_date: d.toISOString().split('T')[0],
-          cost_minor: cost,
-          rendered_minor: rendered,
-          paid_minor: paid,
-          debt_minor: debt,
-          payment_status: paid > 0 ? 'partially_paid' : 'unpaid',
-          services: b.services,
-        });
+  async updateUserBranches(
+    membershipId: string,
+    branchIds: string[],
+    token: string,
+    tenantId: string
+  ): Promise<any> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/users/${encodeURIComponent(membershipId)}/branches`,
+      {
+        method: 'PUT',
+        headers: {
+          ...this.headers(token, tenantId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ branch_ids: branchIds }),
       }
-    }
+    );
+    return handleResponse<any>(res);
+  }
 
-    return {
-      total_debt_minor: totalDebt,
-      debtors_count: items.length,
-      items,
-    };
+  async updateUserStaffProfile(
+    membershipId: string,
+    staffId: string | null,
+    token: string,
+    tenantId: string
+  ): Promise<any> {
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/business/users/${encodeURIComponent(membershipId)}/staff-profile`,
+      {
+        method: 'PUT',
+        headers: {
+          ...this.headers(token, tenantId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ staff_id: staffId }),
+      }
+    );
+    return handleResponse<any>(res);
   }
 }
-
-// Client-side mock repository for M12, M13, M14 (fallback when backend route not yet available)
-class FinanceMockStorage {
-  private static getKey(tenantId: string, resource: string) {
-    return `crm_finance_${tenantId}_${resource}`;
-  }
-
-  private static load<T>(tenantId: string, resource: string): T[] {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const raw = window.localStorage.getItem(this.getKey(tenantId, resource));
-        if (raw) return JSON.parse(raw);
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  private static save<T>(tenantId: string, resource: string, data: T[]): void {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(this.getKey(tenantId, resource), JSON.stringify(data));
-      }
-    } catch (_) {}
-  }
-
-  static getPayments(tenantId: string): PaymentRecord[] {
-    return this.load<PaymentRecord>(tenantId, 'payments');
-  }
-
-  static savePayment(tenantId: string, payment: PaymentRecord): void {
-    const list = this.getPayments(tenantId);
-    list.unshift(payment);
-    this.save(tenantId, 'payments', list);
-  }
-
-  static getShifts(tenantId: string): CashShift[] {
-    return this.load<CashShift>(tenantId, 'shifts');
-  }
-
-  static saveShift(tenantId: string, shift: CashShift): void {
-    const list = this.getShifts(tenantId);
-    const idx = list.findIndex(s => s.id === shift.id);
-    if (idx >= 0) {
-      list[idx] = shift;
-    } else {
-      list.unshift(shift);
-    }
-    this.save(tenantId, 'shifts', list);
-  }
-
-  static getExpenses(tenantId: string): ExpenseRecord[] {
-    return this.load<ExpenseRecord>(tenantId, 'expenses');
-  }
-
-  static saveExpense(tenantId: string, exp: ExpenseRecord): void {
-    const list = this.getExpenses(tenantId);
-    list.unshift(exp);
-    this.save(tenantId, 'expenses', list);
-  }
-
-  static deleteExpense(tenantId: string, id: string): void {
-    const list = this.getExpenses(tenantId).filter(e => e.id !== id);
-    this.save(tenantId, 'expenses', list);
-  }
-}
-
-export * from './types';
 
 export class PlatformApiClient {
   private baseUrl: string;
@@ -2215,6 +2075,14 @@ export class PlatformApiClient {
     return handleResponse<any>(res);
   }
 
+  async getDelegatedTenant(tenantId: string, token: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/v1/platform/support/delegated-tenant/${encodeURIComponent(tenantId)}`, {
+      method: 'GET',
+      headers: this.headers(token),
+    });
+    return handleResponse<any>(res);
+  }
+
   async getSettings(token: string): Promise<PlatformSettingsResponse> {
     const res = await fetch(`${this.baseUrl}/api/v1/platform/settings`, {
       method: 'GET',
@@ -2232,5 +2100,3 @@ export class PlatformApiClient {
     return handleResponse<any>(res);
   }
 }
-
-export * from './types';

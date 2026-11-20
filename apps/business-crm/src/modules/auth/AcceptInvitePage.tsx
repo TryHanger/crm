@@ -147,7 +147,7 @@ export const AcceptInvitePage: React.FC<AcceptInvitePageProps> = ({
             }}
           >
             <div>{error}</div>
-            {(error.includes('устарела') || error.includes('недействительно') || error.includes('истек')) && onGoToLogin && (
+            {(error.includes('устарела') || error.includes('недействительно') || error.includes('истек') || error.includes('использовано') || error.includes('Войдите')) && onGoToLogin && (
               <button
                 type="button"
                 data-testid="goto-login-btn"

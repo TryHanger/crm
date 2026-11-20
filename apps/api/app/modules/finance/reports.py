@@ -25,7 +25,7 @@ from apps.api.app.infrastructure.db.models import Branch, CashAccount, ExpenseCa
 from apps.api.app.modules.finance.ledger import FinanceError
 
 MAX_PERIOD_DAYS = 366
-_FIELDS = ("rendered_minor", "received_minor", "advances_received_minor", "advances_applied_minor",
+_FIELDS = ("rendered_minor", "received_minor", "refunds_minor", "advances_received_minor", "advances_applied_minor",
            "expenses_minor", "net_cash_flow_minor", "receivables_end_minor", "advance_liability_end_minor")
 
 
@@ -89,7 +89,8 @@ async def branch_finance(db: AsyncSession, tenant_id: uuid.UUID, branch: Branch,
     return {
         "branch_id": str(branch.id), "branch_name": branch.name, "timezone": branch.timezone_iana,
         "period_start_utc": start.isoformat(), "period_end_utc": end.isoformat(),
-        "rendered_minor": rendered, "received_minor": received, "received_by_account_kind": dict(by_account),
+        "rendered_minor": rendered, "received_minor": received, "refunds_minor": k.get("refund", 0),
+        "received_by_account_kind": dict(by_account),
         "advances_received_minor": advances, "advances_applied_minor": applied,
         "expenses_minor": expenses,
         "expenses_by_category": sorted(({"category_id": str(cid), "name": name, "amount_minor": int(total)}

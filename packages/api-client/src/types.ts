@@ -534,6 +534,7 @@ export interface InviteCreateRequest {
   email: string;
   role: string;
   branch_ids?: string[];
+  staff_id?: string;
 }
 
 // =========================================================================
@@ -966,18 +967,65 @@ export interface CashShiftSummary {
   transactions_count: number;
 }
 
+export interface CashAccountItem {
+  id: string;
+  branch_id: string;
+  name: string;
+  kind: 'cash' | 'bank_transfer' | 'card' | string;
+  currency: string;
+  balance_minor: number;
+  is_active: boolean;
+}
+
+export interface ExpenseCategoryItem {
+  id: string;
+  name: string;
+  archived: boolean;
+}
+
+export interface NotificationTemplateItem {
+  code: string;
+  subject: string;
+  body_text: string;
+  is_custom?: boolean;
+  default_subject?: string;
+  default_body_text?: string;
+}
+
+export interface NotificationSettingsResponse {
+  email_enabled: boolean;
+  daily_limit: number;
+  sender_name?: string | null;
+  templates: Record<string, { subject: string; body_text: string; is_custom: boolean }> | NotificationTemplateItem[];
+}
+
+export interface NotificationDeliveryItem {
+  id: string;
+  template_code: string;
+  recipient_masked?: string;
+  recipient?: string;
+  status: string;
+  error_message?: string | null;
+  created_at: string;
+  sent_at?: string | null;
+}
+
 export interface ShiftOpenRequest {
   branch_id: string;
-  opened_by: string;
-  opening_balance_minor: number;
+  cash_account_id?: string;
+  opened_by?: string;
+  opening_balance_minor?: number;
+  opening_float_minor?: number;
   comment?: string;
 }
 
 export interface ShiftCloseRequest {
   shift_id: string;
-  closed_by: string;
-  closing_cash_actual_minor: number;
+  closed_by?: string;
+  closing_cash_actual_minor?: number;
+  counted_minor?: number;
   comment?: string;
+  note?: string;
 }
 
 // Sprint M14: Expenses & Advanced Reports

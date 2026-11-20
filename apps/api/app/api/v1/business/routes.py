@@ -469,7 +469,7 @@ async def create_visit_payment(
     try:
         res = await finance_cash.record_payment(
             db, tenant_id=crm_user.tenant_id, order_id=order.id, amount_minor=req.amount_minor,
-            cash_account_id=account_id, idempotency_key=idempotency_key or str(uuid.uuid4()),
+            cash_account_id=account_id, idempotency_key=idempotency_key or "",
             actor_id=crm_user.user.id, note=req.note or req.comment)
     except FinanceError as e:
         logger.info("CREATE_VISIT_PAYMENT: FinanceError=%s code=%s msg=%s", e, e.code, e.message)
@@ -746,6 +746,48 @@ async def close_cash_shift(
     return out
 
 
+@router.get("/cash-shifts")
+async def list_cash_shifts(
+    branch_id: Optional[uuid.UUID] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    branches = await _report_branches(db, crm_user, branch_id)
+    if not branches:
+        return []
+    shifts = (await db.execute(
+        select(CashShift)
+        .where(CashShift.tenant_id == crm_user.tenant_id, CashShift.branch_id.in_(branches))
+        .order_by(CashShift.opened_at.desc())
+        .limit(limit)
+    )).scalars().all()
+    return [await _shift_report(db, s) for s in shifts]
+
+
+@router.get("/cash-shifts/current")
+async def get_current_cash_shift(
+    branch_id: Optional[uuid.UUID] = None,
+    cash_account_id: Optional[uuid.UUID] = None,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    branches = await _report_branches(db, crm_user, branch_id)
+    if not branches:
+        return None
+    stmt = select(CashShift).where(
+        CashShift.tenant_id == crm_user.tenant_id,
+        CashShift.branch_id.in_(branches),
+        CashShift.status == "open"
+    )
+    if cash_account_id is not None:
+        stmt = stmt.where(CashShift.cash_account_id == cash_account_id)
+    shift = (await db.execute(stmt.order_by(CashShift.opened_at.desc()).limit(1))).scalar_one_or_none()
+    if shift is None:
+        return None
+    return await _shift_report(db, shift)
+
+
 @router.get("/cash-shifts/{shift_id}")
 async def get_cash_shift(
     shift_id: uuid.UUID,
@@ -860,22 +902,24 @@ async def create_expense(
             raise HTTPException(status_code=400, detail="No cash account available")
         account_id = acc.id
 
-    reason = req.reason or req.comment or "Расход"
+    reason = (req.reason if req.reason is not None else req.comment) or ""
     return await _money_call(db, lambda: finance_expenses.record_expense(
         db, tenant_id=crm_user.tenant_id, branch_id=req.branch_id, cash_account_id=account_id,
         category_id=category_id, amount_minor=req.amount_minor, reason=reason,
-        idempotency_key=idempotency_key or str(uuid.uuid4()), actor_id=crm_user.user.id))
+        idempotency_key=idempotency_key or "", actor_id=crm_user.user.id))
 
 
 @router.get("/expenses")
 async def list_expenses(
-    branch_id: uuid.UUID,
+    branch_id: Optional[uuid.UUID] = None,
     from_date: Optional[datetime.date] = None,
     to_date: Optional[datetime.date] = None,
     crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
-    branch = await branch_scope.require_branch(db, crm_user, branch_id)
+    branches = await _report_branches(db, crm_user, branch_id)
+    if not branches:
+        return []
     if not to_date:
         to_date = datetime.date.today()
     if not from_date:
@@ -884,16 +928,19 @@ async def list_expenses(
         finance_reports.validate_period(from_date, to_date)
     except FinanceError as e:
         raise _finance_error(e)
-    start, end = finance_reports.local_bounds(from_date, to_date, branch.timezone_iana)
+    branch_rows = (await db.execute(select(Branch).where(Branch.tenant_id == crm_user.tenant_id, Branch.id.in_(branches)))).scalars().all()
+    tz_name = branch_rows[0].timezone_iana if branch_rows else "Asia/Almaty"
+    start, end = finance_reports.local_bounds(from_date, to_date, tz_name)
     rows = (await db.execute(select(LedgerEntry, ExpenseCategory.name, CashAccount.name)
                              .join(ExpenseCategory, ExpenseCategory.id == LedgerEntry.expense_category_id)
                              .join(CashAccount, CashAccount.id == LedgerEntry.cash_account_id)
-                             .where(LedgerEntry.tenant_id == crm_user.tenant_id, LedgerEntry.branch_id == branch_id,
+                             .where(LedgerEntry.tenant_id == crm_user.tenant_id, LedgerEntry.branch_id.in_(branches),
                                     LedgerEntry.kind == "expense", LedgerEntry.occurred_at >= start,
                                     LedgerEntry.occurred_at < end)
                              .order_by(LedgerEntry.occurred_at, LedgerEntry.created_at))).all()
     return [{
         "id": str(e.id),
+        "branch_id": str(e.branch_id),
         "occurred_at": e.occurred_at,
         "expense_date": e.occurred_at.date().isoformat() if hasattr(e.occurred_at, "date") else str(e.occurred_at)[:10],
         "amount_minor": e.amount_minor,
@@ -932,6 +979,237 @@ async def get_finance_report(
         return await finance_reports.finance_report(db, crm_user.tenant_id, from_date, to_date, branches)
     except FinanceError as e:
         raise _finance_error(e)
+
+
+@router.get("/reports/visits")
+async def get_visits_report(
+    from_date: datetime.date,
+    to_date: datetime.date,
+    branch_id: Optional[uuid.UUID] = None,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Visits breakdown for a period (M14), scoped by branch rights."""
+    branches = await _report_branches(db, crm_user, branch_id)
+    try:
+        finance_reports.validate_period(from_date, to_date)
+    except FinanceError as e:
+        raise _finance_error(e)
+    if not branches:
+        return {
+            "total_bookings": 0, "completed_bookings": 0, "cancelled_bookings": 0,
+            "arrived_bookings": 0, "in_progress_bookings": 0, "no_show_bookings": 0,
+            "completion_rate_percent": 0, "items": []
+        }
+    branch_rows = (await db.execute(select(Branch).where(Branch.tenant_id == crm_user.tenant_id, Branch.id.in_(branches)))).scalars().all()
+    tz_map = {b.id: b.timezone_iana for b in branch_rows}
+    tz_name = branch_rows[0].timezone_iana if branch_rows else "Asia/Almaty"
+    start, end = finance_reports.local_bounds(from_date, to_date, tz_name)
+
+    rows = (await db.execute(
+        select(Booking, Customer.full_name, StaffProfile.display_name)
+        .join(Customer, Customer.id == Booking.customer_id)
+        .join(StaffProfile, StaffProfile.id == Booking.staff_id)
+        .where(
+            Booking.tenant_id == crm_user.tenant_id,
+            Booking.branch_id.in_(branches),
+            Booking.starts_at_utc >= start,
+            Booking.starts_at_utc < end
+        )
+        .order_by(Booking.starts_at_utc.desc())
+    )).all()
+
+    booking_ids = [b.id for b, _, _ in rows]
+    items_by_booking: Dict[uuid.UUID, List[str]] = {}
+    if booking_ids:
+        bi_rows = (await db.execute(
+            select(BookingItem.booking_id, BookingItem.service_name_snapshot)
+            .where(BookingItem.booking_id.in_(booking_ids))
+            .order_by(BookingItem.sequence)
+        )).all()
+        for bid, sname in bi_rows:
+            items_by_booking.setdefault(bid, []).append(sname)
+
+    total = len(rows)
+    completed = sum(1 for b, _, _ in rows if b.status == "completed")
+    cancelled = sum(1 for b, _, _ in rows if b.status == "cancelled")
+    arrived = sum(1 for b, _, _ in rows if b.status == "arrived")
+    in_progress = sum(1 for b, _, _ in rows if b.status == "in_progress")
+    no_show = sum(1 for b, _, _ in rows if b.status == "no_show")
+    completion_rate = round((completed / total) * 100) if total > 0 else 0
+
+    out_items = []
+    for b, cust_name, staff_name in rows:
+        tz = zoneinfo.ZoneInfo(tz_map.get(b.branch_id, tz_name))
+        local_dt = b.starts_at_utc.astimezone(tz)
+        out_items.append({
+            "id": str(b.id),
+            "public_ref": b.public_ref,
+            "customer_name": cust_name,
+            "staff_name": staff_name,
+            "services": items_by_booking.get(b.id, []),
+            "date_display": local_dt.strftime("%Y-%m-%d"),
+            "time_display": local_dt.strftime("%H:%M"),
+            "status": b.status,
+            "amount_minor": b.amount_minor_snapshot or 0,
+        })
+
+    return {
+        "total_bookings": total,
+        "completed_bookings": completed,
+        "cancelled_bookings": cancelled,
+        "arrived_bookings": arrived,
+        "in_progress_bookings": in_progress,
+        "no_show_bookings": no_show,
+        "completion_rate_percent": completion_rate,
+        "items": out_items,
+    }
+
+
+@router.get("/reports/services")
+async def get_services_report(
+    from_date: datetime.date,
+    to_date: datetime.date,
+    branch_id: Optional[uuid.UUID] = None,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Rendered services breakdown from completed visits in period (M14)."""
+    branches = await _report_branches(db, crm_user, branch_id)
+    try:
+        finance_reports.validate_period(from_date, to_date)
+    except FinanceError as e:
+        raise _finance_error(e)
+    if not branches:
+        return {"total_services_count": 0, "total_rendered_minor": 0, "average_ticket_minor": 0, "top_services": []}
+
+    branch_rows = (await db.execute(select(Branch).where(Branch.tenant_id == crm_user.tenant_id, Branch.id.in_(branches)))).scalars().all()
+    tz_name = branch_rows[0].timezone_iana if branch_rows else "Asia/Almaty"
+    start, end = finance_reports.local_bounds(from_date, to_date, tz_name)
+
+    rows = (await db.execute(
+        select(BookingItem.service_id, BookingItem.service_name_snapshot, BookingItem.price_minor_snapshot, Booking.id)
+        .join(Booking, Booking.id == BookingItem.booking_id)
+        .where(
+            Booking.tenant_id == crm_user.tenant_id,
+            Booking.branch_id.in_(branches),
+            Booking.status == "completed",
+            Booking.starts_at_utc >= start,
+            Booking.starts_at_utc < end
+        )
+    )).all()
+
+    agg: Dict[str, Dict[str, Any]] = {}
+    booking_ids = set()
+    total_rendered = 0
+    for sid, sname, price_minor, bid in rows:
+        booking_ids.add(bid)
+        key = str(sid) if sid else sname
+        price = price_minor or 0
+        total_rendered += price
+        if key not in agg:
+            agg[key] = {"service_id": key, "service_name": sname, "count": 0, "total_minor": 0}
+        agg[key]["count"] += 1
+        agg[key]["total_minor"] += price
+
+    top_services = sorted(agg.values(), key=lambda x: x["total_minor"], reverse=True)
+    for item in top_services:
+        item["percentage"] = round((item["total_minor"] / total_rendered) * 100) if total_rendered > 0 else 0
+
+    avg_ticket = round(total_rendered / len(booking_ids)) if booking_ids else 0
+    return {
+        "total_services_count": len(rows),
+        "total_rendered_minor": total_rendered,
+        "average_ticket_minor": avg_ticket,
+        "top_services": top_services,
+    }
+
+
+@router.get("/reports/debts")
+async def get_debts_report(
+    branch_id: Optional[uuid.UUID] = None,
+    crm_user: AuthenticatedTenantUser = Depends(require_crm_roles(["owner", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """Receivables (unpaid / partially paid completed visits) strictly from ledger (M14)."""
+    branches = await _report_branches(db, crm_user, branch_id)
+    if not branches:
+        return {"total_debt_minor": 0, "debtors_count": 0, "items": []}
+
+    branch_rows = (await db.execute(select(Branch).where(Branch.tenant_id == crm_user.tenant_id, Branch.id.in_(branches)))).scalars().all()
+    tz_map = {b.id: b.timezone_iana for b in branch_rows}
+
+    orders = (await db.execute(
+        select(Order, Booking, Customer)
+        .join(Booking, Booking.id == Order.booking_id)
+        .join(Customer, Customer.id == Booking.customer_id)
+        .where(
+            Order.tenant_id == crm_user.tenant_id,
+            Order.branch_id.in_(branches),
+            Order.booking_id.is_not(None)
+        )
+        .order_by(Booking.starts_at_utc.desc())
+    )).all()
+
+    if not orders:
+        return {"total_debt_minor": 0, "debtors_count": 0, "items": []}
+
+    order_ids = [o.id for o, _, _ in orders]
+    booking_ids = [b.id for _, b, _ in orders]
+
+    ledger_rows = (await db.execute(
+        select(LedgerEntry.order_id, LedgerEntry.kind, func.sum(LedgerEntry.amount_minor))
+        .where(LedgerEntry.tenant_id == crm_user.tenant_id, LedgerEntry.order_id.in_(order_ids))
+        .group_by(LedgerEntry.order_id, LedgerEntry.kind)
+    )).all()
+
+    by_order: Dict[uuid.UUID, Dict[str, int]] = {}
+    for oid, kind, amt in ledger_rows:
+        by_order.setdefault(oid, {})[kind] = int(amt or 0)
+
+    bi_rows = (await db.execute(
+        select(BookingItem.booking_id, BookingItem.service_name_snapshot)
+        .where(BookingItem.booking_id.in_(booking_ids))
+        .order_by(BookingItem.sequence)
+    )).all()
+    items_by_booking: Dict[uuid.UUID, List[str]] = {}
+    for bid, sname in bi_rows:
+        items_by_booking.setdefault(bid, []).append(sname)
+
+    debt_items = []
+    total_debt = 0
+    for o, b, c in orders:
+        m = by_order.get(o.id, {})
+        rendered = m.get("service_rendered", 0) + m.get("adjustment", 0)
+        received = m.get("payment", 0) + m.get("refund", 0)
+        adv_applied = m.get("advance_applied", 0)
+        paid = received + adv_applied
+        debt = max(0, rendered - paid)
+        if debt <= 0:
+            continue
+        total_debt += debt
+        tz = zoneinfo.ZoneInfo(tz_map.get(b.branch_id, "Asia/Almaty"))
+        local_dt = b.starts_at_utc.astimezone(tz)
+        debt_items.append({
+            "booking_id": str(b.id),
+            "public_ref": b.public_ref,
+            "customer_id": str(c.id),
+            "customer_name": c.full_name,
+            "customer_phone": c.phone_e164 or "",
+            "visit_date": local_dt.strftime("%Y-%m-%d %H:%M"),
+            "cost_minor": b.amount_minor_snapshot or rendered,
+            "rendered_minor": rendered,
+            "paid_minor": paid,
+            "debt_minor": debt,
+            "payment_status": "partially_paid" if paid > 0 else "unpaid",
+            "services": items_by_booking.get(b.id, []),
+        })
+
+    return {
+        "total_debt_minor": total_debt,
+        "debtors_count": len(debt_items),
+        "items": debt_items,
+    }
 
 
 @router.get("/bookings/{booking_id}")
@@ -1044,10 +1322,10 @@ async def update_booking_status(
                                       reason=req.reason or ("Отменено сотрудником в CRM" if req.status == "cancelled" else None))
     except lifecycle.LifecycleError as e:
         raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message, "details": e.details})
-    await db.commit()
 
-    # Provide finance summary in response
+    # Provide finance summary in response within active tenant transaction
     fin = await _visit_finance(db, crm_user, booking)
+    await db.commit()
     return {
         "status": booking.status,
         "previous_status": old_status,
@@ -1321,9 +1599,23 @@ async def create_customer(
             email=req.email, source="crm_manual", notes_private=req.notes_private)
     except customer_identity.PhoneError as e:
         raise HTTPException(status_code=422, detail={"code": "PHONE_INVALID", "message": str(e)})
+    same_phone_list = [{"id": str(o.id), "full_name": o.full_name} for o in resolved.same_phone_others]
+
+    if resolved.created and same_phone_list and not req.confirm_shared_phone:
+        await db.rollback()
+        first_other = same_phone_list[0]
+        return {
+            "shared_phone_warning": True,
+            "existing_name": first_other["full_name"],
+            "existing_customer_id": first_other["id"],
+            "duplicate_detected": False,
+            "same_phone_customers": same_phone_list,
+            "existing_clients": same_phone_list,
+            "message": f"Номер уже привязан к клиенту {first_other['full_name']}. Подтвердите создание отдельного профиля."
+        }
+
     await db.commit()
     c = resolved.customer
-    same_phone_list = [{"id": str(o.id), "full_name": o.full_name} for o in resolved.same_phone_others]
     return {
         "id": str(c.id),
         "full_name": c.full_name,
@@ -1332,6 +1624,7 @@ async def create_customer(
         "same_phone_customers": same_phone_list,
         "existing_clients": same_phone_list,
         "shared_phone": len(same_phone_list) > 0,
+        "shared_phone_warning": False,
         "message": "Клиент с таким именем и телефоном уже существует" if not resolved.created else None
     }
 

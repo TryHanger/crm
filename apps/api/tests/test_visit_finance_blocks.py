@@ -62,7 +62,7 @@ async def test_visit_financial_blocks_and_completion_acceptance():
         while target_date.isoweekday() not in (1, 2, 3, 4, 5):
             target_date += datetime.timedelta(days=1)
 
-        slot_hour = random.choice([10, 11, 14, 15, 16])
+        slot_hour = random.choice([5, 6, 10, 11])
         slot_start_utc = datetime.datetime.combine(
             target_date, datetime.time(slot_hour, 0), tzinfo=datetime.timezone.utc
         )

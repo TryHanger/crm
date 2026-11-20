@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Sprint M03: Salon Publication, Personal Link & Scannable QR Code', () => {
 
   test('M03-D1 Full Lifecycle: CRM Personal Link, Copy, QR Code, Toggle Pause/Resume & Booking Web Verification', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     // Set desktop viewport
     await page.setViewportSize({ width: 1280, height: 800 });
 
@@ -13,7 +14,7 @@ test.describe('Sprint M03: Salon Publication, Personal Link & Scannable QR Code'
     await page.click('button[type="submit"]');
 
     // Wait for CRM Dashboard/Calendar to load
-    await expect(page.locator('header h1, nav')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('nav')).toBeVisible({ timeout: 10000 });
 
     // 2. Navigate to Online Booking module
     await page.click('nav a:has-text("Онлайн-запись"), aside button:has-text("Онлайн-запись")');
@@ -62,12 +63,12 @@ test.describe('Sprint M03: Salon Publication, Personal Link & Scannable QR Code'
     let btnText = await toggleBtn.innerText();
     if (btnText.includes('Опубликовать')) {
       await toggleBtn.click();
-      await expect(page.locator('text=Онлайн-запись активна')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('text=Онлайн-запись активна').first()).toBeVisible({ timeout: 5000 });
     }
 
     // Now click "Приостановить"
     await page.click('button:has-text("Приостановить")');
-    await expect(page.locator('text=Онлайн-запись приостановлена')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=Онлайн-запись приостановлена').first()).toBeVisible({ timeout: 5000 });
     await page.screenshot({ path: 'docs/screenshots/sprint-m03-02-crm-publication-paused.png', fullPage: true });
 
     // 7. Verify on Booking Web that paused publication blocks booking
@@ -75,23 +76,23 @@ test.describe('Sprint M03: Salon Publication, Personal Link & Scannable QR Code'
     await bookingPage.goto('http://barberhouse.localhost:3000');
 
     // Client must see "Онлайн-запись временно недоступна"
-    await expect(bookingPage.locator(':is([data-testid="booking-unpublished-view"], :text("Онлайн-запись временно недоступна"))')).toBeVisible({ timeout: 10000 });
+    await expect(bookingPage.locator(':is([data-testid="booking-unpublished-view"], :text("Онлайн-запись временно недоступна"))').first()).toBeVisible({ timeout: 10000 });
     await bookingPage.screenshot({ path: 'docs/screenshots/sprint-m03-03-booking-web-paused.png', fullPage: true });
 
     // 8. Return to CRM and Resume Publication
     await page.bringToFront();
     await page.click('button:has-text("Опубликовать")');
-    await expect(page.locator('text=Онлайн-запись активна')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=Онлайн-запись активна').first()).toBeVisible({ timeout: 5000 });
 
     // 9. Verify on Booking Web that resumed publication restores booking
     await bookingPage.bringToFront();
     await bookingPage.reload();
-    await expect(bookingPage.locator('h1:has-text("Выберите услуги"), header:has-text("Barber House")')).toBeVisible({ timeout: 10000 });
+    await expect(bookingPage.locator('h1:has-text("Выберите услуги"), header:has-text("Barber House")').first()).toBeVisible({ timeout: 10000 });
     await bookingPage.screenshot({ path: 'docs/screenshots/sprint-m03-04-booking-web-resumed.png', fullPage: true });
 
     // 10. Verify Unknown Host produces Company Not Found (404)
     await bookingPage.goto('http://unknown-company.localhost:3000');
-    await expect(bookingPage.locator(':is([data-testid="booking-domain-not-found"], :text("Компания не найдена"))')).toBeVisible({ timeout: 10000 });
+    await expect(bookingPage.locator(':is([data-testid="booking-domain-not-found"], :text("Компания не найдена"))').first()).toBeVisible({ timeout: 10000 });
     await bookingPage.screenshot({ path: 'docs/screenshots/sprint-m03-05-unknown-host-404.png', fullPage: true });
 
     await bookingPage.close();

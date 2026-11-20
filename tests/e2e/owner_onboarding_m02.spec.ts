@@ -42,7 +42,7 @@ test.describe('M02: Owner Onboarding & First Branch Creation (Gate T02)', () => 
     // 1. Authenticate as Platform Owner via API to issue invite
     const platformLoginRes = await request.post(`${API_URL}/api/v1/auth/login`, {
       data: {
-        email: 'admin@platform.kz',
+        email: 'owner@platform.example.kz',
         password: 'Password123!',
       },
     });
@@ -100,7 +100,7 @@ test.describe('M02: Owner Onboarding & First Branch Creation (Gate T02)', () => 
 
     // 8. Verify branch creation badge
     await expect(page.locator('[data-testid="step-branch-completed-badge"]')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=' + branchName)).toBeVisible();
+    await expect(page.locator('text=' + branchName).first()).toBeVisible();
 
     // 9. Proceed to Calendar
     await page.click('[data-testid="onboarding-go-to-calendar-btn"]');

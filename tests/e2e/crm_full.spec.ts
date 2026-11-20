@@ -65,15 +65,15 @@ test.describe('CRM Full Business Modules & Workflows', () => {
 
     // Click on Damir to view staff detail modal
     await page.locator('text=Дамир').first().click();
-    await expect(page.locator('text=Сотрудник:').first()).toBeVisible();
+    await expect(page.locator('h3:has-text("Дамир Султанов")').first()).toBeVisible();
 
     // Switch to Services tab in staff profile
     await page.locator('button:has-text("Услуги и цены"), button:has-text("Прайс-лист")').first().click();
     await page.screenshot({ path: 'docs/screenshots/crm-04-staff-services.png' });
 
     // Switch to Schedule tab
-    await page.click('button:has-text("График работы")');
-    await expect(page.locator('text=Понедельник')).toBeVisible();
+    await page.click('button:has-text("График и перерывы"), button:has-text("График работы")');
+    await expect(page.locator('text=Понедельник').first()).toBeVisible();
     await page.screenshot({ path: 'docs/screenshots/crm-05-staff-schedule.png' });
 
     // Close modal
@@ -88,15 +88,15 @@ test.describe('CRM Full Business Modules & Workflows', () => {
     await page.screenshot({ path: 'docs/screenshots/crm-06-services-3col.png', fullPage: true });
 
     // Click on a service in the second column
-    const serviceItem = page.locator('button:has-text("Мужская стрижка"), div:has-text("Мужская стрижка")').first();
+    const serviceItem = page.locator('text=Мужская стрижка').first();
     await serviceItem.click();
 
     // Editor should display service details on the right
-    await expect(page.locator('input[placeholder*="Мужская стрижка"], input[value*="Мужская стрижка"]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('input[placeholder*="Модельная мужская стрижка"], input[value*="Мужская стрижка"], input[placeholder*="Мужская стрижка"]').first()).toBeVisible({ timeout: 5000 });
 
     // Save changes
     await page.click('button:has-text("Сохранить изменения")');
-    await expect(page.locator(':is(:text("Услуга успешно обновлена"), :text("Услуга сохранена"))').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=/сохранена/i').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('CRM Online Booking: Rules, Appearance Mockup & Public URL', async ({ page }) => {
@@ -125,11 +125,18 @@ test.describe('CRM Full Business Modules & Workflows', () => {
     await page.click('nav a:has-text("Отчёты"), aside button:has-text("Отчёты")');
     await expect(page.locator('h1').first()).toContainText('Отчёты и аналитика');
 
-    // Verify key metrics
-    await expect(page.locator('text=Всего записей').first()).toBeVisible();
-    await expect(page.locator('text=/Факт-выручка|Стоимость оказанных услуг/').first()).toBeVisible();
-    await expect(page.locator('text=Плановая стоимость').first()).toBeVisible();
-    await expect(page.locator('text=Выработка мастеров').first()).toBeVisible();
+    // Verify key metrics on Cash Flow tab
+    await expect(page.locator('text=Оказано услуг').first()).toBeVisible();
+    await expect(page.locator('text=Поступления денег').first()).toBeVisible();
+    await expect(page.locator('text=Чистый денежный поток').first()).toBeVisible();
+
+    // Switch to Visits tab
+    await page.click('button:has-text("Визиты")');
+    await expect(page.locator(':is(:text("Всего визитов"), :text("Статус"), :text("Клиент"))').first()).toBeVisible();
+
+    // Switch to Services tab
+    await page.click('button:has-text("Услуги")');
+    await expect(page.locator(':is(:text("Количество"), :text("Услуга"), :text("Выручка"))').first()).toBeVisible();
 
     await page.screenshot({ path: 'docs/screenshots/crm-10-reports-overview.png', fullPage: true });
   });

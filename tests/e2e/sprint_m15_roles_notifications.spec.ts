@@ -70,13 +70,12 @@ test.describe('Sprint M15 — Роли (мастер не видит кассу)
     await page.click('[data-testid="invite-staff-btn"]');
     await expect(page.locator('h3:has-text("Пригласить сотрудника")')).toBeVisible({ timeout: 5000 });
 
-    // Verify role options include master, admin, and owner
+    // Verify role options include master and admin (owners are provisioned via Platform Console per M15)
     const roleSelect = page.locator('[data-testid="invite-role-select"]');
     await expect(roleSelect).toBeVisible();
     const roleTexts = await roleSelect.locator('option').allTextContents();
     expect(roleTexts.some(t => t.includes('Мастер'))).toBeTruthy();
     expect(roleTexts.some(t => t.includes('Управляющий'))).toBeTruthy();
-    expect(roleTexts.some(t => t.includes('Владелец'))).toBeTruthy();
 
     // Fill invitation form
     const uniqueEmail = `barber_${Date.now()}@barberhouse.kz`;

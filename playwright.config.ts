@@ -42,5 +42,11 @@ export default defineConfig({
       reuseExistingServer: true,
       timeout: 30000,
     },
+    {
+      command: 'npm run dev --workspace=@crm/platform-console -- --port 3002 --host 127.0.0.1',
+      port: 3002,
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
   ],
 });
